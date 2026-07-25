@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(printf '' >> \"c:/Users/Jamali/Desktop/calculator/06_ERD.md\" && echo \"append target ready\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\Jamali\\Desktop\\calculator"
+    ]
+  }
+}
