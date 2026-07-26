@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(printf '' >> \"c:/Users/Jamali/Desktop/calculator/06_ERD.md\" && echo \"append target ready\")"
+      "Bash(printf '' >> \"c:/Users/Jamali/Desktop/calculator/06_ERD.md\" && echo \"append target ready\")",
+      "Bash(python -c \"import sqlalchemy; print\\('sa', sqlalchemy.__version__\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\Jamali\\Desktop\\calculator"
