@@ -1,1 +1,0 @@
-R5 — currency Purpose: Currency reference (ISO 4217). PK: id | code unique (e.g. USD) Important fields: symbol, decimals, is_base Classification: R 
