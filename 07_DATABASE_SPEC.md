@@ -1,12 +1,1240 @@
-bash
-cat >> /home/claude/calculator_extracted/calculator/07_DATABASE_SPEC.md << 'EOF' ## F.5 — Fulfillment / Shipping ## T14 — shipment 1. **Purpose:** Physical shipment tied to an order (SRS E17, BRF §10). 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** order_id → order.id; source_warehouse_id → warehouse.id; carrier_id → carrier.id; shipped_by → app_user.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | shipment_number | VARCHAR(40) | NOT NULL | — | Business key | | order_id | UUID | NOT NULL | — | FK | | source_warehouse_id | UUID | NOT NULL | — | FK | | carrier_id | UUID | NOT NULL | — | FK | | shipped_by | UUID | NULL | NULL | FK | | state | VARCHAR(16) | NOT NULL | `'CREATED'` | ShipmentState enum | | shipped_at | TIMESTAMPTZ | NULL | NULL | — | | delivered_at | TIMESTAMPTZ | NULL | NULL | — | | shipping_cost | NUMERIC(18,4) | NOT NULL | `0` | — | | shipping_currency_id | UUID | NOT NULL | — | FK | | shipping_payer | VARCHAR(16) | NOT NULL | — | `CUSTOMER`\|`REPRESENTATIVE`\|`FACTORY` | | tracking_number | VARCHAR(80) | NULL | NULL | Carrier tracking reference | 5. **Unique Constraints:** `uq_shipment_number (shipment_number)` 6. **Check Constraints:** `ck_shipment_state (state IN ('CREATED','PICKING','PACKED','DISPATCHED','IN_TRANSIT','DELIVERED','FAILED'))`; `ck_shipment_payer (shipping_payer IN ('CUSTOMER','REPRESENTATIVE','FACTORY'))`; `ck_shipment_cost_nonneg (shipping_cost >= 0)` 7. **Business Constraints:** LOCAL/REP_LOCAL fulfillment posts a `SALE_OUT` `inventory_transaction`; DIRECT/FACTORY_DIRECT fulfillment posts a `FACTORY_DIRECT_SHIPMENT` movement instead — orchestrated by the application at the `DISPATCHED` transition; reaching `DELIVERED` advances the parent `order.state` toward `SHIPPED`/`COMPLETED` per the order state machine (application-orchestrated, cross-table). 8. **Recommended Indexes:** btree on `order_id`; btree on `carrier_id`; btree on `tracking_number` 9. **Composite Indexes:** none beyond above 10. **Partial Indexes:** `idx_shipment_active ON shipment (state) WHERE state NOT IN ('DELIVERED','FAILED')` — active-shipment dashboard 11. **Partitioning Strategy:** Optional — range partition by `shipped_at` (yearly) if volume justifies it; lower priority than the ledger tables. 12. **Soft Delete Strategy:** Supported, though a failed shipment should use `state='FAILED'` rather than deletion 13. **Audit Strategy:** Standard UAC; state transitions mirrored to `shipment_status_history` (T16) 14. **Estimated Row Growth:** High — roughly tracks `order` volume (one or more shipments per order) 15. **Notes:** — ## T15 — shipment_line 1. **Purpose:** Lines in a shipment matching order lines. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** shipment_id → shipment.id; order_line_id → order_line.id; product_id → product.id; lot_id → product_lot.id (nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | shipment_id | UUID | NOT NULL | — | FK | | order_line_id | UUID | NOT NULL | — | FK | | product_id | UUID | NOT NULL | — | FK | | lot_id | UUID | NULL | NULL | FK | | qty_shipped | NUMERIC(18,4) | NOT NULL | — | — | | unit_cost_at_ship | NUMERIC(18,6) | NOT NULL | — | Snapshot for profit-margin calculation | 5. **Unique Constraints:** `uq_shipment_line (shipment_id, order_line_id)` 6. **Check Constraints:** `ck_shipment_line_qty_positive (qty_shipped > 0)` 7. **Business Constraints:** Σ(`qty_shipped` across all shipments for an `order_line`) must not exceed `order_line.qty_ordered` — validated at the application layer when creating a shipment_line, then reflected back into `order_line.qty_shipped`. 8. **Recommended Indexes:** btree on `order_line_id`; btree on `product_id` 9. **Composite Indexes:** none beyond unique constraint 10. **Partial Indexes:** none 11. **Partitioning Strategy:** None directly; follows `shipment`'s partitioning if adopted. 12. **Soft Delete Strategy:** Supported 13. **Audit Strategy:** Standard UAC 14. **Estimated Row Growth:** High — tracks `shipment` volume at a per-line multiplier 15. **Notes:** — ## H7 (ERD: T16) — shipment_status_history 1. **Purpose:** Immutable shipment state log, including geo-tracking for factory-direct delivery. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** shipment_id → shipment.id; actor_user_id → app_user.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +AAC | — | — | — | Append-only audit columns | | shipment_id | UUID | NOT NULL | — | FK | | actor_user_id | UUID | NULL | NULL | FK, nullable for automated tracking pings | | from_state | VARCHAR(16) | NULL | NULL | NULL only on the inaugural CREATE row | | to_state | VARCHAR(16) | NOT NULL | — | New ShipmentState | | event_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | lat | NUMERIC(9,6) | NULL | NULL | Geo-tracking latitude | | lng | NUMERIC(9,6) | NULL | NULL | Geo-tracking longitude | | note | TEXT | NULL | NULL | Mandatory when `to_state = 'FAILED'` (see Business Constraints) | 5. **Unique Constraints:** none — chronological append 6. **Check Constraints:** `ck_shipment_status_history_states (to_state IN ('CREATED','PICKING','PACKED','DISPATCHED','IN_TRANSIT','DELIVERED','FAILED'))`; `ck_shipment_status_history_lat (lat IS NULL OR lat BETWEEN -90 AND 90)`; `ck_shipment_status_history_lng (lng IS NULL OR lng BETWEEN -180 AND 180)`; `ck_shipment_status_history_failed_note (to_state <> 'FAILED' OR note IS NOT NULL)` 7. **Business Constraints:** Append-only; exactly one `CREATE`-equivalent row (`from_state IS NULL`) per shipment; `FAILED` triggers an exception workflow (application-orchestrated, e.g. auto-creating an `approval_request` or `notification`). 8. **Recommended Indexes:** btree on `shipment_id` 9. **Composite Indexes:** `(shipment_id, event_at)` 10. **Partial Indexes:** none 11. **Partitioning Strategy:** Range partition by `event_at` (monthly) — tracks shipment volume. 12. **Soft Delete Strategy:** None 13. **Audit Strategy:** Self-auditing 14. **Estimated Row Growth:** High — several rows per shipment (state transitions plus geo-pings for Scenario B) 15. **Notes:** — ## F.6 — Finance / Invoicing ## T17 — invoice 1. **Purpose:** Invoice header generated from one or more shipped/fulfilled orders (BR-F1, SRS E19). 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** customer_id → customer.id; currency_id → currency.id; created_by → app_user.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | invoice_number | VARCHAR(40) | NOT NULL | — | Business key | | customer_id | UUID | NOT NULL | — | FK | | currency_id | UUID | NOT NULL | — | FK | | state | VARCHAR(20) | NOT NULL | `'DRAFT'` | InvoiceState enum | | subtotal | NUMERIC(18,4) | NOT NULL | `0` | — | | tax_total | NUMERIC(18,4) | NOT NULL | `0` | — | | discount_total | NUMERIC(18,4) | NOT NULL | `0` | — | | grand_total | NUMERIC(18,4) | NOT NULL | `0` | — | | amount_paid | NUMERIC(18,4) | NOT NULL | `0` | Non-authoritative cache, reconciled from `payment_allocation` | | balance_due | NUMERIC(18,4) | NOT NULL | `0` | `grand_total - amount_paid`, non-authoritative cache | | issued_at | TIMESTAMPTZ | NULL | NULL | — | | due_at | TIMESTAMPTZ | NULL | NULL | — | | closed_at | TIMESTAMPTZ | NULL | NULL | — | 5. **Unique Constraints:** `uq_invoice_number (invoice_number)` 6. **Check Constraints:** `ck_invoice_state (state IN ('DRAFT','ISSUED','PARTIALLY_PAID','PAID','CLOSED_CORRECTED','VOID'))`; `ck_invoice_totals_nonneg (subtotal >= 0 AND tax_total >= 0 AND discount_total >= 0 AND grand_total >= 0)` 7. **Business Constraints:** May aggregate lines from multiple orders, resolved via `invoice_order` (J1); once `state IN ('PAID','CLOSED_CORRECTED')` the header and its lines are immutable — enforced via `BEFORE UPDATE` trigger; corrections are issued only via `credit_note` (T20), never a direct edit; `amount_paid`/`balance_due` are written **only** by the reconciliation job that sums `payment_allocation`, never by general application code — enforced by column-level GRANT restricting `UPDATE (amount_paid, balance_due)` to the reconciliation service role. 8. **Recommended Indexes:** btree on `customer_id` 9. **Composite Indexes:** `(customer_id, state)` — AR dashboard 10. **Partial Indexes:** `idx_invoice_ar_aging ON invoice (due_at) WHERE state IN ('ISSUED','PARTIALLY_PAID')` — the AR-aging report's hot path 11. **Partitioning Strategy:** Optional — range partition by `issued_at` (yearly) for archival once volume justifies it. 12. **Soft Delete Strategy:** Supported pre-`ISSUED` only (a `DRAFT` invoice can be withdrawn); post-`ISSUED` invoices are never deleted, only corrected via `credit_note` or transitioned to `VOID`. 13. **Audit Strategy:** Standard UAC; state transitions mirrored to `invoice_history` (H4); financial-sensitivity means all mutations are also visible in `audit_log`. 14. **Estimated Row Growth:** High — tracks order-to-invoice conversion rate, likely close to 1:1 with completed orders (allowing for consolidation via `invoice_order`). 15. **Notes:** — ## T18 — invoice_line 1. **Purpose:** Line items of an invoice; price frozen at issue time (BR-P3, SRS E20). 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** invoice_id → invoice.id; order_line_id → order_line.id (nullable); product_id → product.id (nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | invoice_id | UUID | NOT NULL | — | FK | | order_line_id | UUID | NULL | NULL | FK, nullable for freight/manual lines | | product_id | UUID | NULL | NULL | FK, nullable for non-product lines | | description | VARCHAR(255) | NOT NULL | — | Line description | | qty | NUMERIC(18,4) | NOT NULL | — | — | | unit_price | NUMERIC(18,4) | NOT NULL | — | Frozen at issue | | tax_rate | NUMERIC(7,4) | NOT NULL | `0` | Percentage | | tax_amount | NUMERIC(18,4) | NOT NULL | `0` | — | | discount_value | NUMERIC(18,4) | NOT NULL | `0` | — | | line_total | NUMERIC(18,4) | NOT NULL | — | Application-computed | 5. **Unique Constraints:** `uq_invoice_line_order_line (invoice_id, order_line_id)` where `order_line_id IS NOT NULL` 6. **Check Constraints:** `ck_invoice_line_qty_positive (qty > 0)`; `ck_invoice_line_unit_price_nonneg (unit_price >= 0)`; `ck_invoice_line_tax_rate_range (tax_rate BETWEEN 0 AND 100)` 7. **Business Constraints:** `unit_price` copied from `order_line.unit_price` at issue time, never re-resolved against `price_history`; immutable once the parent invoice's `state <> 'DRAFT'` — enforced via `BEFORE UPDATE` trigger checking parent state. 8. **Recommended Indexes:** btree on `order_line_id`; btree on `product_id` 9. **Composite Indexes:** none beyond partial unique 10. **Partial Indexes:** see Unique Constraints 11. **Partitioning Strategy:** Follows `invoice`'s partitioning if adopted 12. **Soft Delete Strategy:** Supported pre-issue only 13. **Audit Strategy:** Standard UAC 14. **Estimated Row Growth:** High — tracks `invoice` volume at a per-line multiplier 15. **Notes:** — ## H4 (ERD id) — invoice_history 1. **Purpose:** Immutable state-change log for invoices. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** invoice_id → invoice.id; actor_user_id → app_user.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +AAC | — | — | — | Append-only audit columns | | invoice_id | UUID | NOT NULL | — | FK | | actor_user_id | UUID | NOT NULL | — | FK | | from_state | VARCHAR(20) | NOT NULL | — | — | | to_state | VARCHAR(20) | NOT NULL | — | — | | event_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | note | TEXT | NULL | NULL | — | 5. **Unique Constraints:** none — chronological append 6. **Check Constraints:** `ck_invoice_history_states (from_state IN (...InvoiceState...) AND to_state IN (...InvoiceState...))` 7. **Business Constraints:** Append-only 8. **Recommended Indexes:** btree on `invoice_id` 9. **Composite Indexes:** `(invoice_id, event_at)` 10. **Partial Indexes:** none 11. **Partitioning Strategy:** Range partition by `event_at` (monthly), tracks `invoice` volume 12. **Soft Delete Strategy:** None 13. **Audit Strategy:** Self-auditing 14. **Estimated Row Growth:** High 15. **Notes:** — ## J1 — invoice_order (Junction) 1. **Purpose:** Resolves N:N between invoice and order (split/consolidated invoicing). 2. **Primary Key:** composite (invoice_id, order_id) 3. **Foreign Keys:** invoice_id → invoice.id; order_id → order.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | invoice_id | UUID | NOT NULL | — | PK part / FK | | order_id | UUID | NOT NULL | — | PK part / FK | | linked_at | TIMESTAMPTZ | NOT NULL | `now()` | — | 5. **Unique Constraints:** PK itself 6. **Check Constraints:** none 7. **Business Constraints:** none beyond referential integrity 8. **Recommended Indexes:** btree on `order_id` 9. **Composite Indexes:** PK doubles as forward-lookup 10. **Partial Indexes:** none 11. **Partitioning Strategy:** None 12. **Soft Delete Strategy:** None — pure resolving join; unlinking (rare, correction-only) is a hard DELETE mirrored to `audit_log` 13. **Audit Strategy:** Link/unlink events to `audit_log` 14. **Estimated Row Growth:** Tracks `invoice` × orders-per-invoice, typically close to 1:1 15. **Notes:** — ## T19 — payment 1. **Purpose:** Money received from a customer, recorded independently of any single invoice (SRS E21). 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** customer_id → customer.id; currency_id → currency.id; received_by → app_user.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +AAC | — | — | — | Append-only audit columns (payment is itself an event-sourced ledger — see Business Constraints) | | payment_number | VARCHAR(40) | NOT NULL | — | Business key | | customer_id | UUID | NOT NULL | — | FK | | currency_id | UUID | NOT NULL | — | FK | | received_by | UUID | NOT NULL | — | FK | | amount | NUMERIC(18,4) | NOT NULL | — | — | | method | VARCHAR(20) | NOT NULL | — | `CASH`\|`BANK_TRANSFER`\|`CHEQUE`\|`CARD`\|`MOBILE_WALLET` | | reference | VARCHAR(120) | NULL | NULL | Bank ref / cheque no. | | received_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | unallocated_amount | NUMERIC(18,4) | NOT NULL | — | Non-authoritative cache, reconciled from `payment_allocation` | 5. **Unique Constraints:** `uq_payment_number (payment_number)` 6. **Check Constraints:** `ck_payment_method (method IN ('CASH','BANK_TRANSFER','CHEQUE','CARD','MOBILE_WALLET'))`; `ck_payment_amount_positive (amount > 0)`; `ck_payment_unallocated_range (unallocated_amount BETWEEN 0 AND amount)` 7. **Business Constraints:** Immutable once posted — no general UPDATE grant (same append-only posture as `inventory_transaction`); corrections via a compensating reversal payment (a new row with negative-equivalent effect handled at the application/ledger level — see Global Standards for how negative payments are represented), never an edit; `unallocated_amount` is written **only** by the reconciliation job that sums `payment_allocation`, via column-level GRANT, identical pattern to `invoice.amount_paid`. 8. **Recommended Indexes:** btree on `customer_id` 9. **Composite Indexes:** none beyond above 10. **Partial Indexes:** `idx_payment_unallocated ON payment (customer_id) WHERE unallocated_amount > 0` — "apply this payment" workflow 11. **Partitioning Strategy:** Optional — range partition by `received_at` (yearly) for archival. 12. **Soft Delete Strategy:** None — append-only per Business Constraints; a mis-posted payment is corrected via a compensating reversal payment, not deletion. 13. **Audit Strategy:** `created_by` (AAC) is the posting actor; column-level GRANT permits only the reconciliation role to update `unallocated_amount`. 14. **Estimated Row Growth:** High — tracks customer payment frequency, likely proportional to invoice volume. 15. **Notes:** Because this table is append-only (per ERD's explicit "immutable once posted"), it uses **AAC**, not the full UAC — this is a deliberate deviation from "every T-classified table gets UAC," documented explicitly here since T19 is one of the ledger-pattern transactional tables (see ERD PART H) rather than an ordinary mutable transactional table. ## J2 — payment_allocation (Junction) 1. **Purpose:** Resolves N:N between payment and invoice (partial/split payments). 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** payment_id → payment.id; invoice_id → invoice.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | id | UUID | NOT NULL | `gen_random_uuid()` | Surrogate PK (this junction carries enough business-meaningful data to warrant a surrogate key rather than a composite PK) | | payment_id | UUID | NOT NULL | — | FK | | invoice_id | UUID | NOT NULL | — | FK | | allocated_amount | NUMERIC(18,4) | NOT NULL | — | — | | allocated_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | allocated_by | UUID | NOT NULL | — | FK → app_user.id | 5. **Unique Constraints:** `uq_payment_allocation (payment_id, invoice_id)` 6. **Check Constraints:** `ck_payment_allocation_amount_positive (allocated_amount > 0)` 7. **Business Constraints:** Σ(`allocated_amount`) per `payment_id` ≤ `payment.amount` — enforced via `BEFORE INSERT/UPDATE` trigger (cross-row aggregate, not expressible as CHECK); Σ(`allocated_amount`) per `invoice_id` ≤ `invoice.grand_total` — same trigger pattern; once written, an allocation row is not edited — corrections are a new negative-equivalent compensating allocation row plus a new positive one, keeping the table append-only in practice even though it is not formally classified H (this is a **recommendation**, not an ERD mandate, flagged since the ERD classifies this table J without specifying immutability — noted for product-owner confirmation). 8. **Recommended Indexes:** btree on `invoice_id`; btree on `payment_id` 9. **Composite Indexes:** none beyond unique constraint (both directions are covered by the unique index and its reverse btree) 10. **Partial Indexes:** none 11. **Partitioning Strategy:** None initially; consider alongside `payment`/`invoice` if those are partitioned. 12. **Soft Delete Strategy:** None recommended (see Business Constraints) — corrections via compensating rows 13. **Audit Strategy:** `allocated_by` captures the actor; all allocation events are financially sensitive and should also flow to `audit_log` 14. **Estimated Row Growth:** High — tracks payment-to-invoice matching frequency, potentially several rows per payment/invoice in split scenarios 15. **Notes:** Given its financial-reconciliation role, this table is a strong candidate to be reclassified as append-only (H-pattern) at implementation time even though the ERD lists it as J — flagged as a recommendation for the ERD owner's future consideration, not applied unilaterally since the ERD is approved and unmodified. ## T20 — credit_note 1. **Purpose:** Formal correction instrument against a closed/issued invoice (BR-F3, EC11, SRS E22). 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** invoice_id → invoice.id; customer_id → customer.id; issued_by → app_user.id; reason_code_id → reason_code_ref.id; reference_type + reference_id (polymorphic, nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | credit_note_number | VARCHAR(40) | NOT NULL | — | Business key | | invoice_id | UUID | NOT NULL | — | FK | | customer_id | UUID | NOT NULL | — | FK | | issued_by | UUID | NOT NULL | — | FK | | reason_code_id | UUID | NOT NULL | — | FK | | reference_type | VARCHAR(40) | NULL | NULL | Polymorphic discriminator (e.g. `customer_return`) | | reference_id | UUID | NULL | NULL | Polymorphic target id | | total_amount | NUMERIC(18,4) | NOT NULL | — | — | | state | VARCHAR(16) | NOT NULL | `'DRAFT'` | `DRAFT`\|`ISSUED`\|`APPLIED`\|`VOID` | | issued_at | TIMESTAMPTZ | NULL | NULL | — | 5. **Unique Constraints:** `uq_credit_note_number (credit_note_number)` 6. **Check Constraints:** `ck_credit_note_state (state IN ('DRAFT','ISSUED','APPLIED','VOID'))`; `ck_credit_note_amount_positive (total_amount > 0)` 7. **Business Constraints:** Never edits the original invoice's rows directly; reduces the customer's balance via a `customer_ledger_entry` (T22) once `APPLIED`; applying marks the original invoice `CLOSED_CORRECTED` (application-orchestrated, cross-table). 8. **Recommended Indexes:** btree on `invoice_id`; btree on `customer_id` 9. **Composite Indexes:** `(reference_type, reference_id)` — trace back to originating return/adjustment 10. **Partial Indexes:** none 11. **Partitioning Strategy:** Optional, follows `invoice` if partitioned 12. **Soft Delete Strategy:** Supported pre-`ISSUED` only 13. **Audit Strategy:** Standard UAC; financially sensitive, all state changes also to `audit_log` 14. **Estimated Row Growth:** Low-to-moderate — proportional to return/dispute rate 15. **Notes:** — ## T21 — credit_note_line 1. **Purpose:** Line items of a credit note, mirroring the invoice lines being corrected. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** credit_note_id → credit_note.id; invoice_line_id → invoice_line.id (nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | credit_note_id | UUID | NOT NULL | — | FK | | invoice_line_id | UUID | NULL | NULL | FK | | description | VARCHAR(255) | NOT NULL | — | — | | qty | NUMERIC(18,4) | NOT NULL | — | — | | unit_price | NUMERIC(18,4) | NOT NULL | — | — | | line_total | NUMERIC(18,4) | NOT NULL | — | Application-computed | 5. **Unique Constraints:** none beyond PK 6. **Check Constraints:** `ck_credit_note_line_qty_positive (qty > 0)` 7. **Business Constraints:** none beyond referential integrity 8. **Recommended Indexes:** btree on `invoice_line_id` 9. **Composite Indexes:** none 10. **Partial Indexes:** none 11. **Partitioning Strategy:** None 12. **Soft Delete Strategy:** Supported pre-issue 13. **Audit Strategy:** Standard UAC 14. **Estimated Row Growth:** Low-to-moderate, tracks `credit_note` at a per-line multiplier 15. **Notes:** — ## F.7 — Customer Ledger (Accounts Receivable, event-sourced) ## M13 — customer_ledger (Projection — Non-Authoritative) 1. **Purpose:** One account header per customer; running balance is a read-optimized cache only. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** customer_id → customer.id (1:1) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | id | UUID | NOT NULL | `gen_random_uuid()` | Surrogate PK | | customer_id | UUID | NOT NULL | — | FK, 1:1 | | current_balance | NUMERIC(18,4) | NOT NULL | `0` | Cached, derived from `customer_ledger_entry` | | currency_id | UUID | NOT NULL | — | FK | | last_reconciled_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | last_entry_seq | BIGINT | NOT NULL | `0` | Highest `customer_ledger_entry.sequence_no` folded in | 5. **Unique Constraints:** `uq_customer_ledger_customer (customer_id)` 6. **Check Constraints:** none — like T3, this cache is intentionally allowed to be transiently stale 7. **Business Constraints:** Non-authoritative — must always equal `SUM(customer_ledger_entry.signed_amount)` for the customer as of `last_entry_seq`; written only by the reconciliation job, never by general application code (column-level GRANT restricting UPDATE to the reconciliation role, same pattern as `invoice.amount_paid`). 8. **Recommended Indexes:** none beyond the unique constraint 9. **Composite Indexes:** none 10. **Partial Indexes:** none 11. **Partitioning Strategy:** None — one row per customer 12. **Soft Delete Strategy:** Not applicable — upserted, not deleted 13. **Audit Strategy:** None beyond `last_reconciled_at` — the audit trail lives in `customer_ledger_entry` 14. **Estimated Row Growth:** Tracks `customer` count 1:1 15. **Notes:** Same "cache, not source of truth" contract as `inventory_balance_snapshot` (T3) — fully rebuildable from the ledger. ## T22 — customer_ledger_entry 1. **Purpose:** Immutable, append-only accounts-receivable ledger — the actual source of truth for customer balances. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** customer_ledger_id → customer_ledger.id; actor_user_id → app_user.id; reference_type + reference_id (polymorphic: invoice | payment | credit_note) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +AAC | — | — | — | Append-only audit columns | | customer_ledger_id | UUID | NOT NULL | — | FK | | actor_user_id | UUID | NOT NULL | — | FK | | reference_type | VARCHAR(40) | NOT NULL | — | `invoice`\|`payment`\|`credit_note` | | reference_id | UUID | NOT NULL | — | Polymorphic target id | | sequence_no | BIGINT | NOT NULL | — | Monotonic per `customer_ledger_id` | | signed_amount | NUMERIC(18,4) | NOT NULL | — | `+` debit / `-` credit | | currency_id | UUID | NOT NULL | — | FK | | occurred_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | entry_type | VARCHAR(30) | NOT NULL | — | `INVOICE_ISSUED`\|`PAYMENT_RECEIVED`\|`CREDIT_NOTE_APPLIED`\|`WRITE_OFF` | | row_hash | CHAR(64) | NOT NULL | — | SHA-256, hash-chained | | prev_hash | CHAR(64) | NULL | NULL | Prior row's hash in this customer's chain | 5. **Unique Constraints:** `uq_customer_ledger_entry_seq (customer_ledger_id, sequence_no)`; `uq_customer_ledger_entry_hash (row_hash)` 6. **Check Constraints:** `ck_customer_ledger_entry_type (entry_type IN ('INVOICE_ISSUED','PAYMENT_RECEIVED','CREDIT_NOTE_APPLIED','WRITE_OFF'))`; `ck_customer_ledger_entry_amount_nonzero (signed_amount <> 0)` 7. **Business Constraints:** Append-only, no UPDATE/DELETE; corrections are a compensating entry only; hash-chain integrity mirrors T1. 8. **Recommended Indexes:** btree on `reference_type, reference_id` 9. **Composite Indexes:** `(customer_ledger_id, sequence_no)` — the balance-projection query 10. **Partial Indexes:** none 11. **Partitioning Strategy:** Range partition by `occurred_at` (monthly), same rationale as T1. 12. **Soft Delete Strategy:** None — permissions layer revokes UPDATE/DELETE 13. **Audit Strategy:** `created_by` (AAC); this table **is** the audit trail for customer balances; hash-chain re-walk job shared with T1/T23 per PART M scalability note. 14. **Estimated Row Growth:** High — tracks invoice + payment + credit_note volume combined. 15. **Notes:** — ## F.8 — Commission ## T23 — commission_transaction 1. **Purpose:** Event-sourced commission ledger per representative — accrual, approval, payment, clawback are each their own immutable row. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** representative_id → representative.id; order_id → order.id (nullable); commission_config_id → commission_config.id; actor_user_id → app_user.id; reversal_of_id → commission_transaction.id (nullable, self-ref) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +AAC | — | — | — | Append-only audit columns | | representative_id | UUID | NOT NULL | — | FK | | order_id | UUID | NULL | NULL | FK, nullable for manual entries | | commission_config_id | UUID | NOT NULL | — | FK | | actor_user_id | UUID | NOT NULL | — | FK | | reversal_of_id | UUID | NULL | NULL | Self-ref FK, set only on CLAWED_BACK rows | | sequence_no | BIGINT | NOT NULL | — | Monotonic per `representative_id` | | signed_amount | NUMERIC(18,4) | NOT NULL | — | — | | state_event | VARCHAR(16) | NOT NULL | — | `ACCRUED`\|`APPROVED`\|`PAID`\|`CLAWED_BACK` | | rate_applied | NUMERIC(7,4) | NOT NULL | — | Snapshot of the rate used | | currency_id | UUID | NOT NULL | — | FK | | occurred_at | TIMESTAMPTZ | NOT NULL | `now()` | — | 5. **Unique Constraints:** `uq_commission_transaction_seq (representative_id, sequence_no)` 6. **Check Constraints:** `ck_commission_transaction_state (state_event IN ('ACCRUED','APPROVED','PAID','CLAWED_BACK'))`; `ck_commission_transaction_amount_nonzero (signed_amount <> 0)`; `ck_commission_transaction_clawback_negative (state_event <> 'CLAWED_BACK' OR signed_amount < 0)` 7. **Business Constraints:** Append-only; a `CLAWED_BACK` row is always a negative compensating entry referencing the original via `reversal_of_id` — enforced via `ck_commission_transaction_clawback_negative` plus a `BEFORE INSERT` trigger requiring `reversal_of_id IS NOT NULL` when `state_event = 'CLAWED_BACK'`; payable commission = `SUM(signed_amount)` projection, same ledger pattern as T1/T22. 8. **Recommended Indexes:** btree on `order_id` 9. **Composite Indexes:** `(representative_id, sequence_no)` — the balance-projection query 10. **Partial Indexes:** none 11. **Partitioning Strategy:** Range partition by `occurred_at` (monthly); consider list-partitioning by `representative_id` at very large rep-count scale per ERD PART L. 12. **Soft Delete Strategy:** None — append-only 13. **Audit Strategy:** `created_by`/`actor_user_id` (AAC); shares the reconciliation service with T1/T22 per PART M. 14. **Estimated Row Growth:** High — tracks order volume × lifecycle events per commission (accrue, approve, pay, occasional clawback) 15. **Notes:** — ## F.9 — Notifications & Bot Messaging ## T24 — notification 1. **Purpose:** Outbound/internal notification record (SRS E32). 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** notification_type_id → notification_type_ref.id; recipient_user_id → app_user.id (nullable); recipient_representative_id → representative.id (nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | notification_type_id | UUID | NOT NULL | — | FK | | recipient_user_id | UUID | NULL | NULL | FK | | recipient_representative_id | UUID | NULL | NULL | FK | | channel | VARCHAR(16) | NOT NULL | — | `IN_APP`\|`EMAIL`\|`BOT_PUSH`\|`SMS` | | payload | JSONB | NOT NULL | — | Rendered message content and template variables | | state | VARCHAR(16) | NOT NULL | `'QUEUED'` | `QUEUED`\|`SENT`\|`FAILED`\|`ACKNOWLEDGED` | | queued_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | sent_at | TIMESTAMPTZ | NULL | NULL | — | | acknowledged_at | TIMESTAMPTZ | NULL | NULL | — | | retry_count | SMALLINT | NOT NULL | `0` | — | 5. **Unique Constraints:** none beyond PK 6. **Check Constraints:** `ck_notification_channel (channel IN ('IN_APP','EMAIL','BOT_PUSH','SMS'))`; `ck_notification_state (state IN ('QUEUED','SENT','FAILED','ACKNOWLEDGED'))`; `ck_notification_retry_nonneg (retry_count >= 0)` 7. **Business Constraints:** Idempotent delivery via a dedupe key on `(payload, recipient, notification_type_id)` within a rolling window (application-layer, since JSONB equality-based uniqueness at the DB level is impractical for this purpose); `FAILED` triggers a retry per policy up to a configured max (`system_config`). 8. **Recommended Indexes:** btree on `recipient_user_id`; btree on `recipient_representative_id` 9. **Composite Indexes:** none beyond above 10. **Partial Indexes:** `idx_notification_queued ON notification (state, queued_at) WHERE state = 'QUEUED'` — the delivery worker's polling query 11. **Partitioning Strategy:** Range partition by `queued_at` (monthly) — high-cardinality, low-per-row value table per PART M. 12. **Soft Delete Strategy:** Supported, though retention policy (see Performance Guidelines) is the primary volume-management lever, not soft-delete 13. **Audit Strategy:** Standard UAC; state transitions mirrored to `notification_history` (H8) 14. **Estimated Row Growth:** Very high — one row per notifiable event per recipient; likely the second-highest-volume table set after the ledgers. 15. **Notes:** — ## H5 (ERD id) — bot_message_log 1. **Purpose:** Immutable log of bot conversation traffic for audit (BR-B3, SRS E31). 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** bot_session_id → bot_session.id; bot_platform_id → bot_platform_ref.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +AAC | — | — | — | Append-only audit columns | | bot_session_id | UUID | NOT NULL | — | FK | | bot_platform_id | UUID | NOT NULL | — | FK | | direction | VARCHAR(10) | NOT NULL | — | `INBOUND`\|`OUTBOUND` | | raw_payload | JSONB | NOT NULL | — | Full platform message payload | | command_parsed | VARCHAR(120) | NULL | NULL | Resolved command/intent, if any | | occurred_at | TIMESTAMPTZ | NOT NULL | `now()` | — | 5. **Unique Constraints:** none — chronological append 6. **Check Constraints:** `ck_bot_message_log_direction (direction IN ('INBOUND','OUTBOUND'))` 7. **Business Constraints:** Append-only; never edited or deleted, including after session revocation. 8. **Recommended Indexes:** btree on `bot_session_id` 9. **Composite Indexes:** `(bot_session_id, occurred_at)` 10. **Partial Indexes:** none 11. **Partitioning Strategy:** Range partition by `occurred_at` (monthly) — highest-cardinality, lowest-value table candidate per PART M; shortest retention policy recommended. 12. **Soft Delete Strategy:** None 13. **Audit Strategy:** Self-auditing 14. **Estimated Row Growth:** Very high — every inbound/outbound bot message, potentially the single highest-volume table in the schema at scale. 15. **Notes:** — ## F.10 — Audit & Approval ## H6 (ERD id) — audit_log 1. **Purpose:** System-wide immutable audit trail covering every state-changing action (SRS E29, BR-A3). 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** actor_user_id → app_user.id; entity_type + entity_id (polymorphic) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +AAC | — | — | — | Append-only audit columns | | actor_user_id | UUID | NULL | NULL | FK, nullable for system-generated entries | | entity_type | VARCHAR(60) | NOT NULL | — | Polymorphic discriminator, e.g. `order`, `product` | | entity_id | UUID | NOT NULL | — | Polymorphic target id | | action | VARCHAR(20) | NOT NULL | — | `CREATE`\|`UPDATE`\|`DELETE`\|`APPROVE`\|`REJECT`\|`OVERRIDE`\|... | | before_json | JSONB | NULL | NULL | Prior state (redacted per Global Standards' sensitive-field policy) | | after_json | JSONB | NULL | NULL | New state (same redaction) | | occurred_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | ip_address | INET | NULL | NULL | Actor's source IP, if known | 5. **Unique Constraints:** none — chronological append 6. **Check Constraints:** `ck_audit_log_action (action IN ('CREATE','UPDATE','DELETE','APPROVE','REJECT','OVERRIDE'))` — extend the list at migration time as concrete actions are enumerated by the application 7. **Business Constraints:** Append-only; complements rather than duplicates entity-specific `*_history` tables — this table captures the raw actor/before/after for every mutating action system-wide; sensitive columns (e.g. `app_user.password_hash`, `representative.national_id`) must be redacted from `before_json`/`after_json` by the application serializer before insert — a database-level guarantee (e.g. a trigger stripping known key names) is recommended as defense-in-depth, flagged for the security owner. 8. **Recommended Indexes:** btree on `actor_user_id` 9. **Composite Indexes:** `(entity_type, entity_id, occurred_at)` — the dominant "show me this record's history" query 10. **Partial Indexes:** none 11. **Partitioning Strategy:** Range partition by `occurred_at` (monthly) — very high volume, system-wide write target. 12. **Soft Delete Strategy:** None 13. **Audit Strategy:** Self-auditing; this table is itself the org's primary audit mechanism 14. **Estimated Row Growth:** Very high — one or more rows per mutating action across the entire system. 15. **Notes:** The polymorphic `(entity_type, entity_id)` pattern here has no DB-level FK enforcement — see Global Standards → Polymorphic Reference Policy for the accepted trade-off and mitigation (composite index + optional per-type validation trigger). ## T25 — approval_request 1. **Purpose:** A live approval task raised against any approvable entity. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** entity_type + entity_id (polymorphic); requested_by → app_user.id; assigned_approver_id → app_user.id (nullable); resolved_by → app_user.id (nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | entity_type | VARCHAR(60) | NOT NULL | — | Polymorphic discriminator | | entity_id | UUID | NOT NULL | — | Polymorphic target id | | requested_by | UUID | NOT NULL | — | FK | | assigned_approver_id | UUID | NULL | NULL | FK | | resolved_by | UUID | NULL | NULL | FK | | status | VARCHAR(16) | NOT NULL | `'PENDING'` | `PENDING`\|`APPROVED`\|`REJECTED`\|`CANCELLED` | | reason_text | TEXT | NULL | NULL | — | | requested_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | resolved_at | TIMESTAMPTZ | NULL | NULL | — | | threshold_marker | BOOLEAN | NOT NULL | `false` | Flags threshold-triggered (vs. policy-triggered) approvals | 5. **Unique Constraints:** none beyond PK (uniqueness of "one open request" is enforced via partial index, see below) 6. **Check Constraints:** `ck_approval_request_status (status IN ('PENDING','APPROVED','REJECTED','CANCELLED'))` 7. **Business Constraints:** Exactly one `PENDING` `approval_request` per `(entity_type, entity_id)` at a time — enforced via partial unique index; approver ≠ requester — enforced via `ck_approval_request_separation_of_duties (assigned_approver_id IS DISTINCT FROM requested_by)`. 8. **Recommended Indexes:** btree on `assigned_approver_id` 9. **Composite Indexes:** `(entity_type, entity_id)` 10. **Partial Indexes:** `uq_approval_request_one_pending ON approval_request (entity_type, entity_id) WHERE status = 'PENDING'`; `idx_approval_request_pending_queue ON approval_request (assigned_approver_id) WHERE status = 'PENDING'` 11. **Partitioning Strategy:** None — moderate volume, well-served by the partial indexes above 12. **Soft Delete Strategy:** Supported for `CANCELLED`/erroneous requests 13. **Audit Strategy:** Standard UAC; every status transition mirrored to `approval_history` (H7) 14. **Estimated Row Growth:** Moderate — proportional to threshold-crossing events across orders, adjustments, transfers, credit notes, returns 15. **Notes:** — ## H7 (ERD id) — approval_history 1. **Purpose:** Immutable log of every status transition on an approval_request. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** approval_request_id → approval_request.id; actor_user_id → app_user.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +AAC | — | — | — | Append-only audit columns | | approval_request_id | UUID | NOT NULL | — | FK | | actor_user_id | UUID | NOT NULL | — | FK | | from_status | VARCHAR(16) | NOT NULL | — | — | | to_status | VARCHAR(16) | NOT NULL | — | — | | event_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | note | TEXT | NULL | NULL | — | 5. **Unique Constraints:** none — chronological append 6. **Check Constraints:** `ck_approval_history_statuses (from_status IN (...) AND to_status IN (...ApprovalStatus...))` 7. **Business Constraints:** Append-only 8. **Recommended Indexes:** btree on `approval_request_id` 9. **Composite Indexes:** `(approval_request_id, event_at)` 10. **Partial Indexes:** none 11. **Partitioning Strategy:** Range partition by `event_at` (quarterly) — lower volume than the ledger tables 12. **Soft Delete Strategy:** None 13. **Audit Strategy:** Self-auditing 14. **Estimated Row Growth:** Moderate — tracks `approval_request` at 2-3 rows each 15. **Notes:** — EOF grep -c "^## " /home/claude/calculator_extracted/calculator/07_DATABASE_SPEC.md
-Output
+
+#
+# F.5 — Fulfillment / Shipping
+#
+# T14 — shipment
+1. **Purpose:** Physical shipment tied to an order (SRS E17, BRF §10).
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** order_id → order.id; source_warehouse_id → warehouse.id; carrier_id → carrier.id; shipped_by → app_user.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| shipment_number | VARCHAR(40) | NOT NULL | — | Business key |
+| order_id | UUID | NOT NULL | — | FK |
+| source_warehouse_id | UUID | NOT NULL | — | FK |
+| carrier_id | UUID | NOT NULL | — | FK |
+| shipped_by | UUID | NULL | NULL | FK |
+| state | VARCHAR(16) | NOT NULL | `'CREATED'` | ShipmentState enum |
+| shipped_at | TIMESTAMPTZ | NULL | NULL | — |
+| delivered_at | TIMESTAMPTZ | NULL | NULL | — |
+| shipping_cost | NUMERIC(18,4) | NOT NULL | `0` | — |
+| shipping_currency_id | UUID | NOT NULL | — | FK |
+| shipping_payer | VARCHAR(16) | NOT NULL | — | `CUSTOMER`\|`REPRESENTATIVE`\|`FACTORY` |
+| tracking_number | VARCHAR(80) | NULL | NULL | Carrier tracking reference |
+5. **Unique Constraints:** `uq_shipment_number (shipment_number)`
+6. **Check Constraints:** `ck_shipment_state (state IN ('CREATED','PICKING','PACKED','DISPATCHED','IN_TRANSIT','DELIVERED','FAILED'))`; `ck_shipment_payer (shipping_payer IN ('CUSTOMER','REPRESENTATIVE','FACTORY'))`; `ck_shipment_cost_nonneg (shipping_cost >= 0)`
+7. **Business Constraints:** LOCAL/REP_LOCAL fulfillment posts a `SALE_OUT` `inventory_transaction`; DIRECT/FACTORY_DIRECT fulfillment posts a `FACTORY_DIRECT_SHIPMENT` movement instead — orchestrated by the application at the `DISPATCHED` transition; reaching `DELIVERED` advances the parent `order.state` toward `SHIPPED`/`COMPLETED` per the order state machine (application-orchestrated, cross-table).
+8. **Recommended Indexes:** btree on `order_id`; btree on `carrier_id`; btree on `tracking_number`
+9. **Composite Indexes:** none beyond above
+10. **Partial Indexes:** `idx_shipment_active ON shipment (state) WHERE state NOT IN ('DELIVERED','FAILED')` — active-shipment dashboard
+11. **Partitioning Strategy:** Optional — range partition by `shipped_at` (yearly) if volume justifies it; lower priority than the ledger tables.
+12. **Soft Delete Strategy:** Supported, though a failed shipment should use `state='FAILED'` rather than deletion
+13. **Audit Strategy:** Standard UAC; state transitions mirrored to `shipment_status_history` (T16)
+14. **Estimated Row Growth:** High — roughly tracks `order` volume (one or more shipments per order)
+15. **Notes:** —
+#
+# T15 — shipment_line
+1. **Purpose:** Lines in a shipment matching order lines.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** shipment_id → shipment.id; order_line_id → order_line.id; product_id → product.id; lot_id → product_lot.id (nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| shipment_id | UUID | NOT NULL | — | FK |
+| order_line_id | UUID | NOT NULL | — | FK |
+| product_id | UUID | NOT NULL | — | FK |
+| lot_id | UUID | NULL | NULL | FK |
+| qty_shipped | NUMERIC(18,4) | NOT NULL | — | — |
+| unit_cost_at_ship | NUMERIC(18,6) | NOT NULL | — | Snapshot for profit-margin calculation |
+5. **Unique Constraints:** `uq_shipment_line (shipment_id, order_line_id)`
+6. **Check Constraints:** `ck_shipment_line_qty_positive (qty_shipped > 0)`
+7. **Business Constraints:** Σ(`qty_shipped` across all shipments for an `order_line`) must not exceed `order_line.qty_ordered` — validated at the application layer when creating a shipment_line, then reflected back into `order_line.qty_shipped`.
+8. **Recommended Indexes:** btree on `order_line_id`; btree on `product_id`
+9. **Composite Indexes:** none beyond unique constraint
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** None directly; follows `shipment`'s partitioning if adopted.
+12. **Soft Delete Strategy:** Supported
+13. **Audit Strategy:** Standard UAC
+14. **Estimated Row Growth:** High — tracks `shipment` volume at a per-line multiplier
+15. **Notes:** —
+#
+# H7 (ERD: T16) — shipment_status_history
+1. **Purpose:** Immutable shipment state log, including geo-tracking for factory-direct delivery.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** shipment_id → shipment.id; actor_user_id → app_user.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +AAC | — | — | — | Append-only audit columns |
+| shipment_id | UUID | NOT NULL | — | FK |
+| actor_user_id | UUID | NULL | NULL | FK, nullable for automated tracking pings |
+| from_state | VARCHAR(16) | NULL | NULL | NULL only on the inaugural CREATE row |
+| to_state | VARCHAR(16) | NOT NULL | — | New ShipmentState |
+| event_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| lat | NUMERIC(9,6) | NULL | NULL | Geo-tracking latitude |
+| lng | NUMERIC(9,6) | NULL | NULL | Geo-tracking longitude |
+| note | TEXT | NULL | NULL | Mandatory when `to_state = 'FAILED'` (see Business Constraints) |
+5. **Unique Constraints:** none — chronological append
+6. **Check Constraints:** `ck_shipment_status_history_states (to_state IN ('CREATED','PICKING','PACKED','DISPATCHED','IN_TRANSIT','DELIVERED','FAILED'))`; `ck_shipment_status_history_lat (lat IS NULL OR lat BETWEEN -90 AND 90)`; `ck_shipment_status_history_lng (lng IS NULL OR lng BETWEEN -180 AND 180)`; `ck_shipment_status_history_failed_note (to_state <> 'FAILED' OR note IS NOT NULL)`
+7. **Business Constraints:** Append-only; exactly one `CREATE`-equivalent row (`from_state IS NULL`) per shipment; `FAILED` triggers an exception workflow (application-orchestrated, e.g. auto-creating an `approval_request` or `notification`).
+8. **Recommended Indexes:** btree on `shipment_id`
+9. **Composite Indexes:** `(shipment_id, event_at)`
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** Range partition by `event_at` (monthly) — tracks shipment volume.
+12. **Soft Delete Strategy:** None
+13. **Audit Strategy:** Self-auditing
+14. **Estimated Row Growth:** High — several rows per shipment (state transitions plus geo-pings for Scenario B)
+15. **Notes:** —
+#
+# F.6 — Finance / Invoicing
+#
+# T17 — invoice
+1. **Purpose:** Invoice header generated from one or more shipped/fulfilled orders (BR-F1, SRS E19).
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** customer_id → customer.id; currency_id → currency.id; created_by → app_user.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| invoice_number | VARCHAR(40) | NOT NULL | — | Business key |
+| customer_id | UUID | NOT NULL | — | FK |
+| currency_id | UUID | NOT NULL | — | FK |
+| state | VARCHAR(20) | NOT NULL | `'DRAFT'` | InvoiceState enum |
+| subtotal | NUMERIC(18,4) | NOT NULL | `0` | — |
+| tax_total | NUMERIC(18,4) | NOT NULL | `0` | — |
+| discount_total | NUMERIC(18,4) | NOT NULL | `0` | — |
+| grand_total | NUMERIC(18,4) | NOT NULL | `0` | — |
+| amount_paid | NUMERIC(18,4) | NOT NULL | `0` | Non-authoritative cache, reconciled from `payment_allocation` |
+| balance_due | NUMERIC(18,4) | NOT NULL | `0` | `grand_total - amount_paid`, non-authoritative cache |
+| issued_at | TIMESTAMPTZ | NULL | NULL | — |
+| due_at | TIMESTAMPTZ | NULL | NULL | — |
+| closed_at | TIMESTAMPTZ | NULL | NULL | — |
+5. **Unique Constraints:** `uq_invoice_number (invoice_number)`
+6. **Check Constraints:** `ck_invoice_state (state IN ('DRAFT','ISSUED','PARTIALLY_PAID','PAID','CLOSED_CORRECTED','VOID'))`; `ck_invoice_totals_nonneg (subtotal >= 0 AND tax_total >= 0 AND discount_total >= 0 AND grand_total >= 0)`
+7. **Business Constraints:** May aggregate lines from multiple orders, resolved via `invoice_order` (J1); once `state IN ('PAID','CLOSED_CORRECTED')` the header and its lines are immutable — enforced via `BEFORE UPDATE` trigger; corrections are issued only via `credit_note` (T20), never a direct edit; `amount_paid`/`balance_due` are written **only** by the reconciliation job that sums `payment_allocation`, never by general application code — enforced by column-level GRANT restricting `UPDATE (amount_paid, balance_due)` to the reconciliation service role.
+8. **Recommended Indexes:** btree on `customer_id`
+9. **Composite Indexes:** `(customer_id, state)` — AR dashboard
+10. **Partial Indexes:** `idx_invoice_ar_aging ON invoice (due_at) WHERE state IN ('ISSUED','PARTIALLY_PAID')` — the AR-aging report's hot path
+11. **Partitioning Strategy:** Optional — range partition by `issued_at` (yearly) for archival once volume justifies it.
+12. **Soft Delete Strategy:** Supported pre-`ISSUED` only (a `DRAFT` invoice can be withdrawn); post-`ISSUED` invoices are never deleted, only corrected via `credit_note` or transitioned to `VOID`.
+13. **Audit Strategy:** Standard UAC; state transitions mirrored to `invoice_history` (H4); financial-sensitivity means all mutations are also visible in `audit_log`.
+14. **Estimated Row Growth:** High — tracks order-to-invoice conversion rate, likely close to 1:1 with completed orders (allowing for consolidation via `invoice_order`).
+15. **Notes:** —
+#
+# T18 — invoice_line
+1. **Purpose:** Line items of an invoice; price frozen at issue time (BR-P3, SRS E20).
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** invoice_id → invoice.id; order_line_id → order_line.id (nullable); product_id → product.id (nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| invoice_id | UUID | NOT NULL | — | FK |
+| order_line_id | UUID | NULL | NULL | FK, nullable for freight/manual lines |
+| product_id | UUID | NULL | NULL | FK, nullable for non-product lines |
+| description | VARCHAR(255) | NOT NULL | — | Line description |
+| qty | NUMERIC(18,4) | NOT NULL | — | — |
+| unit_price | NUMERIC(18,4) | NOT NULL | — | Frozen at issue |
+| tax_rate | NUMERIC(7,4) | NOT NULL | `0` | Percentage |
+| tax_amount | NUMERIC(18,4) | NOT NULL | `0` | — |
+| discount_value | NUMERIC(18,4) | NOT NULL | `0` | — |
+| line_total | NUMERIC(18,4) | NOT NULL | — | Application-computed |
+5. **Unique Constraints:** `uq_invoice_line_order_line (invoice_id, order_line_id)` where `order_line_id IS NOT NULL`
+6. **Check Constraints:** `ck_invoice_line_qty_positive (qty > 0)`; `ck_invoice_line_unit_price_nonneg (unit_price >= 0)`; `ck_invoice_line_tax_rate_range (tax_rate BETWEEN 0 AND 100)`
+7. **Business Constraints:** `unit_price` copied from `order_line.unit_price` at issue time, never re-resolved against `price_history`; immutable once the parent invoice's `state <> 'DRAFT'` — enforced via `BEFORE UPDATE` trigger checking parent state.
+8. **Recommended Indexes:** btree on `order_line_id`; btree on `product_id`
+9. **Composite Indexes:** none beyond partial unique
+10. **Partial Indexes:** see Unique Constraints
+11. **Partitioning Strategy:** Follows `invoice`'s partitioning if adopted
+12. **Soft Delete Strategy:** Supported pre-issue only
+13. **Audit Strategy:** Standard UAC
+14. **Estimated Row Growth:** High — tracks `invoice` volume at a per-line multiplier
+15. **Notes:** —
+#
+# H4 (ERD id) — invoice_history
+1. **Purpose:** Immutable state-change log for invoices.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** invoice_id → invoice.id; actor_user_id → app_user.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +AAC | — | — | — | Append-only audit columns |
+| invoice_id | UUID | NOT NULL | — | FK |
+| actor_user_id | UUID | NOT NULL | — | FK |
+| from_state | VARCHAR(20) | NOT NULL | — | — |
+| to_state | VARCHAR(20) | NOT NULL | — | — |
+| event_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| note | TEXT | NULL | NULL | — |
+5. **Unique Constraints:** none — chronological append
+6. **Check Constraints:** `ck_invoice_history_states (from_state IN (...InvoiceState...) AND to_state IN (...InvoiceState...))`
+7. **Business Constraints:** Append-only
+8. **Recommended Indexes:** btree on `invoice_id`
+9. **Composite Indexes:** `(invoice_id, event_at)`
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** Range partition by `event_at` (monthly), tracks `invoice` volume
+12. **Soft Delete Strategy:** None
+13. **Audit Strategy:** Self-auditing
+14. **Estimated Row Growth:** High
+15. **Notes:** —
+#
+# J1 — invoice_order (Junction)
+1. **Purpose:** Resolves N:N between invoice and order (split/consolidated invoicing).
+2. **Primary Key:** composite (invoice_id, order_id)
+3. **Foreign Keys:** invoice_id → invoice.id; order_id → order.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| invoice_id | UUID | NOT NULL | — | PK part / FK |
+| order_id | UUID | NOT NULL | — | PK part / FK |
+| linked_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+5. **Unique Constraints:** PK itself
+6. **Check Constraints:** none
+7. **Business Constraints:** none beyond referential integrity
+8. **Recommended Indexes:** btree on `order_id`
+9. **Composite Indexes:** PK doubles as forward-lookup
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** None
+12. **Soft Delete Strategy:** None — pure resolving join; unlinking (rare, correction-only) is a hard DELETE mirrored to `audit_log`
+13. **Audit Strategy:** Link/unlink events to `audit_log`
+14. **Estimated Row Growth:** Tracks `invoice` × orders-per-invoice, typically close to 1:1
+15. **Notes:** —
+#
+# T19 — payment
+1. **Purpose:** Money received from a customer, recorded independently of any single invoice (SRS E21).
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** customer_id → customer.id; currency_id → currency.id; received_by → app_user.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +AAC | — | — | — | Append-only audit columns (payment is itself an event-sourced ledger — see Business Constraints) |
+| payment_number | VARCHAR(40) | NOT NULL | — | Business key |
+| customer_id | UUID | NOT NULL | — | FK |
+| currency_id | UUID | NOT NULL | — | FK |
+| received_by | UUID | NOT NULL | — | FK |
+| amount | NUMERIC(18,4) | NOT NULL | — | — |
+| method | VARCHAR(20) | NOT NULL | — | `CASH`\|`BANK_TRANSFER`\|`CHEQUE`\|`CARD`\|`MOBILE_WALLET` |
+| reference | VARCHAR(120) | NULL | NULL | Bank ref / cheque no. |
+| received_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| unallocated_amount | NUMERIC(18,4) | NOT NULL | — | Non-authoritative cache, reconciled from `payment_allocation` |
+5. **Unique Constraints:** `uq_payment_number (payment_number)`
+6. **Check Constraints:** `ck_payment_method (method IN ('CASH','BANK_TRANSFER','CHEQUE','CARD','MOBILE_WALLET'))`; `ck_payment_amount_positive (amount > 0)`; `ck_payment_unallocated_range (unallocated_amount BETWEEN 0 AND amount)`
+7. **Business Constraints:** Immutable once posted — no general UPDATE grant (same append-only posture as `inventory_transaction`); corrections via a compensating reversal payment (a new row with negative-equivalent effect handled at the application/ledger level — see Global Standards for how negative payments are represented), never an edit; `unallocated_amount` is written **only** by the reconciliation job that sums `payment_allocation`, via column-level GRANT, identical pattern to `invoice.amount_paid`.
+8. **Recommended Indexes:** btree on `customer_id`
+9. **Composite Indexes:** none beyond above
+10. **Partial Indexes:** `idx_payment_unallocated ON payment (customer_id) WHERE unallocated_amount > 0` — "apply this payment" workflow
+11. **Partitioning Strategy:** Optional — range partition by `received_at` (yearly) for archival.
+12. **Soft Delete Strategy:** None — append-only per Business Constraints; a mis-posted payment is corrected via a compensating reversal payment, not deletion.
+13. **Audit Strategy:** `created_by` (AAC) is the posting actor; column-level GRANT permits only the reconciliation role to update `unallocated_amount`.
+14. **Estimated Row Growth:** High — tracks customer payment frequency, likely proportional to invoice volume.
+15. **Notes:** Because this table is append-only (per ERD's explicit "immutable once posted"), it uses **AAC**, not the full UAC — this is a deliberate deviation from "every T-classified table gets UAC," documented explicitly here since T19 is one of the ledger-pattern transactional tables (see ERD PART H) rather than an ordinary mutable transactional table.
+#
+# J2 — payment_allocation (Junction)
+1. **Purpose:** Resolves N:N between payment and invoice (partial/split payments).
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** payment_id → payment.id; invoice_id → invoice.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| id | UUID | NOT NULL | `gen_random_uuid()` | Surrogate PK (this junction carries enough business-meaningful data to warrant a surrogate key rather than a composite PK) |
+| payment_id | UUID | NOT NULL | — | FK |
+| invoice_id | UUID | NOT NULL | — | FK |
+| allocated_amount | NUMERIC(18,4) | NOT NULL | — | — |
+| allocated_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| allocated_by | UUID | NOT NULL | — | FK → app_user.id |
+5. **Unique Constraints:** `uq_payment_allocation (payment_id, invoice_id)`
+6. **Check Constraints:** `ck_payment_allocation_amount_positive (allocated_amount > 0)`
+7. **Business Constraints:** Σ(`allocated_amount`) per `payment_id` ≤ `payment.amount` — enforced via `BEFORE INSERT/UPDATE` trigger (cross-row aggregate, not expressible as CHECK); Σ(`allocated_amount`) per `invoice_id` ≤ `invoice.grand_total` — same trigger pattern; once written, an allocation row is not edited — corrections are a new negative-equivalent compensating allocation row plus a new positive one, keeping the table append-only in practice even though it is not formally classified H (this is a **recommendation**, not an ERD mandate, flagged since the ERD classifies this table J without specifying immutability — noted for product-owner confirmation).
+8. **Recommended Indexes:** btree on `invoice_id`; btree on `payment_id`
+9. **Composite Indexes:** none beyond unique constraint (both directions are covered by the unique index and its reverse btree)
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** None initially; consider alongside `payment`/`invoice` if those are partitioned.
+12. **Soft Delete Strategy:** None recommended (see Business Constraints) — corrections via compensating rows
+13. **Audit Strategy:** `allocated_by` captures the actor; all allocation events are financially sensitive and should also flow to `audit_log`
+14. **Estimated Row Growth:** High — tracks payment-to-invoice matching frequency, potentially several rows per payment/invoice in split scenarios
+15. **Notes:** Given its financial-reconciliation role, this table is a strong candidate to be reclassified as append-only (H-pattern) at implementation time even though the ERD lists it as J — flagged as a recommendation for the ERD owner's future consideration, not applied unilaterally since the ERD is approved and unmodified.
+#
+# T20 — credit_note
+1. **Purpose:** Formal correction instrument against a closed/issued invoice (BR-F3, EC11, SRS E22).
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** invoice_id → invoice.id; customer_id → customer.id; issued_by → app_user.id; reason_code_id → reason_code_ref.id; reference_type + reference_id (polymorphic, nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| credit_note_number | VARCHAR(40) | NOT NULL | — | Business key |
+| invoice_id | UUID | NOT NULL | — | FK |
+| customer_id | UUID | NOT NULL | — | FK |
+| issued_by | UUID | NOT NULL | — | FK |
+| reason_code_id | UUID | NOT NULL | — | FK |
+| reference_type | VARCHAR(40) | NULL | NULL | Polymorphic discriminator (e.g. `customer_return`) |
+| reference_id | UUID | NULL | NULL | Polymorphic target id |
+| total_amount | NUMERIC(18,4) | NOT NULL | — | — |
+| state | VARCHAR(16) | NOT NULL | `'DRAFT'` | `DRAFT`\|`ISSUED`\|`APPLIED`\|`VOID` |
+| issued_at | TIMESTAMPTZ | NULL | NULL | — |
+5. **Unique Constraints:** `uq_credit_note_number (credit_note_number)`
+6. **Check Constraints:** `ck_credit_note_state (state IN ('DRAFT','ISSUED','APPLIED','VOID'))`; `ck_credit_note_amount_positive (total_amount > 0)`
+7. **Business Constraints:** Never edits the original invoice's rows directly; reduces the customer's balance via a `customer_ledger_entry` (T22) once `APPLIED`; applying marks the original invoice `CLOSED_CORRECTED` (application-orchestrated, cross-table).
+8. **Recommended Indexes:** btree on `invoice_id`; btree on `customer_id`
+9. **Composite Indexes:** `(reference_type, reference_id)` — trace back to originating return/adjustment
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** Optional, follows `invoice` if partitioned
+12. **Soft Delete Strategy:** Supported pre-`ISSUED` only
+13. **Audit Strategy:** Standard UAC; financially sensitive, all state changes also to `audit_log`
+14. **Estimated Row Growth:** Low-to-moderate — proportional to return/dispute rate
+15. **Notes:** —
+#
+# T21 — credit_note_line
+1. **Purpose:** Line items of a credit note, mirroring the invoice lines being corrected.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** credit_note_id → credit_note.id; invoice_line_id → invoice_line.id (nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| credit_note_id | UUID | NOT NULL | — | FK |
+| invoice_line_id | UUID | NULL | NULL | FK |
+| description | VARCHAR(255) | NOT NULL | — | — |
+| qty | NUMERIC(18,4) | NOT NULL | — | — |
+| unit_price | NUMERIC(18,4) | NOT NULL | — | — |
+| line_total | NUMERIC(18,4) | NOT NULL | — | Application-computed |
+5. **Unique Constraints:** none beyond PK
+6. **Check Constraints:** `ck_credit_note_line_qty_positive (qty > 0)`
+7. **Business Constraints:** none beyond referential integrity
+8. **Recommended Indexes:** btree on `invoice_line_id`
+9. **Composite Indexes:** none
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** None
+12. **Soft Delete Strategy:** Supported pre-issue
+13. **Audit Strategy:** Standard UAC
+14. **Estimated Row Growth:** Low-to-moderate, tracks `credit_note` at a per-line multiplier
+15. **Notes:** —
+#
+# F.7 — Customer Ledger (Accounts Receivable, event-sourced)
+#
+# M13 — customer_ledger (Projection — Non-Authoritative)
+1. **Purpose:** One account header per customer; running balance is a read-optimized cache only.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** customer_id → customer.id (1:1)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| id | UUID | NOT NULL | `gen_random_uuid()` | Surrogate PK |
+| customer_id | UUID | NOT NULL | — | FK, 1:1 |
+| current_balance | NUMERIC(18,4) | NOT NULL | `0` | Cached, derived from `customer_ledger_entry` |
+| currency_id | UUID | NOT NULL | — | FK |
+| last_reconciled_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| last_entry_seq | BIGINT | NOT NULL | `0` | Highest `customer_ledger_entry.sequence_no` folded in |
+5. **Unique Constraints:** `uq_customer_ledger_customer (customer_id)`
+6. **Check Constraints:** none — like T3, this cache is intentionally allowed to be transiently stale
+7. **Business Constraints:** Non-authoritative — must always equal `SUM(customer_ledger_entry.signed_amount)` for the customer as of `last_entry_seq`; written only by the reconciliation job, never by general application code (column-level GRANT restricting UPDATE to the reconciliation role, same pattern as `invoice.amount_paid`).
+8. **Recommended Indexes:** none beyond the unique constraint
+9. **Composite Indexes:** none
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** None — one row per customer
+12. **Soft Delete Strategy:** Not applicable — upserted, not deleted
+13. **Audit Strategy:** None beyond `last_reconciled_at` — the audit trail lives in `customer_ledger_entry`
+14. **Estimated Row Growth:** Tracks `customer` count 1:1
+15. **Notes:** Same "cache, not source of truth" contract as `inventory_balance_snapshot` (T3) — fully rebuildable from the ledger.
+#
+# T22 — customer_ledger_entry
+1. **Purpose:** Immutable, append-only accounts-receivable ledger — the actual source of truth for customer balances.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** customer_ledger_id → customer_ledger.id; actor_user_id → app_user.id; reference_type + reference_id (polymorphic: invoice | payment | credit_note)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +AAC | — | — | — | Append-only audit columns |
+| customer_ledger_id | UUID | NOT NULL | — | FK |
+| actor_user_id | UUID | NOT NULL | — | FK |
+| reference_type | VARCHAR(40) | NOT NULL | — | `invoice`\|`payment`\|`credit_note` |
+| reference_id | UUID | NOT NULL | — | Polymorphic target id |
+| sequence_no | BIGINT | NOT NULL | — | Monotonic per `customer_ledger_id` |
+| signed_amount | NUMERIC(18,4) | NOT NULL | — | `+` debit / `-` credit |
+| currency_id | UUID | NOT NULL | — | FK |
+| occurred_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| entry_type | VARCHAR(30) | NOT NULL | — | `INVOICE_ISSUED`\|`PAYMENT_RECEIVED`\|`CREDIT_NOTE_APPLIED`\|`WRITE_OFF` |
+| row_hash | CHAR(64) | NOT NULL | — | SHA-256, hash-chained |
+| prev_hash | CHAR(64) | NULL | NULL | Prior row's hash in this customer's chain |
+5. **Unique Constraints:** `uq_customer_ledger_entry_seq (customer_ledger_id, sequence_no)`; `uq_customer_ledger_entry_hash (row_hash)`
+6. **Check Constraints:** `ck_customer_ledger_entry_type (entry_type IN ('INVOICE_ISSUED','PAYMENT_RECEIVED','CREDIT_NOTE_APPLIED','WRITE_OFF'))`; `ck_customer_ledger_entry_amount_nonzero (signed_amount <> 0)`
+7. **Business Constraints:** Append-only, no UPDATE/DELETE; corrections are a compensating entry only; hash-chain integrity mirrors T1.
+8. **Recommended Indexes:** btree on `reference_type, reference_id`
+9. **Composite Indexes:** `(customer_ledger_id, sequence_no)` — the balance-projection query
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** Range partition by `occurred_at` (monthly), same rationale as T1.
+12. **Soft Delete Strategy:** None — permissions layer revokes UPDATE/DELETE
+13. **Audit Strategy:** `created_by` (AAC); this table **is** the audit trail for customer balances; hash-chain re-walk job shared with T1/T23 per PART M scalability note.
+14. **Estimated Row Growth:** High — tracks invoice + payment + credit_note volume combined.
+15. **Notes:** —
+#
+# F.8 — Commission
+#
+# T23 — commission_transaction
+1. **Purpose:** Event-sourced commission ledger per representative — accrual, approval, payment, clawback are each their own immutable row.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** representative_id → representative.id; order_id → order.id (nullable); commission_config_id → commission_config.id; actor_user_id → app_user.id; reversal_of_id → commission_transaction.id (nullable, self-ref)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +AAC | — | — | — | Append-only audit columns |
+| representative_id | UUID | NOT NULL | — | FK |
+| order_id | UUID | NULL | NULL | FK, nullable for manual entries |
+| commission_config_id | UUID | NOT NULL | — | FK |
+| actor_user_id | UUID | NOT NULL | — | FK |
+| reversal_of_id | UUID | NULL | NULL | Self-ref FK, set only on CLAWED_BACK rows |
+| sequence_no | BIGINT | NOT NULL | — | Monotonic per `representative_id` |
+| signed_amount | NUMERIC(18,4) | NOT NULL | — | — |
+| state_event | VARCHAR(16) | NOT NULL | — | `ACCRUED`\|`APPROVED`\|`PAID`\|`CLAWED_BACK` |
+| rate_applied | NUMERIC(7,4) | NOT NULL | — | Snapshot of the rate used |
+| currency_id | UUID | NOT NULL | — | FK |
+| occurred_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+5. **Unique Constraints:** `uq_commission_transaction_seq (representative_id, sequence_no)`
+6. **Check Constraints:** `ck_commission_transaction_state (state_event IN ('ACCRUED','APPROVED','PAID','CLAWED_BACK'))`; `ck_commission_transaction_amount_nonzero (signed_amount <> 0)`; `ck_commission_transaction_clawback_negative (state_event <> 'CLAWED_BACK' OR signed_amount < 0)`
+7. **Business Constraints:** Append-only; a `CLAWED_BACK` row is always a negative compensating entry referencing the original via `reversal_of_id` — enforced via `ck_commission_transaction_clawback_negative` plus a `BEFORE INSERT` trigger requiring `reversal_of_id IS NOT NULL` when `state_event = 'CLAWED_BACK'`; payable commission = `SUM(signed_amount)` projection, same ledger pattern as T1/T22.
+8. **Recommended Indexes:** btree on `order_id`
+9. **Composite Indexes:** `(representative_id, sequence_no)` — the balance-projection query
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** Range partition by `occurred_at` (monthly); consider list-partitioning by `representative_id` at very large rep-count scale per ERD PART L.
+12. **Soft Delete Strategy:** None — append-only
+13. **Audit Strategy:** `created_by`/`actor_user_id` (AAC); shares the reconciliation service with T1/T22 per PART M.
+14. **Estimated Row Growth:** High — tracks order volume × lifecycle events per commission (accrue, approve, pay, occasional clawback)
+15. **Notes:** —
+#
+# F.9 — Notifications & Bot Messaging
+#
+# T24 — notification
+1. **Purpose:** Outbound/internal notification record (SRS E32).
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** notification_type_id → notification_type_ref.id; recipient_user_id → app_user.id (nullable); recipient_representative_id → representative.id (nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| notification_type_id | UUID | NOT NULL | — | FK |
+| recipient_user_id | UUID | NULL | NULL | FK |
+| recipient_representative_id | UUID | NULL | NULL | FK |
+| channel | VARCHAR(16) | NOT NULL | — | `IN_APP`\|`EMAIL`\|`BOT_PUSH`\|`SMS` |
+| payload | JSONB | NOT NULL | — | Rendered message content and template variables |
+| state | VARCHAR(16) | NOT NULL | `'QUEUED'` | `QUEUED`\|`SENT`\|`FAILED`\|`ACKNOWLEDGED` |
+| queued_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| sent_at | TIMESTAMPTZ | NULL | NULL | — |
+| acknowledged_at | TIMESTAMPTZ | NULL | NULL | — |
+| retry_count | SMALLINT | NOT NULL | `0` | — |
+5. **Unique Constraints:** none beyond PK
+6. **Check Constraints:** `ck_notification_channel (channel IN ('IN_APP','EMAIL','BOT_PUSH','SMS'))`; `ck_notification_state (state IN ('QUEUED','SENT','FAILED','ACKNOWLEDGED'))`; `ck_notification_retry_nonneg (retry_count >= 0)`
+7. **Business Constraints:** Idempotent delivery via a dedupe key on `(payload, recipient, notification_type_id)` within a rolling window (application-layer, since JSONB equality-based uniqueness at the DB level is impractical for this purpose); `FAILED` triggers a retry per policy up to a configured max (`system_config`).
+8. **Recommended Indexes:** btree on `recipient_user_id`; btree on `recipient_representative_id`
+9. **Composite Indexes:** none beyond above
+10. **Partial Indexes:** `idx_notification_queued ON notification (state, queued_at) WHERE state = 'QUEUED'` — the delivery worker's polling query
+11. **Partitioning Strategy:** Range partition by `queued_at` (monthly) — high-cardinality, low-per-row value table per PART M.
+12. **Soft Delete Strategy:** Supported, though retention policy (see Performance Guidelines) is the primary volume-management lever, not soft-delete
+13. **Audit Strategy:** Standard UAC; state transitions mirrored to `notification_history` (H8)
+14. **Estimated Row Growth:** Very high — one row per notifiable event per recipient; likely the second-highest-volume table set after the ledgers.
+15. **Notes:** —
+#
+# H5 (ERD id) — bot_message_log
+1. **Purpose:** Immutable log of bot conversation traffic for audit (BR-B3, SRS E31).
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** bot_session_id → bot_session.id; bot_platform_id → bot_platform_ref.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +AAC | — | — | — | Append-only audit columns |
+| bot_session_id | UUID | NOT NULL | — | FK |
+| bot_platform_id | UUID | NOT NULL | — | FK |
+| direction | VARCHAR(10) | NOT NULL | — | `INBOUND`\|`OUTBOUND` |
+| raw_payload | JSONB | NOT NULL | — | Full platform message payload |
+| command_parsed | VARCHAR(120) | NULL | NULL | Resolved command/intent, if any |
+| occurred_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+5. **Unique Constraints:** none — chronological append
+6. **Check Constraints:** `ck_bot_message_log_direction (direction IN ('INBOUND','OUTBOUND'))`
+7. **Business Constraints:** Append-only; never edited or deleted, including after session revocation.
+8. **Recommended Indexes:** btree on `bot_session_id`
+9. **Composite Indexes:** `(bot_session_id, occurred_at)`
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** Range partition by `occurred_at` (monthly) — highest-cardinality, lowest-value table candidate per PART M; shortest retention policy recommended.
+12. **Soft Delete Strategy:** None
+13. **Audit Strategy:** Self-auditing
+14. **Estimated Row Growth:** Very high — every inbound/outbound bot message, potentially the single highest-volume table in the schema at scale.
+15. **Notes:** —
+#
+# F.10 — Audit & Approval
+#
+# H6 (ERD id) — audit_log
+1. **Purpose:** System-wide immutable audit trail covering every state-changing action (SRS E29, BR-A3).
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** actor_user_id → app_user.id; entity_type + entity_id (polymorphic)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +AAC | — | — | — | Append-only audit columns |
+| actor_user_id | UUID | NULL | NULL | FK, nullable for system-generated entries |
+| entity_type | VARCHAR(60) | NOT NULL | — | Polymorphic discriminator, e.g. `order`, `product` |
+| entity_id | UUID | NOT NULL | — | Polymorphic target id |
+| action | VARCHAR(20) | NOT NULL | — | `CREATE`\|`UPDATE`\|`DELETE`\|`APPROVE`\|`REJECT`\|`OVERRIDE`\|... |
+| before_json | JSONB | NULL | NULL | Prior state (redacted per Global Standards' sensitive-field policy) |
+| after_json | JSONB | NULL | NULL | New state (same redaction) |
+| occurred_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| ip_address | INET | NULL | NULL | Actor's source IP, if known |
+5. **Unique Constraints:** none — chronological append
+6. **Check Constraints:** `ck_audit_log_action (action IN ('CREATE','UPDATE','DELETE','APPROVE','REJECT','OVERRIDE'))` — extend the list at migration time as concrete actions are enumerated by the application
+7. **Business Constraints:** Append-only; complements rather than duplicates entity-specific `*_history` tables — this table captures the raw actor/before/after for every mutating action system-wide; sensitive columns (e.g. `app_user.password_hash`, `representative.national_id`) must be redacted from `before_json`/`after_json` by the application serializer before insert — a database-level guarantee (e.g. a trigger stripping known key names) is recommended as defense-in-depth, flagged for the security owner.
+8. **Recommended Indexes:** btree on `actor_user_id`
+9. **Composite Indexes:** `(entity_type, entity_id, occurred_at)` — the dominant "show me this record's history" query
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** Range partition by `occurred_at` (monthly) — very high volume, system-wide write target.
+12. **Soft Delete Strategy:** None
+13. **Audit Strategy:** Self-auditing; this table is itself the org's primary audit mechanism
+14. **Estimated Row Growth:** Very high — one or more rows per mutating action across the entire system.
+15. **Notes:** The polymorphic `(entity_type, entity_id)` pattern here has no DB-level FK enforcement — see Global Standards → Polymorphic Reference Policy for the accepted trade-off and mitigation (composite index + optional per-type validation trigger).
+#
+# T25 — approval_request
+1. **Purpose:** A live approval task raised against any approvable entity.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** entity_type + entity_id (polymorphic); requested_by → app_user.id; assigned_approver_id → app_user.id (nullable); resolved_by → app_user.id (nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| entity_type | VARCHAR(60) | NOT NULL | — | Polymorphic discriminator |
+| entity_id | UUID | NOT NULL | — | Polymorphic target id |
+| requested_by | UUID | NOT NULL | — | FK |
+| assigned_approver_id | UUID | NULL | NULL | FK |
+| resolved_by | UUID | NULL | NULL | FK |
+| status | VARCHAR(16) | NOT NULL | `'PENDING'` | `PENDING`\|`APPROVED`\|`REJECTED`\|`CANCELLED` |
+| reason_text | TEXT | NULL | NULL | — |
+| requested_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| resolved_at | TIMESTAMPTZ | NULL | NULL | — |
+| threshold_marker | BOOLEAN | NOT NULL | `false` | Flags threshold-triggered (vs. policy-triggered) approvals |
+5. **Unique Constraints:** none beyond PK (uniqueness of "one open request" is enforced via partial index, see below)
+6. **Check Constraints:** `ck_approval_request_status (status IN ('PENDING','APPROVED','REJECTED','CANCELLED'))`
+7. **Business Constraints:** Exactly one `PENDING` `approval_request` per `(entity_type, entity_id)` at a time — enforced via partial unique index; approver ≠ requester — enforced via `ck_approval_request_separation_of_duties (assigned_approver_id IS DISTINCT FROM requested_by)`.
+8. **Recommended Indexes:** btree on `assigned_approver_id`
+9. **Composite Indexes:** `(entity_type, entity_id)`
+10. **Partial Indexes:** `uq_approval_request_one_pending ON approval_request (entity_type, entity_id) WHERE status = 'PENDING'`; `idx_approval_request_pending_queue ON approval_request (assigned_approver_id) WHERE status = 'PENDING'`
+11. **Partitioning Strategy:** None — moderate volume, well-served by the partial indexes above
+12. **Soft Delete Strategy:** Supported for `CANCELLED`/erroneous requests
+13. **Audit Strategy:** Standard UAC; every status transition mirrored to `approval_history` (H7)
+14. **Estimated Row Growth:** Moderate — proportional to threshold-crossing events across orders, adjustments, transfers, credit notes, returns
+15. **Notes:** —
+#
+# H7 (ERD id) — approval_history
+1. **Purpose:** Immutable log of every status transition on an approval_request.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** approval_request_id → approval_request.id; actor_user_id → app_user.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +AAC | — | — | — | Append-only audit columns |
+| approval_request_id | UUID | NOT NULL | — | FK |
+| actor_user_id | UUID | NOT NULL | — | FK |
+| from_status | VARCHAR(16) | NOT NULL | — | — |
+| to_status | VARCHAR(16) | NOT NULL | — | — |
+| event_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| note | TEXT | NULL | NULL | — |
+5. **Unique Constraints:** none — chronological append
+6. **Check Constraints:** `ck_approval_history_statuses (from_status IN (...) AND to_status IN (...ApprovalStatus...))`
+7. **Business Constraints:** Append-only
+8. **Recommended Indexes:** btree on `approval_request_id`
+9. **Composite Indexes:** `(approval_request_id, event_at)`
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** Range partition by `event_at` (quarterly) — lower volume than the ledger tables
+12. **Soft Delete Strategy:** None
+13. **Audit Strategy:** Self-auditing
+14. **Estimated Row Growth:** Moderate — tracks `approval_request` at 2-3 rows each
+15. **Notes:** — EOF Output
 79
 bash
-cat >> /home/claude/calculator_extracted/calculator/07_DATABASE_SPEC.md << 'EOF' # PART F — TRANSACTIONAL TABLES ## F.1 — Inventory Ledger (Architectural Heart) ## T1 — inventory_transaction 1. **Purpose:** The sole authoritative source of inventory truth (Domain-Model correction #1). All stock levels are projections of this table; nothing else may hold an editable balance. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** product_id → product.id; lot_id → product_lot.id (nullable); warehouse_id → warehouse.id; movement_type_id → movement_type_ref.id; actor_user_id → app_user.id; reason_code_id → reason_code_ref.id (nullable); reversal_of_id → inventory_transaction.id (nullable, self-ref); reference_type + reference_id (polymorphic — see Global Standards → Polymorphic Reference Policy) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +AAC | — | — | — | Append-only audit columns | | product_id | UUID | NOT NULL | — | FK | | lot_id | UUID | NULL | NULL | FK | | warehouse_id | UUID | NOT NULL | — | FK | | movement_type_id | UUID | NOT NULL | — | FK | | actor_user_id | UUID | NOT NULL | — | FK, mandatory (no anonymous ledger writes) | | reason_code_id | UUID | NULL | NULL | FK | | reference_type | VARCHAR(40) | NULL | NULL | Polymorphic type discriminator, e.g. `order`, `stock_transfer` | | reference_id | UUID | NULL | NULL | Polymorphic target id | | sequence_no | BIGINT | NOT NULL | — | Monotonic per warehouse, assigned by trigger/sequence | | signed_quantity | NUMERIC(18,4) | NOT NULL | — | Positive or negative per `movement_type.sign` | | unit_cost | NUMERIC(18,6) | NOT NULL | — | Snapshot cost at posting time | | currency_id | UUID | NOT NULL | — | FK | | occurred_at | TIMESTAMPTZ | NOT NULL | `now()` | Business event time, UTC | | prev_hash | CHAR(64) | NULL | NULL | SHA-256 hex of the prior row in this warehouse's chain | | row_hash | CHAR(64) | NOT NULL | — | SHA-256 hex of this row's canonical payload + prev_hash | | reversal_of_id | UUID | NULL | NULL | Self-ref FK, set only on REVERSAL rows | | is_reversed | BOOLEAN | NOT NULL | `false` | True once a REVERSAL row exists referencing this row | 5. **Unique Constraints:** `uq_inventory_transaction_seq (warehouse_id, sequence_no)`; `uq_inventory_transaction_hash (row_hash)` 6. **Check Constraints:** `ck_inventory_transaction_qty_nonzero (signed_quantity <> 0)` 7. **Business Constraints:** No `UPDATE`/`DELETE` grants at the permissions layer (see Soft Delete Strategy); `signed_quantity`'s sign must match `movement_type_ref.sign` — enforced via `BEFORE INSERT` trigger (a CHECK constraint cannot join to another table); the *projected* net balance for `(warehouse_id, product_id, lot_id)` must never go negative — validated by a `BEFORE INSERT` trigger that computes `SUM(signed_quantity)` for the key and rejects if the result would be `< 0`, unless `system_config` has the negative-stock-allowed override enabled; at most one non-reversed `REVERSAL` row may reference any given original row — enforced via partial unique index `uq_inventory_transaction_one_reversal ON inventory_transaction (reversal_of_id) WHERE reversal_of_id IS NOT NULL`. 8. **Recommended Indexes:** btree on `product_id`; btree on `lot_id` 9. **Composite Indexes:** `(warehouse_id, product_id, lot_id, sequence_no)` — the balance-projection query; `(reference_type, reference_id)` — trace a ledger row back to its originating document 10. **Partial Indexes:** `idx_inventory_transaction_unreversed ON inventory_transaction (warehouse_id, product_id, lot_id) WHERE is_reversed = false` — the hot path for current-balance computation 11. **Partitioning Strategy:** **Range partition by `occurred_at`, monthly.** This is the highest-volume table in the schema; monthly partitions keep the hash-chain verification job and balance-projection scans bounded. Sub-partition by `warehouse_id` (hash) additionally recommended once the deployment exceeds roughly a dozen active warehouses, since nearly all operational reads are warehouse-scoped. 12. **Soft Delete Strategy:** None. `UPDATE` and `DELETE` are revoked from the application role entirely (`REVOKE UPDATE, DELETE ON inventory_transaction FROM app_role`); corrections are always a new `REVERSAL`-type row. 13. **Audit Strategy:** `created_by` (AAC) is the posting actor; the row itself, plus `prev_hash`/`row_hash`, **is** the audit trail — no separate history table wraps this one. A scheduled job re-walks the chain per warehouse and alarms on any hash mismatch. 14. **Estimated Row Growth:** **Very high** — one row per unit of stock movement across the entire operation; expect tens of thousands to millions of rows per year depending on order volume. This table's growth rate should drive the overall database capacity plan. 15. **Notes:** The hash-chain (`prev_hash`/`row_hash`) is scoped per `warehouse_id`, not global, so that partition maintenance and reconciliation can proceed independently per warehouse. `row_hash` computation (canonical payload serialization) is an application-layer concern, out of scope for this document, but must be deterministic and versioned (a future payload-schema change must not silently break existing hash verification). ## T2 — stock_reservation 1. **Purpose:** Holds stock against a pending order without decrementing the ledger, preventing overselling (BRF §5). 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** warehouse_id → warehouse.id; product_id → product.id; lot_id → product_lot.id (nullable); order_id → order.id; reserved_by → app_user.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | warehouse_id | UUID | NOT NULL | — | FK | | product_id | UUID | NOT NULL | — | FK | | lot_id | UUID | NULL | NULL | FK | | order_id | UUID | NOT NULL | — | FK | | reserved_by | UUID | NOT NULL | — | FK | | reserved_quantity | NUMERIC(18,4) | NOT NULL | — | Quantity held | | state | VARCHAR(16) | NOT NULL | `'ACTIVE'` | `ACTIVE`\|`RELEASED`\|`CONSUMED`\|`EXPIRED` | | expires_at | TIMESTAMPTZ | NOT NULL | — | Auto-expiry deadline | 5. **Unique Constraints:** `uq_stock_reservation (order_id, warehouse_id, product_id, lot_id, state)` 6. **Check Constraints:** `ck_stock_reservation_state (state IN ('ACTIVE','RELEASED','CONSUMED','EXPIRED'))`; `ck_stock_reservation_qty_positive (reserved_quantity > 0)` 7. **Business Constraints:** Σ(reserved_quantity WHERE state='ACTIVE') for a given `(warehouse_id, product_id, lot_id)` must not exceed the current available balance (`inventory_balance_snapshot.quantity_available`) — validated at reservation-creation time by the application service; auto-expiry is a scheduled job transitioning `ACTIVE → EXPIRED` past `expires_at`; released on order cancellation, consumed on shipment. 8. **Recommended Indexes:** btree on `order_id` 9. **Composite Indexes:** `(warehouse_id, product_id, lot_id, state)` — availability computation 10. **Partial Indexes:** `idx_stock_reservation_active ON stock_reservation (warehouse_id, product_id, lot_id) WHERE state = 'ACTIVE'` — the hot path, and the one the expiry job scans by `expires_at` 11. **Partitioning Strategy:** None initially; reservations are transient (short-lived relative to the ledger) and volume should stay well below `inventory_transaction`'s. 12. **Soft Delete Strategy:** Not used — lifecycle modeled via `state`, not `deleted_at`. 13. **Audit Strategy:** Standard UAC 14. **Estimated Row Growth:** High-turnover but self-limiting — rows churn through `ACTIVE→CONSUMED/RELEASED/EXPIRED` quickly; consider a periodic archival/purge job for old terminal-state rows rather than partitioning. 15. **Notes:** — ## T3 — inventory_balance_snapshot (Projection — Non-Authoritative) 1. **Purpose:** Read-optimized, non-authoritative cache of current stock, derived entirely from `inventory_transaction`. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** warehouse_id → warehouse.id; product_id → product.id; lot_id → product_lot.id (nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | id | UUID | NOT NULL | `gen_random_uuid()` | Surrogate PK | | warehouse_id | UUID | NOT NULL | — | FK | | product_id | UUID | NOT NULL | — | FK | | lot_id | UUID | NULL | NULL | FK | | quantity_on_hand | NUMERIC(18,4) | NOT NULL | `0` | Cached total | | quantity_reserved | NUMERIC(18,4) | NOT NULL | `0` | Cached from active `stock_reservation` | | quantity_available | NUMERIC(18,4) | NOT NULL | `0` | `quantity_on_hand - quantity_reserved`, stored (not generated) since it is refreshed atomically alongside the other two | | last_reconciled_at | TIMESTAMPTZ | NOT NULL | `now()` | Last verification run against T1 | | last_transaction_seq | BIGINT | NOT NULL | `0` | Highest `inventory_transaction.sequence_no` folded in | 5. **Unique Constraints:** `uq_inventory_balance_snapshot (warehouse_id, product_id, lot_id)` — partial unique index scoped to non-deleted rows (this table has no soft-delete need in practice, but the ERD's "partial unique ignoring soft-deleted" note is honored by treating `lot_id IS NULL` and `lot_id IS NOT NULL` cases via two partial indexes, since a NULLable column in a UNIQUE constraint already treats NULLs as distinct — the partial indexes make the intended semantics explicit: `WHERE lot_id IS NULL` and `WHERE lot_id IS NOT NULL`) 6. **Check Constraints:** none — this table intentionally has no `CHECK (quantity_on_hand >= 0)` constraint, because it is explicitly allowed to be transiently stale/inconsistent as a cache; correctness is enforced upstream on `inventory_transaction`, not here. 7. **Business Constraints:** Never written to directly by application business logic — only by the reconciliation/projection job that re-derives it from `inventory_transaction`; `quantity_on_hand` must equal `SUM(inventory_transaction.signed_quantity WHERE is_reversed = false)` for the key as of the last reconciliation — verified, not enforced, since real-time equality would require a synchronous trigger on the highest-volume table in the system (explicitly rejected — see Scalability Notes). 8. **Recommended Indexes:** btree on `product_id` 9. **Composite Indexes:** `(warehouse_id, product_id, lot_id)` — doubles as the unique constraint's supporting index 10. **Partial Indexes:** see Unique Constraints above 11. **Partitioning Strategy:** None — row count is bounded by `(warehouse × product × lot)` combinations, far smaller than the ledger itself. 12. **Soft Delete Strategy:** Not applicable — rows are upserted/rebuilt, not soft-deleted; a key with zero net quantity is simply a row with `quantity_on_hand = 0`, not a deleted row. 13. **Audit Strategy:** None beyond `last_reconciled_at`/`last_transaction_seq` — this table is a cache, not an audited business record; the audit trail lives entirely in `inventory_transaction`. 14. **Estimated Row Growth:** Low relative to the ledger — one row per distinct `(warehouse, product, lot)` combination that has ever had stock, growing slowly and only via genuinely new combinations. 15. **Notes:** Refresh strategy: incremental (triggered off the event bus per `inventory_transaction` insert, batched) rather than synchronous-per-write, to keep the ledger's write path latency flat — see Scalability Notes / PART M in the ERD. ## F.2 — Stock Movement ## T4 — stock_transfer 1. **Purpose:** Transfer header between warehouses (factory→rep, rep→factory, optional rep→rep) (SRS E10). 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** source_warehouse_id → warehouse.id; destination_warehouse_id → warehouse.id; requested_by → app_user.id; approved_by → app_user.id (nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | transfer_number | VARCHAR(40) | NOT NULL | — | Business key | | source_warehouse_id | UUID | NOT NULL | — | FK | | destination_warehouse_id | UUID | NOT NULL | — | FK | | state | VARCHAR(20) | NOT NULL | `'DRAFT'` | TransferState enum | | requested_by | UUID | NOT NULL | — | FK | | approved_by | UUID | NULL | NULL | FK | | requested_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | approved_at | TIMESTAMPTZ | NULL | NULL | — | | dispatched_at | TIMESTAMPTZ | NULL | NULL | — | | received_at | TIMESTAMPTZ | NULL | NULL | — | | ownership_mode_snapshot | VARCHAR(20) | NOT NULL | — | Snapshot of source/destination ownership mode at creation | 5. **Unique Constraints:** `uq_stock_transfer_number (transfer_number)` 6. **Check Constraints:** `ck_stock_transfer_state (state IN ('DRAFT','PENDING','APPROVED','DISPATCHED','IN_TRANSIT','RECEIVED','PARTIAL_RECEIVED','CLOSED','CANCELLED'))`; `ck_stock_transfer_diff_warehouses (source_warehouse_id <> destination_warehouse_id)` 7. **Business Constraints:** Double-entry posting at dispatch/receipt time (a `TRANSFER_OUT` row on source + a `TRANSFER_IN` row on destination in `inventory_transaction`), orchestrated by the application, not the database; cannot receive more than dispatched per `transfer_line`; consignment transfers do not change ownership (`ownership_mode_snapshot` is informational, not a trigger for a title-transfer event). 8. **Recommended Indexes:** btree on `source_warehouse_id`; btree on `destination_warehouse_id`; btree on `state` 9. **Composite Indexes:** `(state, requested_at)` — operations queue view 10. **Partial Indexes:** `idx_stock_transfer_open ON stock_transfer (destination_warehouse_id) WHERE state NOT IN ('CLOSED','CANCELLED')` 11. **Partitioning Strategy:** None initially; consider range partitioning by `requested_at` (yearly) only if transfer volume becomes very high relative to order volume. 12. **Soft Delete Strategy:** Supported, though a transfer is normally terminated via `state='CANCELLED'`, not deletion. 13. **Audit Strategy:** Standard UAC; state transitions additionally captured in `transfer_history` (T6). 14. **Estimated Row Growth:** Moderate — proportional to rep count × restocking cadence. 15. **Notes:** — ## T5 — transfer_line 1. **Purpose:** Line items of a transfer — product/qty split across requested/dispatched/received, plus cost. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** stock_transfer_id → stock_transfer.id; product_id → product.id; lot_id → product_lot.id (nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | stock_transfer_id | UUID | NOT NULL | — | FK | | product_id | UUID | NOT NULL | — | FK | | lot_id | UUID | NULL | NULL | FK | | qty_requested | NUMERIC(18,4) | NOT NULL | — | — | | qty_dispatched | NUMERIC(18,4) | NOT NULL | `0` | — | | qty_received | NUMERIC(18,4) | NOT NULL | `0` | — | | unit_cost | NUMERIC(18,6) | NOT NULL | — | Seeds `purchase_price_history` for an OWNED destination | | qty_variance | NUMERIC(18,4) | NOT NULL | `0` | `qty_dispatched - qty_received`, stored (application-computed at receipt) | 5. **Unique Constraints:** `uq_transfer_line (stock_transfer_id, product_id, lot_id)` 6. **Check Constraints:** `ck_transfer_line_qty_nonneg (qty_requested >= 0 AND qty_dispatched >= 0 AND qty_received >= 0)`; `ck_transfer_line_dispatched_le_requested (qty_dispatched <= qty_requested)`; `ck_transfer_line_received_le_dispatched (qty_received <= qty_dispatched)` 7. **Business Constraints:** Cannot receive more than dispatched (enforced by the CHECK above at the row level, but also validated at the application layer since receipt happens incrementally across multiple partial-receipt events, not in one UPDATE). 8. **Recommended Indexes:** btree on `product_id` 9. **Composite Indexes:** none beyond unique constraint 10. **Partial Indexes:** `idx_transfer_line_open ON transfer_line (stock_transfer_id) WHERE qty_received < qty_dispatched` 11. **Partitioning Strategy:** None (inherits parent's low-to-moderate volume) 12. **Soft Delete Strategy:** Supported 13. **Audit Strategy:** Standard UAC 14. **Estimated Row Growth:** Moderate — several lines per transfer 15. **Notes:** — ## H4 (ERD: T6) — transfer_history *(ERD numbering: T6; classified H — immutable, listed under its ERD id for traceability.)* 1. **Purpose:** Immutable state-change log for each transfer. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** stock_transfer_id → stock_transfer.id; actor_user_id → app_user.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +AAC | — | — | — | Append-only audit columns | | stock_transfer_id | UUID | NOT NULL | — | FK | | actor_user_id | UUID | NOT NULL | — | FK | | from_state | VARCHAR(20) | NOT NULL | — | Prior TransferState | | to_state | VARCHAR(20) | NOT NULL | — | New TransferState | | event_at | TIMESTAMPTZ | NOT NULL | `now()` | Business event time | | note | TEXT | NULL | NULL | Optional annotation | 5. **Unique Constraints:** none — chronological append 6. **Check Constraints:** `ck_transfer_history_states (from_state IN (...TransferState values...) AND to_state IN (...TransferState values...))` 7. **Business Constraints:** Append-only, no UPDATE/DELETE 8. **Recommended Indexes:** btree on `stock_transfer_id` 9. **Composite Indexes:** `(stock_transfer_id, event_at)` 10. **Partial Indexes:** none 11. **Partitioning Strategy:** Range partition by `event_at` (quarterly) once volume warrants it — lower priority than T1/T22/T23. 12. **Soft Delete Strategy:** None — immutable, append-only 13. **Audit Strategy:** `created_by` (AAC) equals `actor_user_id`; this table is itself the audit record for transfer state changes. 14. **Estimated Row Growth:** Moderate — one row per transfer state transition, several per transfer 15. **Notes:** — ## T7 — stock_adjustment 1. **Purpose:** Manual correction / damage / write-off request that, once applied, posts `inventory_transaction` rows. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** warehouse_id → warehouse.id; product_id → product.id; lot_id → product_lot.id (nullable); requested_by → app_user.id; approved_by → app_user.id (nullable); reason_code_id → reason_code_ref.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | adjustment_number | VARCHAR(40) | NOT NULL | — | Business key | | warehouse_id | UUID | NOT NULL | — | FK | | product_id | UUID | NOT NULL | — | FK | | lot_id | UUID | NULL | NULL | FK | | requested_by | UUID | NOT NULL | — | FK | | approved_by | UUID | NULL | NULL | FK | | reason_code_id | UUID | NOT NULL | — | FK | | adjustment_type | VARCHAR(16) | NOT NULL | — | `POSITIVE`\|`NEGATIVE`\|`DAMAGE`\|`WRITEOFF`\|`STOCKTAKE` | | delta_quantity | NUMERIC(18,4) | NOT NULL | — | Signed | | state | VARCHAR(16) | NOT NULL | `'PENDING'` | `PENDING`\|`APPROVED`\|`APPLIED`\|`REJECTED` | | reason_text | TEXT | NOT NULL | — | Mandatory free-text justification | | threshold_marker | BOOLEAN | NOT NULL | `false` | True if this adjustment exceeded the auto-approval threshold | 5. **Unique Constraints:** `uq_stock_adjustment_number (adjustment_number)` 6. **Check Constraints:** `ck_stock_adjustment_type (adjustment_type IN ('POSITIVE','NEGATIVE','DAMAGE','WRITEOFF','STOCKTAKE'))`; `ck_stock_adjustment_state (state IN ('PENDING','APPROVED','APPLIED','REJECTED'))`; `ck_stock_adjustment_delta_nonzero (delta_quantity <> 0)`; `ck_stock_adjustment_sign_matches_type (adjustment_type <> 'POSITIVE' OR delta_quantity > 0)` 7. **Business Constraints:** Approval required above the `system_config`-defined threshold (checked via `threshold_marker`, which drives whether an `approval_request` is created — orchestrated by the application); cannot drive stock negative (validated against `inventory_balance_snapshot`/the same trigger logic as T1 when applied); immutable once `state='APPLIED'` (enforced via `BEFORE UPDATE` trigger blocking further changes to `state`/`delta_quantity` once APPLIED). 8. **Recommended Indexes:** btree on `warehouse_id`; btree on `product_id`; btree on `state` 9. **Composite Indexes:** `(warehouse_id, state)` — operations queue 10. **Partial Indexes:** `idx_stock_adjustment_pending ON stock_adjustment (warehouse_id) WHERE state = 'PENDING'` 11. **Partitioning Strategy:** None 12. **Soft Delete Strategy:** Supported for `PENDING`/`REJECTED` rows only (application-enforced); `APPLIED` rows are effectively immutable per Business Constraints and should not be soft-deleted either, to preserve the audit chain back to the `inventory_transaction` it posted. 13. **Audit Strategy:** Standard UAC; `state` transitions mirrored to `audit_log`; the `APPLIED` transition additionally correlates to a specific `inventory_transaction.reference_id`. 14. **Estimated Row Growth:** Low-to-moderate — proportional to shrinkage/damage/write-off frequency. 15. **Notes:** — ## F.3 — Physical Count ## T8 — physical_count 1. **Purpose:** Stocktake session header. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** warehouse_id → warehouse.id; opened_by → app_user.id; closed_by → app_user.id (nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | count_number | VARCHAR(40) | NOT NULL | — | Business key | | warehouse_id | UUID | NOT NULL | — | FK | | opened_by | UUID | NOT NULL | — | FK | | closed_by | UUID | NULL | NULL | FK | | state | VARCHAR(16) | NOT NULL | `'OPEN'` | `OPEN`\|`COUNTING`\|`RECONCILED`\|`CLOSED` | | scope | VARCHAR(255) | NULL | NULL | Free-text scope (full warehouse, category subset, etc.) | | opened_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | closed_at | TIMESTAMPTZ | NULL | NULL | — | 5. **Unique Constraints:** `uq_physical_count_number (count_number)` 6. **Check Constraints:** `ck_physical_count_state (state IN ('OPEN','COUNTING','RECONCILED','CLOSED'))` 7. **Business Constraints:** Only one `OPEN`/`COUNTING` count per warehouse at a time — enforced via partial unique index; closing reconciles all `physical_count_line` deltas into `stock_adjustment`/`inventory_transaction` rows, orchestrated by the application. 8. **Recommended Indexes:** btree on `warehouse_id` 9. **Composite Indexes:** none beyond the partial index 10. **Partial Indexes:** `uq_physical_count_one_open ON physical_count (warehouse_id) WHERE state IN ('OPEN','COUNTING')` 11. **Partitioning Strategy:** None 12. **Soft Delete Strategy:** Supported for erroneous sessions only, not for `CLOSED` counts 13. **Audit Strategy:** Standard UAC 14. **Estimated Row Growth:** Low — periodic (monthly/quarterly) per warehouse 15. **Notes:** — ## T9 — physical_count_line 1. **Purpose:** Counted vs. expected quantity per product/lot within a count session, with computed delta. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** physical_count_id → physical_count.id; product_id → product.id; lot_id → product_lot.id (nullable); reason_code_id → reason_code_ref.id (nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | physical_count_id | UUID | NOT NULL | — | FK | | product_id | UUID | NOT NULL | — | FK | | lot_id | UUID | NULL | NULL | FK | | reason_code_id | UUID | NULL | NULL | FK, required if `delta <> 0` at reconciliation | | expected_qty | NUMERIC(18,4) | NOT NULL | — | Snapshot from `inventory_balance_snapshot` at count-open time | | counted_qty | NUMERIC(18,4) | NULL | NULL | Physically counted quantity | | delta | NUMERIC(18,4) | NOT NULL | `0` | `counted_qty - expected_qty`, application-computed on entry | | reconciled | BOOLEAN | NOT NULL | `false` | True once a corresponding `stock_adjustment` has been posted | 5. **Unique Constraints:** `uq_physical_count_line (physical_count_id, product_id, lot_id)` 6. **Check Constraints:** `ck_physical_count_line_expected_nonneg (expected_qty >= 0)` 7. **Business Constraints:** A non-zero `delta` requires `reason_code_id` before the parent count can transition to `RECONCILED` (application-enforced). 8. **Recommended Indexes:** btree on `product_id` 9. **Composite Indexes:** none beyond unique constraint 10. **Partial Indexes:** `idx_physical_count_line_unreconciled ON physical_count_line (physical_count_id) WHERE reconciled = false AND delta <> 0` 11. **Partitioning Strategy:** None 12. **Soft Delete Strategy:** Supported before parent count closes 13. **Audit Strategy:** Standard UAC 14. **Estimated Row Growth:** Moderate — one row per SKU/lot counted per session 15. **Notes:** — ## F.4 — Sales / Order ## T10 — order 1. **Purpose:** Sales order header (SRS E15). 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** customer_id → customer.id; representative_id → representative.id; created_by → app_user.id; fulfillment_warehouse_id → warehouse.id (nullable); currency_id → currency.id; customer_city_ref_id → city_ref.id; rep_city_ref_id → city_ref.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | order_number | VARCHAR(40) | NOT NULL | — | Business key | | customer_id | UUID | NOT NULL | — | FK | | representative_id | UUID | NOT NULL | — | FK | | sales_channel | VARCHAR(20) | NOT NULL | — | `BOT_WEB`\|`BOT_TELEGRAM`\|`BOT_BALE`\|`OFFICE` | | created_by | UUID | NOT NULL | — | FK | | fulfillment_warehouse_id | UUID | NULL | NULL | FK, set once reserved | | order_type | VARCHAR(16) | NOT NULL | — | `LOCAL`\|`DIRECT` | | fulfillment_mode | VARCHAR(20) | NOT NULL | — | `REP_LOCAL`\|`FACTORY_DIRECT` | | state | VARCHAR(24) | NOT NULL | `'DRAFT'` | OrderState enum | | currency_id | UUID | NOT NULL | — | FK | | subtotal | NUMERIC(18,4) | NOT NULL | `0` | — | | discount_total | NUMERIC(18,4) | NOT NULL | `0` | — | | tax_total | NUMERIC(18,4) | NOT NULL | `0` | — | | grand_total | NUMERIC(18,4) | NOT NULL | `0` | — | | ordered_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | shipped_at | TIMESTAMPTZ | NULL | NULL | — | | invoiced_at | TIMESTAMPTZ | NULL | NULL | — | | paid_at | TIMESTAMPTZ | NULL | NULL | — | | customer_city_ref_id | UUID | NULL | NULL | Snapshot for Scenario A/B audit | | rep_city_ref_id | UUID | NULL | NULL | Snapshot for Scenario A/B audit | 5. **Unique Constraints:** `uq_order_number (order_number)` 6. **Check Constraints:** `ck_order_type (order_type IN ('LOCAL','DIRECT'))`; `ck_order_fulfillment_mode (fulfillment_mode IN ('REP_LOCAL','FACTORY_DIRECT'))`; `ck_order_state (state IN ('DRAFT','PENDING_APPROVAL','APPROVED','RESERVED','FULFILLING','SHIPPED','INVOICED','PAID','COMPLETED','CANCELLED','BACKORDERED','PARTIALLY_FULFILLED','RETURNED'))`; `ck_order_totals_nonneg (subtotal >= 0 AND discount_total >= 0 AND tax_total >= 0 AND grand_total >= 0)` 7. **Business Constraints:** `order_type` classification per BR-S3, with any manual override written to `audit_log`; `LOCAL` orders require a rep-warehouse reservation (`stock_reservation`) before leaving `DRAFT`; `DIRECT` orders must never post against a representative's warehouse ledger (enforced at the service layer that resolves `fulfillment_warehouse_id`); state transitions are guarded by an application-level state machine, mirrored into `order_status_history` (T12) for every transition — the database enforces only that `state` is one of the valid enum values, not the transition graph itself (a full state-machine CHECK is impractical in SQL and is intentionally left to the application/service layer, consistent with how the ERD scopes `order` as classification T rather than encoding a transition table). 8. **Recommended Indexes:** btree on `customer_id`; btree on `representative_id`; btree on `state` 9. **Composite Indexes:** `(customer_id, state)`; `(representative_id, state)` — both are named dashboard/queue query patterns 10. **Partial Indexes:** `idx_order_open ON order (representative_id) WHERE state NOT IN ('COMPLETED','CANCELLED')` 11. **Partitioning Strategy:** Optional — range partition by `ordered_at` (yearly) once historical volume is large enough that archival value outweighs cross-partition query cost; not required at initial scale. 12. **Soft Delete Strategy:** Supported, though cancellation should prefer `state='CANCELLED'` over deletion to preserve the historical record. 13. **Audit Strategy:** Standard UAC; every state transition additionally written to `order_status_history` (T12); order-type overrides written to `audit_log`. 14. **Estimated Row Growth:** High — core transactional volume driver; scales directly with sales throughput, likely thousands to tens-of-thousands per year depending on business scale. 15. **Notes:** `order` is a reserved word in some SQL contexts; the physical table name `"order"` requires quoting in DDL (or the ORM author may choose `sales_order` as the literal table name while keeping the domain concept named `Order` at the model layer — flagged as an implementation decision for the ORM phase, not resolved here since this is documentation-only). ## T11 — order_line 1. **Purpose:** Order lines with frozen resolved price/discount, immutable after approval. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** order_id → order.id; product_id → product.id; lot_id → product_lot.id (nullable); fulfillment_warehouse_id → warehouse.id; discount_id → discount.id (nullable); price_history_id → price_history.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | order_id | UUID | NOT NULL | — | FK | | product_id | UUID | NOT NULL | — | FK | | lot_id | UUID | NULL | NULL | FK | | fulfillment_warehouse_id | UUID | NOT NULL | — | FK | | qty_ordered | NUMERIC(18,4) | NOT NULL | — | — | | qty_reserved | NUMERIC(18,4) | NOT NULL | `0` | — | | qty_shipped | NUMERIC(18,4) | NOT NULL | `0` | — | | qty_returned | NUMERIC(18,4) | NOT NULL | `0` | — | | unit_price | NUMERIC(18,4) | NOT NULL | — | Frozen at approval | | discount_value | NUMERIC(18,4) | NOT NULL | `0` | Frozen | | discount_id | UUID | NULL | NULL | FK, snapshot reference | | price_history_id | UUID | NOT NULL | — | FK, frozen price provenance | | line_total | NUMERIC(18,4) | NOT NULL | — | Computed at write time by the application | | fulfillment_mode | VARCHAR(20) | NOT NULL | — | Snapshot of the order's mode at line-creation time | 5. **Unique Constraints:** `uq_order_line (order_id, product_id, lot_id)` 6. **Check Constraints:** `ck_order_line_qty_nonneg (qty_ordered >= 0 AND qty_reserved >= 0 AND qty_shipped >= 0 AND qty_returned >= 0)`; `ck_order_line_shipped_le_ordered (qty_shipped <= qty_ordered)`; `ck_order_line_unit_price_nonneg (unit_price >= 0)` 7. **Business Constraints:** `unit_price`/`discount_value`/`price_history_id` become immutable once the parent `order.state` passes `APPROVED` — enforced via `BEFORE UPDATE` trigger checking the parent order's current state (a cross-table check, not expressible as a CHECK constraint). 8. **Recommended Indexes:** btree on `product_id` 9. **Composite Indexes:** `(order_id)` — implicit via FK, but explicit btree recommended for the common "all lines for this order" query pattern beyond what the unique constraint covers 10. **Partial Indexes:** `idx_order_line_open ON order_line (fulfillment_warehouse_id, product_id) WHERE qty_shipped < qty_ordered` 11. **Partitioning Strategy:** None directly; if `order` is partitioned (see T10 note), `order_line` should follow the same partitioning key via a foreign-table reference pattern for join-locality — a physical-design decision to confirm with the DBA at migration time. 12. **Soft Delete Strategy:** Supported pre-approval only 13. **Audit Strategy:** Standard UAC 14. **Estimated Row Growth:** High — several lines per order; tracks `order` growth rate at a multiplier. 15. **Notes:** — ## H5 (ERD: T12) — order_status_history 1. **Purpose:** Immutable order state-machine log. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** order_id → order.id; actor_user_id → app_user.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +AAC | — | — | — | Append-only audit columns | | order_id | UUID | NOT NULL | — | FK | | actor_user_id | UUID | NOT NULL | — | FK | | from_state | VARCHAR(24) | NOT NULL | — | Prior OrderState | | to_state | VARCHAR(24) | NOT NULL | — | New OrderState | | event_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | note | TEXT | NULL | NULL | — | 5. **Unique Constraints:** none — chronological append 6. **Check Constraints:** `ck_order_status_history_states (from_state IN (...OrderState...) AND to_state IN (...OrderState...))` 7. **Business Constraints:** Append-only 8. **Recommended Indexes:** btree on `order_id` 9. **Composite Indexes:** `(order_id, event_at)` 10. **Partial Indexes:** none 11. **Partitioning Strategy:** Range partition by `event_at` (monthly), given this scales with `order` volume. 12. **Soft Delete Strategy:** None 13. **Audit Strategy:** Self-auditing — `created_by`/`actor_user_id` capture the transitioning actor 14. **Estimated Row Growth:** High — tracks `order` volume × average transitions-per-order (likely 4-8) 15. **Notes:** — ## H6 (ERD: T13) — order_price_freeze (optional) 1. **Purpose:** Explicit record of the price-resolution precedence chain used for an order line — supports audit/disputes beyond what `order_line.price_history_id` alone shows. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** order_line_id → order_line.id; price_history_id → price_history.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +AAC | — | — | — | Append-only audit columns | | order_line_id | UUID | NOT NULL | — | FK | | resolved_price | NUMERIC(18,4) | NOT NULL | — | Final resolved unit price | | precedence_chain_json | JSONB | NOT NULL | — | Ordered list of candidate price sources considered and why each was accepted/rejected | | price_history_id | UUID | NOT NULL | — | FK, the winning source | 5. **Unique Constraints:** `uq_order_price_freeze_line (order_line_id)` — 1:1 6. **Check Constraints:** `ck_order_price_freeze_resolved_nonneg (resolved_price >= 0)` 7. **Business Constraints:** Append-only, written once at price-resolution time and never modified thereafter 8. **Recommended Indexes:** none beyond unique constraint 9. **Composite Indexes:** none 10. **Partial Indexes:** none 11. **Partitioning Strategy:** None — optional table, expected low-to-moderate volume 12. **Soft Delete Strategy:** None 13. **Audit Strategy:** `created_by` (AAC) 14. **Estimated Row Growth:** Tracks `order_line` volume 1:1, if this optional table is implemented 15. **Notes:** ERD marks this table optional ("or embed in order_line"). This spec documents it as a standalone table per the ERD's primary option, since `precedence_chain_json` is naturally variable-shaped data that would otherwise bloat `order_line` with a JSONB column on the hottest write-path table in the schema — keeping it separate is the recommended choice, subject to product-owner confirmation on whether this audit depth is actually needed. EOF grep -c "^## " /home/claude/calculator_extracted/calculator/07_DATABASE_SPEC.md
-Output
+cat >> /home/claude/calculator_extracted/calculator/07_DATABASE_SPEC.md << 'EOF'
+# PART F — TRANSACTIONAL TABLES
+#
+# F.1 — Inventory Ledger (Architectural Heart)
+#
+# T1 — inventory_transaction
+1. **Purpose:** The sole authoritative source of inventory truth (Domain-Model correction #1). All stock levels are projections of this table; nothing else may hold an editable balance.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** product_id → product.id; lot_id → product_lot.id (nullable); warehouse_id → warehouse.id; movement_type_id → movement_type_ref.id; actor_user_id → app_user.id; reason_code_id → reason_code_ref.id (nullable); reversal_of_id → inventory_transaction.id (nullable, self-ref); reference_type + reference_id (polymorphic — see Global Standards → Polymorphic Reference Policy)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +AAC | — | — | — | Append-only audit columns |
+| product_id | UUID | NOT NULL | — | FK |
+| lot_id | UUID | NULL | NULL | FK |
+| warehouse_id | UUID | NOT NULL | — | FK |
+| movement_type_id | UUID | NOT NULL | — | FK |
+| actor_user_id | UUID | NOT NULL | — | FK, mandatory (no anonymous ledger writes) |
+| reason_code_id | UUID | NULL | NULL | FK |
+| reference_type | VARCHAR(40) | NULL | NULL | Polymorphic type discriminator, e.g. `order`, `stock_transfer` |
+| reference_id | UUID | NULL | NULL | Polymorphic target id |
+| sequence_no | BIGINT | NOT NULL | — | Monotonic per warehouse, assigned by trigger/sequence |
+| signed_quantity | NUMERIC(18,4) | NOT NULL | — | Positive or negative per `movement_type.sign` |
+| unit_cost | NUMERIC(18,6) | NOT NULL | — | Snapshot cost at posting time |
+| currency_id | UUID | NOT NULL | — | FK |
+| occurred_at | TIMESTAMPTZ | NOT NULL | `now()` | Business event time, UTC |
+| prev_hash | CHAR(64) | NULL | NULL | SHA-256 hex of the prior row in this warehouse's chain |
+| row_hash | CHAR(64) | NOT NULL | — | SHA-256 hex of this row's canonical payload + prev_hash |
+| reversal_of_id | UUID | NULL | NULL | Self-ref FK, set only on REVERSAL rows |
+| is_reversed | BOOLEAN | NOT NULL | `false` | True once a REVERSAL row exists referencing this row |
+5. **Unique Constraints:** `uq_inventory_transaction_seq (warehouse_id, sequence_no)`; `uq_inventory_transaction_hash (row_hash)`
+6. **Check Constraints:** `ck_inventory_transaction_qty_nonzero (signed_quantity <> 0)`
+7. **Business Constraints:** No `UPDATE`/`DELETE` grants at the permissions layer (see Soft Delete Strategy); `signed_quantity`'s sign must match `movement_type_ref.sign` — enforced via `BEFORE INSERT` trigger (a CHECK constraint cannot join to another table); the *projected* net balance for `(warehouse_id, product_id, lot_id)` must never go negative — validated by a `BEFORE INSERT` trigger that computes `SUM(signed_quantity)` for the key and rejects if the result would be `< 0`, unless `system_config` has the negative-stock-allowed override enabled; at most one non-reversed `REVERSAL` row may reference any given original row — enforced via partial unique index `uq_inventory_transaction_one_reversal ON inventory_transaction (reversal_of_id) WHERE reversal_of_id IS NOT NULL`.
+8. **Recommended Indexes:** btree on `product_id`; btree on `lot_id`
+9. **Composite Indexes:** `(warehouse_id, product_id, lot_id, sequence_no)` — the balance-projection query; `(reference_type, reference_id)` — trace a ledger row back to its originating document
+10. **Partial Indexes:** `idx_inventory_transaction_unreversed ON inventory_transaction (warehouse_id, product_id, lot_id) WHERE is_reversed = false` — the hot path for current-balance computation
+11. **Partitioning Strategy:** **Range partition by `occurred_at`, monthly.** This is the highest-volume table in the schema; monthly partitions keep the hash-chain verification job and balance-projection scans bounded. Sub-partition by `warehouse_id` (hash) additionally recommended once the deployment exceeds roughly a dozen active warehouses, since nearly all operational reads are warehouse-scoped.
+12. **Soft Delete Strategy:** None. `UPDATE` and `DELETE` are revoked from the application role entirely (`REVOKE UPDATE, DELETE ON inventory_transaction FROM app_role`); corrections are always a new `REVERSAL`-type row.
+13. **Audit Strategy:** `created_by` (AAC) is the posting actor; the row itself, plus `prev_hash`/`row_hash`, **is** the audit trail — no separate history table wraps this one. A scheduled job re-walks the chain per warehouse and alarms on any hash mismatch.
+14. **Estimated Row Growth:** **Very high** — one row per unit of stock movement across the entire operation; expect tens of thousands to millions of rows per year depending on order volume. This table's growth rate should drive the overall database capacity plan.
+15. **Notes:** The hash-chain (`prev_hash`/`row_hash`) is scoped per `warehouse_id`, not global, so that partition maintenance and reconciliation can proceed independently per warehouse. `row_hash` computation (canonical payload serialization) is an application-layer concern, out of scope for this document, but must be deterministic and versioned (a future payload-schema change must not silently break existing hash verification).
+#
+# T2 — stock_reservation
+1. **Purpose:** Holds stock against a pending order without decrementing the ledger, preventing overselling (BRF §5).
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** warehouse_id → warehouse.id; product_id → product.id; lot_id → product_lot.id (nullable); order_id → order.id; reserved_by → app_user.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| warehouse_id | UUID | NOT NULL | — | FK |
+| product_id | UUID | NOT NULL | — | FK |
+| lot_id | UUID | NULL | NULL | FK |
+| order_id | UUID | NOT NULL | — | FK |
+| reserved_by | UUID | NOT NULL | — | FK |
+| reserved_quantity | NUMERIC(18,4) | NOT NULL | — | Quantity held |
+| state | VARCHAR(16) | NOT NULL | `'ACTIVE'` | `ACTIVE`\|`RELEASED`\|`CONSUMED`\|`EXPIRED` |
+| expires_at | TIMESTAMPTZ | NOT NULL | — | Auto-expiry deadline |
+5. **Unique Constraints:** `uq_stock_reservation (order_id, warehouse_id, product_id, lot_id, state)`
+6. **Check Constraints:** `ck_stock_reservation_state (state IN ('ACTIVE','RELEASED','CONSUMED','EXPIRED'))`; `ck_stock_reservation_qty_positive (reserved_quantity > 0)`
+7. **Business Constraints:** Σ(reserved_quantity WHERE state='ACTIVE') for a given `(warehouse_id, product_id, lot_id)` must not exceed the current available balance (`inventory_balance_snapshot.quantity_available`) — validated at reservation-creation time by the application service; auto-expiry is a scheduled job transitioning `ACTIVE → EXPIRED` past `expires_at`; released on order cancellation, consumed on shipment.
+8. **Recommended Indexes:** btree on `order_id`
+9. **Composite Indexes:** `(warehouse_id, product_id, lot_id, state)` — availability computation
+10. **Partial Indexes:** `idx_stock_reservation_active ON stock_reservation (warehouse_id, product_id, lot_id) WHERE state = 'ACTIVE'` — the hot path, and the one the expiry job scans by `expires_at`
+11. **Partitioning Strategy:** None initially; reservations are transient (short-lived relative to the ledger) and volume should stay well below `inventory_transaction`'s.
+12. **Soft Delete Strategy:** Not used — lifecycle modeled via `state`, not `deleted_at`.
+13. **Audit Strategy:** Standard UAC
+14. **Estimated Row Growth:** High-turnover but self-limiting — rows churn through `ACTIVE→CONSUMED/RELEASED/EXPIRED` quickly; consider a periodic archival/purge job for old terminal-state rows rather than partitioning.
+15. **Notes:** —
+#
+# T3 — inventory_balance_snapshot (Projection — Non-Authoritative)
+1. **Purpose:** Read-optimized, non-authoritative cache of current stock, derived entirely from `inventory_transaction`.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** warehouse_id → warehouse.id; product_id → product.id; lot_id → product_lot.id (nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| id | UUID | NOT NULL | `gen_random_uuid()` | Surrogate PK |
+| warehouse_id | UUID | NOT NULL | — | FK |
+| product_id | UUID | NOT NULL | — | FK |
+| lot_id | UUID | NULL | NULL | FK |
+| quantity_on_hand | NUMERIC(18,4) | NOT NULL | `0` | Cached total |
+| quantity_reserved | NUMERIC(18,4) | NOT NULL | `0` | Cached from active `stock_reservation` |
+| quantity_available | NUMERIC(18,4) | NOT NULL | `0` | `quantity_on_hand - quantity_reserved`, stored (not generated) since it is refreshed atomically alongside the other two |
+| last_reconciled_at | TIMESTAMPTZ | NOT NULL | `now()` | Last verification run against T1 |
+| last_transaction_seq | BIGINT | NOT NULL | `0` | Highest `inventory_transaction.sequence_no` folded in |
+5. **Unique Constraints:** `uq_inventory_balance_snapshot (warehouse_id, product_id, lot_id)` — partial unique index scoped to non-deleted rows (this table has no soft-delete need in practice, but the ERD's "partial unique ignoring soft-deleted" note is honored by treating `lot_id IS NULL` and `lot_id IS NOT NULL` cases via two partial indexes, since a NULLable column in a UNIQUE constraint already treats NULLs as distinct — the partial indexes make the intended semantics explicit: `WHERE lot_id IS NULL` and `WHERE lot_id IS NOT NULL`)
+6. **Check Constraints:** none — this table intentionally has no `CHECK (quantity_on_hand >= 0)` constraint, because it is explicitly allowed to be transiently stale/inconsistent as a cache; correctness is enforced upstream on `inventory_transaction`, not here.
+7. **Business Constraints:** Never written to directly by application business logic — only by the reconciliation/projection job that re-derives it from `inventory_transaction`; `quantity_on_hand` must equal `SUM(inventory_transaction.signed_quantity WHERE is_reversed = false)` for the key as of the last reconciliation — verified, not enforced, since real-time equality would require a synchronous trigger on the highest-volume table in the system (explicitly rejected — see Scalability Notes).
+8. **Recommended Indexes:** btree on `product_id`
+9. **Composite Indexes:** `(warehouse_id, product_id, lot_id)` — doubles as the unique constraint's supporting index
+10. **Partial Indexes:** see Unique Constraints above
+11. **Partitioning Strategy:** None — row count is bounded by `(warehouse × product × lot)` combinations, far smaller than the ledger itself.
+12. **Soft Delete Strategy:** Not applicable — rows are upserted/rebuilt, not soft-deleted; a key with zero net quantity is simply a row with `quantity_on_hand = 0`, not a deleted row.
+13. **Audit Strategy:** None beyond `last_reconciled_at`/`last_transaction_seq` — this table is a cache, not an audited business record; the audit trail lives entirely in `inventory_transaction`.
+14. **Estimated Row Growth:** Low relative to the ledger — one row per distinct `(warehouse, product, lot)` combination that has ever had stock, growing slowly and only via genuinely new combinations.
+15. **Notes:** Refresh strategy: incremental (triggered off the event bus per `inventory_transaction` insert, batched) rather than synchronous-per-write, to keep the ledger's write path latency flat — see Scalability Notes / PART M in the ERD.
+#
+# F.2 — Stock Movement
+#
+# T4 — stock_transfer
+1. **Purpose:** Transfer header between warehouses (factory→rep, rep→factory, optional rep→rep) (SRS E10).
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** source_warehouse_id → warehouse.id; destination_warehouse_id → warehouse.id; requested_by → app_user.id; approved_by → app_user.id (nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| transfer_number | VARCHAR(40) | NOT NULL | — | Business key |
+| source_warehouse_id | UUID | NOT NULL | — | FK |
+| destination_warehouse_id | UUID | NOT NULL | — | FK |
+| state | VARCHAR(20) | NOT NULL | `'DRAFT'` | TransferState enum |
+| requested_by | UUID | NOT NULL | — | FK |
+| approved_by | UUID | NULL | NULL | FK |
+| requested_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| approved_at | TIMESTAMPTZ | NULL | NULL | — |
+| dispatched_at | TIMESTAMPTZ | NULL | NULL | — |
+| received_at | TIMESTAMPTZ | NULL | NULL | — |
+| ownership_mode_snapshot | VARCHAR(20) | NOT NULL | — | Snapshot of source/destination ownership mode at creation |
+5. **Unique Constraints:** `uq_stock_transfer_number (transfer_number)`
+6. **Check Constraints:** `ck_stock_transfer_state (state IN ('DRAFT','PENDING','APPROVED','DISPATCHED','IN_TRANSIT','RECEIVED','PARTIAL_RECEIVED','CLOSED','CANCELLED'))`; `ck_stock_transfer_diff_warehouses (source_warehouse_id <> destination_warehouse_id)`
+7. **Business Constraints:** Double-entry posting at dispatch/receipt time (a `TRANSFER_OUT` row on source + a `TRANSFER_IN` row on destination in `inventory_transaction`), orchestrated by the application, not the database; cannot receive more than dispatched per `transfer_line`; consignment transfers do not change ownership (`ownership_mode_snapshot` is informational, not a trigger for a title-transfer event).
+8. **Recommended Indexes:** btree on `source_warehouse_id`; btree on `destination_warehouse_id`; btree on `state`
+9. **Composite Indexes:** `(state, requested_at)` — operations queue view
+10. **Partial Indexes:** `idx_stock_transfer_open ON stock_transfer (destination_warehouse_id) WHERE state NOT IN ('CLOSED','CANCELLED')`
+11. **Partitioning Strategy:** None initially; consider range partitioning by `requested_at` (yearly) only if transfer volume becomes very high relative to order volume.
+12. **Soft Delete Strategy:** Supported, though a transfer is normally terminated via `state='CANCELLED'`, not deletion.
+13. **Audit Strategy:** Standard UAC; state transitions additionally captured in `transfer_history` (T6).
+14. **Estimated Row Growth:** Moderate — proportional to rep count × restocking cadence.
+15. **Notes:** —
+#
+# T5 — transfer_line
+1. **Purpose:** Line items of a transfer — product/qty split across requested/dispatched/received, plus cost.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** stock_transfer_id → stock_transfer.id; product_id → product.id; lot_id → product_lot.id (nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| stock_transfer_id | UUID | NOT NULL | — | FK |
+| product_id | UUID | NOT NULL | — | FK |
+| lot_id | UUID | NULL | NULL | FK |
+| qty_requested | NUMERIC(18,4) | NOT NULL | — | — |
+| qty_dispatched | NUMERIC(18,4) | NOT NULL | `0` | — |
+| qty_received | NUMERIC(18,4) | NOT NULL | `0` | — |
+| unit_cost | NUMERIC(18,6) | NOT NULL | — | Seeds `purchase_price_history` for an OWNED destination |
+| qty_variance | NUMERIC(18,4) | NOT NULL | `0` | `qty_dispatched - qty_received`, stored (application-computed at receipt) |
+5. **Unique Constraints:** `uq_transfer_line (stock_transfer_id, product_id, lot_id)`
+6. **Check Constraints:** `ck_transfer_line_qty_nonneg (qty_requested >= 0 AND qty_dispatched >= 0 AND qty_received >= 0)`; `ck_transfer_line_dispatched_le_requested (qty_dispatched <= qty_requested)`; `ck_transfer_line_received_le_dispatched (qty_received <= qty_dispatched)`
+7. **Business Constraints:** Cannot receive more than dispatched (enforced by the CHECK above at the row level, but also validated at the application layer since receipt happens incrementally across multiple partial-receipt events, not in one UPDATE).
+8. **Recommended Indexes:** btree on `product_id`
+9. **Composite Indexes:** none beyond unique constraint
+10. **Partial Indexes:** `idx_transfer_line_open ON transfer_line (stock_transfer_id) WHERE qty_received < qty_dispatched`
+11. **Partitioning Strategy:** None (inherits parent's low-to-moderate volume)
+12. **Soft Delete Strategy:** Supported
+13. **Audit Strategy:** Standard UAC
+14. **Estimated Row Growth:** Moderate — several lines per transfer
+15. **Notes:** —
+#
+# H4 (ERD: T6) — transfer_history *(ERD numbering: T6; classified H — immutable, listed under its ERD id for traceability.)*
+1. **Purpose:** Immutable state-change log for each transfer.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** stock_transfer_id → stock_transfer.id; actor_user_id → app_user.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +AAC | — | — | — | Append-only audit columns |
+| stock_transfer_id | UUID | NOT NULL | — | FK |
+| actor_user_id | UUID | NOT NULL | — | FK |
+| from_state | VARCHAR(20) | NOT NULL | — | Prior TransferState |
+| to_state | VARCHAR(20) | NOT NULL | — | New TransferState |
+| event_at | TIMESTAMPTZ | NOT NULL | `now()` | Business event time |
+| note | TEXT | NULL | NULL | Optional annotation |
+5. **Unique Constraints:** none — chronological append
+6. **Check Constraints:** `ck_transfer_history_states (from_state IN (...TransferState values...) AND to_state IN (...TransferState values...))`
+7. **Business Constraints:** Append-only, no UPDATE/DELETE
+8. **Recommended Indexes:** btree on `stock_transfer_id`
+9. **Composite Indexes:** `(stock_transfer_id, event_at)`
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** Range partition by `event_at` (quarterly) once volume warrants it — lower priority than T1/T22/T23.
+12. **Soft Delete Strategy:** None — immutable, append-only
+13. **Audit Strategy:** `created_by` (AAC) equals `actor_user_id`; this table is itself the audit record for transfer state changes.
+14. **Estimated Row Growth:** Moderate — one row per transfer state transition, several per transfer
+15. **Notes:** —
+#
+# T7 — stock_adjustment
+1. **Purpose:** Manual correction / damage / write-off request that, once applied, posts `inventory_transaction` rows.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** warehouse_id → warehouse.id; product_id → product.id; lot_id → product_lot.id (nullable); requested_by → app_user.id; approved_by → app_user.id (nullable); reason_code_id → reason_code_ref.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| adjustment_number | VARCHAR(40) | NOT NULL | — | Business key |
+| warehouse_id | UUID | NOT NULL | — | FK |
+| product_id | UUID | NOT NULL | — | FK |
+| lot_id | UUID | NULL | NULL | FK |
+| requested_by | UUID | NOT NULL | — | FK |
+| approved_by | UUID | NULL | NULL | FK |
+| reason_code_id | UUID | NOT NULL | — | FK |
+| adjustment_type | VARCHAR(16) | NOT NULL | — | `POSITIVE`\|`NEGATIVE`\|`DAMAGE`\|`WRITEOFF`\|`STOCKTAKE` |
+| delta_quantity | NUMERIC(18,4) | NOT NULL | — | Signed |
+| state | VARCHAR(16) | NOT NULL | `'PENDING'` | `PENDING`\|`APPROVED`\|`APPLIED`\|`REJECTED` |
+| reason_text | TEXT | NOT NULL | — | Mandatory free-text justification |
+| threshold_marker | BOOLEAN | NOT NULL | `false` | True if this adjustment exceeded the auto-approval threshold |
+5. **Unique Constraints:** `uq_stock_adjustment_number (adjustment_number)`
+6. **Check Constraints:** `ck_stock_adjustment_type (adjustment_type IN ('POSITIVE','NEGATIVE','DAMAGE','WRITEOFF','STOCKTAKE'))`; `ck_stock_adjustment_state (state IN ('PENDING','APPROVED','APPLIED','REJECTED'))`; `ck_stock_adjustment_delta_nonzero (delta_quantity <> 0)`; `ck_stock_adjustment_sign_matches_type (adjustment_type <> 'POSITIVE' OR delta_quantity > 0)`
+7. **Business Constraints:** Approval required above the `system_config`-defined threshold (checked via `threshold_marker`, which drives whether an `approval_request` is created — orchestrated by the application); cannot drive stock negative (validated against `inventory_balance_snapshot`/the same trigger logic as T1 when applied); immutable once `state='APPLIED'` (enforced via `BEFORE UPDATE` trigger blocking further changes to `state`/`delta_quantity` once APPLIED).
+8. **Recommended Indexes:** btree on `warehouse_id`; btree on `product_id`; btree on `state`
+9. **Composite Indexes:** `(warehouse_id, state)` — operations queue
+10. **Partial Indexes:** `idx_stock_adjustment_pending ON stock_adjustment (warehouse_id) WHERE state = 'PENDING'`
+11. **Partitioning Strategy:** None
+12. **Soft Delete Strategy:** Supported for `PENDING`/`REJECTED` rows only (application-enforced); `APPLIED` rows are effectively immutable per Business Constraints and should not be soft-deleted either, to preserve the audit chain back to the `inventory_transaction` it posted.
+13. **Audit Strategy:** Standard UAC; `state` transitions mirrored to `audit_log`; the `APPLIED` transition additionally correlates to a specific `inventory_transaction.reference_id`.
+14. **Estimated Row Growth:** Low-to-moderate — proportional to shrinkage/damage/write-off frequency.
+15. **Notes:** —
+#
+# F.3 — Physical Count
+#
+# T8 — physical_count
+1. **Purpose:** Stocktake session header.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** warehouse_id → warehouse.id; opened_by → app_user.id; closed_by → app_user.id (nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| count_number | VARCHAR(40) | NOT NULL | — | Business key |
+| warehouse_id | UUID | NOT NULL | — | FK |
+| opened_by | UUID | NOT NULL | — | FK |
+| closed_by | UUID | NULL | NULL | FK |
+| state | VARCHAR(16) | NOT NULL | `'OPEN'` | `OPEN`\|`COUNTING`\|`RECONCILED`\|`CLOSED` |
+| scope | VARCHAR(255) | NULL | NULL | Free-text scope (full warehouse, category subset, etc.) |
+| opened_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| closed_at | TIMESTAMPTZ | NULL | NULL | — |
+5. **Unique Constraints:** `uq_physical_count_number (count_number)`
+6. **Check Constraints:** `ck_physical_count_state (state IN ('OPEN','COUNTING','RECONCILED','CLOSED'))`
+7. **Business Constraints:** Only one `OPEN`/`COUNTING` count per warehouse at a time — enforced via partial unique index; closing reconciles all `physical_count_line` deltas into `stock_adjustment`/`inventory_transaction` rows, orchestrated by the application.
+8. **Recommended Indexes:** btree on `warehouse_id`
+9. **Composite Indexes:** none beyond the partial index
+10. **Partial Indexes:** `uq_physical_count_one_open ON physical_count (warehouse_id) WHERE state IN ('OPEN','COUNTING')`
+11. **Partitioning Strategy:** None
+12. **Soft Delete Strategy:** Supported for erroneous sessions only, not for `CLOSED` counts
+13. **Audit Strategy:** Standard UAC
+14. **Estimated Row Growth:** Low — periodic (monthly/quarterly) per warehouse
+15. **Notes:** —
+#
+# T9 — physical_count_line
+1. **Purpose:** Counted vs. expected quantity per product/lot within a count session, with computed delta.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** physical_count_id → physical_count.id; product_id → product.id; lot_id → product_lot.id (nullable); reason_code_id → reason_code_ref.id (nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| physical_count_id | UUID | NOT NULL | — | FK |
+| product_id | UUID | NOT NULL | — | FK |
+| lot_id | UUID | NULL | NULL | FK |
+| reason_code_id | UUID | NULL | NULL | FK, required if `delta <> 0` at reconciliation |
+| expected_qty | NUMERIC(18,4) | NOT NULL | — | Snapshot from `inventory_balance_snapshot` at count-open time |
+| counted_qty | NUMERIC(18,4) | NULL | NULL | Physically counted quantity |
+| delta | NUMERIC(18,4) | NOT NULL | `0` | `counted_qty - expected_qty`, application-computed on entry |
+| reconciled | BOOLEAN | NOT NULL | `false` | True once a corresponding `stock_adjustment` has been posted |
+5. **Unique Constraints:** `uq_physical_count_line (physical_count_id, product_id, lot_id)`
+6. **Check Constraints:** `ck_physical_count_line_expected_nonneg (expected_qty >= 0)`
+7. **Business Constraints:** A non-zero `delta` requires `reason_code_id` before the parent count can transition to `RECONCILED` (application-enforced).
+8. **Recommended Indexes:** btree on `product_id`
+9. **Composite Indexes:** none beyond unique constraint
+10. **Partial Indexes:** `idx_physical_count_line_unreconciled ON physical_count_line (physical_count_id) WHERE reconciled = false AND delta <> 0`
+11. **Partitioning Strategy:** None
+12. **Soft Delete Strategy:** Supported before parent count closes
+13. **Audit Strategy:** Standard UAC
+14. **Estimated Row Growth:** Moderate — one row per SKU/lot counted per session
+15. **Notes:** —
+#
+# F.4 — Sales / Order
+#
+# T10 — order
+1. **Purpose:** Sales order header (SRS E15).
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** customer_id → customer.id; representative_id → representative.id; created_by → app_user.id; fulfillment_warehouse_id → warehouse.id (nullable); currency_id → currency.id; customer_city_ref_id → city_ref.id; rep_city_ref_id → city_ref.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| order_number | VARCHAR(40) | NOT NULL | — | Business key |
+| customer_id | UUID | NOT NULL | — | FK |
+| representative_id | UUID | NOT NULL | — | FK |
+| sales_channel | VARCHAR(20) | NOT NULL | — | `BOT_WEB`\|`BOT_TELEGRAM`\|`BOT_BALE`\|`OFFICE` |
+| created_by | UUID | NOT NULL | — | FK |
+| fulfillment_warehouse_id | UUID | NULL | NULL | FK, set once reserved |
+| order_type | VARCHAR(16) | NOT NULL | — | `LOCAL`\|`DIRECT` |
+| fulfillment_mode | VARCHAR(20) | NOT NULL | — | `REP_LOCAL`\|`FACTORY_DIRECT` |
+| state | VARCHAR(24) | NOT NULL | `'DRAFT'` | OrderState enum |
+| currency_id | UUID | NOT NULL | — | FK |
+| subtotal | NUMERIC(18,4) | NOT NULL | `0` | — |
+| discount_total | NUMERIC(18,4) | NOT NULL | `0` | — |
+| tax_total | NUMERIC(18,4) | NOT NULL | `0` | — |
+| grand_total | NUMERIC(18,4) | NOT NULL | `0` | — |
+| ordered_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| shipped_at | TIMESTAMPTZ | NULL | NULL | — |
+| invoiced_at | TIMESTAMPTZ | NULL | NULL | — |
+| paid_at | TIMESTAMPTZ | NULL | NULL | — |
+| customer_city_ref_id | UUID | NULL | NULL | Snapshot for Scenario A/B audit |
+| rep_city_ref_id | UUID | NULL | NULL | Snapshot for Scenario A/B audit |
+5. **Unique Constraints:** `uq_order_number (order_number)`
+6. **Check Constraints:** `ck_order_type (order_type IN ('LOCAL','DIRECT'))`; `ck_order_fulfillment_mode (fulfillment_mode IN ('REP_LOCAL','FACTORY_DIRECT'))`; `ck_order_state (state IN ('DRAFT','PENDING_APPROVAL','APPROVED','RESERVED','FULFILLING','SHIPPED','INVOICED','PAID','COMPLETED','CANCELLED','BACKORDERED','PARTIALLY_FULFILLED','RETURNED'))`; `ck_order_totals_nonneg (subtotal >= 0 AND discount_total >= 0 AND tax_total >= 0 AND grand_total >= 0)`
+7. **Business Constraints:** `order_type` classification per BR-S3, with any manual override written to `audit_log`; `LOCAL` orders require a rep-warehouse reservation (`stock_reservation`) before leaving `DRAFT`; `DIRECT` orders must never post against a representative's warehouse ledger (enforced at the service layer that resolves `fulfillment_warehouse_id`); state transitions are guarded by an application-level state machine, mirrored into `order_status_history` (T12) for every transition — the database enforces only that `state` is one of the valid enum values, not the transition graph itself (a full state-machine CHECK is impractical in SQL and is intentionally left to the application/service layer, consistent with how the ERD scopes `order` as classification T rather than encoding a transition table).
+8. **Recommended Indexes:** btree on `customer_id`; btree on `representative_id`; btree on `state`
+9. **Composite Indexes:** `(customer_id, state)`; `(representative_id, state)` — both are named dashboard/queue query patterns
+10. **Partial Indexes:** `idx_order_open ON order (representative_id) WHERE state NOT IN ('COMPLETED','CANCELLED')`
+11. **Partitioning Strategy:** Optional — range partition by `ordered_at` (yearly) once historical volume is large enough that archival value outweighs cross-partition query cost; not required at initial scale.
+12. **Soft Delete Strategy:** Supported, though cancellation should prefer `state='CANCELLED'` over deletion to preserve the historical record.
+13. **Audit Strategy:** Standard UAC; every state transition additionally written to `order_status_history` (T12); order-type overrides written to `audit_log`.
+14. **Estimated Row Growth:** High — core transactional volume driver; scales directly with sales throughput, likely thousands to tens-of-thousands per year depending on business scale.
+15. **Notes:** `order` is a reserved word in some SQL contexts; the physical table name `"order"` requires quoting in DDL (or the ORM author may choose `sales_order` as the literal table name while keeping the domain concept named `Order` at the model layer — flagged as an implementation decision for the ORM phase, not resolved here since this is documentation-only).
+#
+# T11 — order_line
+1. **Purpose:** Order lines with frozen resolved price/discount, immutable after approval.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** order_id → order.id; product_id → product.id; lot_id → product_lot.id (nullable); fulfillment_warehouse_id → warehouse.id; discount_id → discount.id (nullable); price_history_id → price_history.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| order_id | UUID | NOT NULL | — | FK |
+| product_id | UUID | NOT NULL | — | FK |
+| lot_id | UUID | NULL | NULL | FK |
+| fulfillment_warehouse_id | UUID | NOT NULL | — | FK |
+| qty_ordered | NUMERIC(18,4) | NOT NULL | — | — |
+| qty_reserved | NUMERIC(18,4) | NOT NULL | `0` | — |
+| qty_shipped | NUMERIC(18,4) | NOT NULL | `0` | — |
+| qty_returned | NUMERIC(18,4) | NOT NULL | `0` | — |
+| unit_price | NUMERIC(18,4) | NOT NULL | — | Frozen at approval |
+| discount_value | NUMERIC(18,4) | NOT NULL | `0` | Frozen |
+| discount_id | UUID | NULL | NULL | FK, snapshot reference |
+| price_history_id | UUID | NOT NULL | — | FK, frozen price provenance |
+| line_total | NUMERIC(18,4) | NOT NULL | — | Computed at write time by the application |
+| fulfillment_mode | VARCHAR(20) | NOT NULL | — | Snapshot of the order's mode at line-creation time |
+5. **Unique Constraints:** `uq_order_line (order_id, product_id, lot_id)`
+6. **Check Constraints:** `ck_order_line_qty_nonneg (qty_ordered >= 0 AND qty_reserved >= 0 AND qty_shipped >= 0 AND qty_returned >= 0)`; `ck_order_line_shipped_le_ordered (qty_shipped <= qty_ordered)`; `ck_order_line_unit_price_nonneg (unit_price >= 0)`
+7. **Business Constraints:** `unit_price`/`discount_value`/`price_history_id` become immutable once the parent `order.state` passes `APPROVED` — enforced via `BEFORE UPDATE` trigger checking the parent order's current state (a cross-table check, not expressible as a CHECK constraint).
+8. **Recommended Indexes:** btree on `product_id`
+9. **Composite Indexes:** `(order_id)` — implicit via FK, but explicit btree recommended for the common "all lines for this order" query pattern beyond what the unique constraint covers
+10. **Partial Indexes:** `idx_order_line_open ON order_line (fulfillment_warehouse_id, product_id) WHERE qty_shipped < qty_ordered`
+11. **Partitioning Strategy:** None directly; if `order` is partitioned (see T10 note), `order_line` should follow the same partitioning key via a foreign-table reference pattern for join-locality — a physical-design decision to confirm with the DBA at migration time.
+12. **Soft Delete Strategy:** Supported pre-approval only
+13. **Audit Strategy:** Standard UAC
+14. **Estimated Row Growth:** High — several lines per order; tracks `order` growth rate at a multiplier.
+15. **Notes:** —
+#
+# H5 (ERD: T12) — order_status_history
+1. **Purpose:** Immutable order state-machine log.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** order_id → order.id; actor_user_id → app_user.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +AAC | — | — | — | Append-only audit columns |
+| order_id | UUID | NOT NULL | — | FK |
+| actor_user_id | UUID | NOT NULL | — | FK |
+| from_state | VARCHAR(24) | NOT NULL | — | Prior OrderState |
+| to_state | VARCHAR(24) | NOT NULL | — | New OrderState |
+| event_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| note | TEXT | NULL | NULL | — |
+5. **Unique Constraints:** none — chronological append
+6. **Check Constraints:** `ck_order_status_history_states (from_state IN (...OrderState...) AND to_state IN (...OrderState...))`
+7. **Business Constraints:** Append-only
+8. **Recommended Indexes:** btree on `order_id`
+9. **Composite Indexes:** `(order_id, event_at)`
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** Range partition by `event_at` (monthly), given this scales with `order` volume.
+12. **Soft Delete Strategy:** None
+13. **Audit Strategy:** Self-auditing — `created_by`/`actor_user_id` capture the transitioning actor
+14. **Estimated Row Growth:** High — tracks `order` volume × average transitions-per-order (likely 4-8)
+15. **Notes:** —
+#
+# H6 (ERD: T13) — order_price_freeze (optional)
+1. **Purpose:** Explicit record of the price-resolution precedence chain used for an order line — supports audit/disputes beyond what `order_line.price_history_id` alone shows.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** order_line_id → order_line.id; price_history_id → price_history.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +AAC | — | — | — | Append-only audit columns |
+| order_line_id | UUID | NOT NULL | — | FK |
+| resolved_price | NUMERIC(18,4) | NOT NULL | — | Final resolved unit price |
+| precedence_chain_json | JSONB | NOT NULL | — | Ordered list of candidate price sources considered and why each was accepted/rejected |
+| price_history_id | UUID | NOT NULL | — | FK, the winning source |
+5. **Unique Constraints:** `uq_order_price_freeze_line (order_line_id)` — 1:1
+6. **Check Constraints:** `ck_order_price_freeze_resolved_nonneg (resolved_price >= 0)`
+7. **Business Constraints:** Append-only, written once at price-resolution time and never modified thereafter
+8. **Recommended Indexes:** none beyond unique constraint
+9. **Composite Indexes:** none
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** None — optional table, expected low-to-moderate volume
+12. **Soft Delete Strategy:** None
+13. **Audit Strategy:** `created_by` (AAC)
+14. **Estimated Row Growth:** Tracks `order_line` volume 1:1, if this optional table is implemented
+15. **Notes:** ERD marks this table optional ("or embed in order_line"). This spec documents it as a standalone table per the ERD's primary option, since `precedence_chain_json` is naturally variable-shaped data that would otherwise bloat `order_line` with a JSONB column on the hottest write-path table in the schema — keeping it separate is the recommended choice, subject to product-owner confirmation on whether this audit depth is actually needed. EOF Output
 bash
-cat >> /home/claude/calculator_extracted/calculator/07_DATABASE_SPEC.md << 'EOF' ## F.11 — Files / Documents / Images ## M14 — attachment 1. **Purpose:** Generic polymorphic file attachment — supporting evidence for adjustments, returns, disputes, KYC docs, etc. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** entity_type + entity_id (polymorphic); uploaded_by → app_user.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | entity_type | VARCHAR(60) | NOT NULL | — | Polymorphic discriminator | | entity_id | UUID | NOT NULL | — | Polymorphic target id | | uploaded_by | UUID | NOT NULL | — | FK | | file_name | VARCHAR(255) | NOT NULL | — | Original filename | | mime_type | VARCHAR(120) | NOT NULL | — | — | | size_bytes | BIGINT | NOT NULL | — | — | | storage_key | VARCHAR(512) | NOT NULL | — | S3-compatible object key | | checksum | CHAR(64) | NOT NULL | — | SHA-256 of file content, for integrity verification | 5. **Unique Constraints:** `uq_attachment_storage_key (storage_key)` 6. **Check Constraints:** `ck_attachment_size_positive (size_bytes > 0)` 7. **Business Constraints:** Soft-deletable — unlike ledger/history tables, a wrongly-uploaded attachment may legitimately be removed without breaking financial integrity. 8. **Recommended Indexes:** btree on `uploaded_by` 9. **Composite Indexes:** `(entity_type, entity_id)` 10. **Partial Indexes:** none 11. **Partitioning Strategy:** None initially; consider by `created_at` if volume becomes very high 12. **Soft Delete Strategy:** Supported — the intended removal path for mistaken uploads 13. **Audit Strategy:** Standard UAC; upload/delete events also to `audit_log` 14. **Estimated Row Growth:** Moderate — proportional to dispute/adjustment/KYC documentation volume 15. **Notes:** Actual file bytes live in object storage (S3/MinIO per `08_Architecture.md`); this row is metadata only. ## M15 — product_image 1. **Purpose:** Product-specific images (catalog, variant swatches); specializes attachment with display concerns. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** product_id → product.id; attachment_id → attachment.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | product_id | UUID | NOT NULL | — | FK | | attachment_id | UUID | NOT NULL | — | FK | | sort_order | SMALLINT | NOT NULL | `0` | Display order | | is_primary | BOOLEAN | NOT NULL | `false` | Primary catalog image flag | | alt_text | VARCHAR(255) | NULL | NULL | Accessibility text | 5. **Unique Constraints:** `uq_product_image_sort (product_id, sort_order)` 6. **Check Constraints:** none beyond NOT NULL 7. **Business Constraints:** At most one `is_primary = true` per product — enforced via partial unique index. 8. **Recommended Indexes:** btree on `attachment_id` 9. **Composite Indexes:** none beyond unique constraint 10. **Partial Indexes:** `uq_product_image_primary ON product_image (product_id) WHERE is_primary = true` 11. **Partitioning Strategy:** None 12. **Soft Delete Strategy:** Supported 13. **Audit Strategy:** Standard UAC 14. **Estimated Row Growth:** Moderate — several images per product 15. **Notes:** — ## M16 — generated_document 1. **Purpose:** System-generated PDF/document storage — invoice PDFs, credit note PDFs, report exports — distinct from user-uploaded attachment. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** entity_type + entity_id (polymorphic: invoice | credit_note | report_run); generated_by → app_user.id (nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | id | UUID | NOT NULL | `gen_random_uuid()` | Surrogate PK | | created_at | TIMESTAMPTZ | NOT NULL | `now()` | Generation timestamp | | generated_by | UUID | NULL | NULL | FK, NULL for system-generated | | entity_type | VARCHAR(40) | NOT NULL | — | `invoice`\|`credit_note`\|`report_run` | | entity_id | UUID | NOT NULL | — | Polymorphic target id | | document_type | VARCHAR(30) | NOT NULL | — | `INVOICE_PDF`\|`CREDIT_NOTE_PDF`\|`REPORT_EXPORT`\|... | | format | VARCHAR(10) | NOT NULL | — | `PDF`\|`CSV`\|`XLSX` | | storage_key | VARCHAR(512) | NOT NULL | — | Object storage key | | generated_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | version | INTEGER | NOT NULL | `1` | Version number, incremented on regeneration (not an optimistic-lock token here — see Notes) | 5. **Unique Constraints:** `uq_generated_document_storage_key (storage_key)`; `uq_generated_document_version (entity_type, entity_id, document_type, version)` 6. **Check Constraints:** `ck_generated_document_format (format IN ('PDF','CSV','XLSX'))` 7. **Business Constraints:** Immutable once generated — a corrected invoice regenerates a new versioned row rather than overwriting; superseded versions are retained for audit. 8. **Recommended Indexes:** btree on `generated_by` 9. **Composite Indexes:** `(entity_type, entity_id, document_type, version DESC)` — "latest document for this entity" query 10. **Partial Indexes:** none 11. **Partitioning Strategy:** Consider range partition by `generated_at` (yearly) once report-export volume is high 12. **Soft Delete Strategy:** None — append-only per version, consistent with H classification 13. **Audit Strategy:** `generated_by` captures the actor (or NULL for system jobs); the version chain is itself the audit trail 14. **Estimated Row Growth:** Moderate-to-high — one row per invoice/credit-note issuance plus report exports 15. **Notes:** `version` here is a **domain versioning counter** (successive regenerations), not the optimistic-concurrency `version` column from UAC — this table uses AAC-style columns (`created_at`/`created_by`-as-`generated_by`) since it has no general UPDATE path, and its `version` column means something different from the UAC token; naming collision flagged explicitly so the ORM author does not conflate the two. ## F.12 — Reporting ## M17 — report_definition 1. **Purpose:** Saved/scheduled report configuration (SRS E34). 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** report_type_id → report_type_ref.id; owner_user_id → app_user.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | report_type_id | UUID | NOT NULL | — | FK | | owner_user_id | UUID | NOT NULL | — | FK | | name | VARCHAR(160) | NOT NULL | — | — | | parameters | JSONB | NOT NULL | `'{}'` | Report parameter set (filters, date ranges, groupings) | | schedule_cron | VARCHAR(60) | NULL | NULL | Cron expression, NULL = on-demand only | | output_format | VARCHAR(10) | NOT NULL | `'PDF'` | `PDF`\|`CSV`\|`XLSX` | | is_active | BOOLEAN | NOT NULL | `true` | — | 5. **Unique Constraints:** `uq_report_definition (owner_user_id, name)` 6. **Check Constraints:** `ck_report_definition_format (output_format IN ('PDF','CSV','XLSX'))` 7. **Business Constraints:** none beyond referential integrity 8. **Recommended Indexes:** btree on `owner_user_id`; GIN index on `parameters` if parameter-based search is needed (see JSONB Usage Policy) 9. **Composite Indexes:** none beyond unique constraint 10. **Partial Indexes:** `idx_report_definition_scheduled ON report_definition (schedule_cron) WHERE schedule_cron IS NOT NULL AND is_active = true` — the scheduler's polling query 11. **Partitioning Strategy:** None 12. **Soft Delete Strategy:** Supported 13. **Audit Strategy:** Standard UAC 14. **Estimated Row Growth:** Low — tens to low-hundreds of saved report configs 15. **Notes:** — ## T26 — report_run 1. **Purpose:** A generated report instance/output, linked to its stored document (SRS E33). 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** report_definition_id → report_definition.id; generated_document_id → generated_document.id (nullable); triggered_by → app_user.id (nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | report_definition_id | UUID | NOT NULL | — | FK | | generated_document_id | UUID | NULL | NULL | FK | | triggered_by | UUID | NULL | NULL | FK, NULL = scheduler | | status | VARCHAR(16) | NOT NULL | `'QUEUED'` | `QUEUED`\|`RUNNING`\|`COMPLETE`\|`FAILED` | | started_at | TIMESTAMPTZ | NULL | NULL | — | | completed_at | TIMESTAMPTZ | NULL | NULL | — | | row_count | BIGINT | NULL | NULL | Rows in the resulting output | 5. **Unique Constraints:** none beyond PK 6. **Check Constraints:** `ck_report_run_status (status IN ('QUEUED','RUNNING','COMPLETE','FAILED'))`; `ck_report_run_row_count_nonneg (row_count IS NULL OR row_count >= 0)` 7. **Business Constraints:** none beyond referential integrity 8. **Recommended Indexes:** btree on `report_definition_id` 9. **Composite Indexes:** `(report_definition_id, started_at DESC)` — "latest runs for this definition" 10. **Partial Indexes:** `idx_report_run_active ON report_run (status) WHERE status IN ('QUEUED','RUNNING')` 11. **Partitioning Strategy:** Range partition by `started_at` (yearly) if report volume grows large 12. **Soft Delete Strategy:** Supported 13. **Audit Strategy:** Standard UAC 14. **Estimated Row Growth:** Moderate-to-high — tracks scheduled + on-demand report execution frequency 15. **Notes:** — ## F.13 — Returns (Customer & Representative Returns) ## T27 — customer_return 1. **Purpose:** Header for a physical return event — customer return, rep return-to-factory, or damaged return. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** order_id → order.id (nullable); customer_id → customer.id (nullable); representative_id → representative.id (nullable); warehouse_id → warehouse.id; initiated_by → app_user.id; reason_code_id → reason_code_ref.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | return_number | VARCHAR(40) | NOT NULL | — | Business key | | order_id | UUID | NULL | NULL | FK | | customer_id | UUID | NULL | NULL | FK, populated for CUSTOMER_RETURN/DAMAGED_RETURN | | representative_id | UUID | NULL | NULL | FK, populated for REP_RETURN_TO_FACTORY | | warehouse_id | UUID | NOT NULL | — | FK, receiving warehouse | | initiated_by | UUID | NOT NULL | — | FK | | reason_code_id | UUID | NOT NULL | — | FK | | return_type | VARCHAR(24) | NOT NULL | — | `CUSTOMER_RETURN`\|`REP_RETURN_TO_FACTORY`\|`DAMAGED_RETURN` | | state | VARCHAR(20) | NOT NULL | `'PENDING_APPROVAL'` | `PENDING_APPROVAL`\|`APPROVED`\|`RECEIVED`\|`INSPECTED`\|`CLOSED`\|`REJECTED` | | requested_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | received_at | TIMESTAMPTZ | NULL | NULL | — | | closed_at | TIMESTAMPTZ | NULL | NULL | — | 5. **Unique Constraints:** `uq_customer_return_number (return_number)` 6. **Check Constraints:** `ck_customer_return_type (return_type IN ('CUSTOMER_RETURN','REP_RETURN_TO_FACTORY','DAMAGED_RETURN'))`; `ck_customer_return_state (state IN ('PENDING_APPROVAL','APPROVED','RECEIVED','INSPECTED','CLOSED','REJECTED'))`; `ck_customer_return_party (customer_id IS NOT NULL OR representative_id IS NOT NULL)` 7. **Business Constraints:** Exactly one of `customer_id`/`representative_id` populated per `return_type` — the CHECK above enforces "at least one"; the stricter "exactly one, matching return_type" rule is enforced via `BEFORE INSERT/UPDATE` trigger (cannot be a simple CHECK since the valid combination depends on `return_type`'s value); approval handled by the generic `approval_request`/`approval_history` pair with `entity_type='customer_return'` — no dedicated approval table for this entity, per ERD design-consistency addendum; closing posts a `SALE_RETURN_IN` `inventory_transaction` and, where applicable, a `CLAWED_BACK` `commission_transaction` and a `credit_note`. 8. **Recommended Indexes:** btree on `customer_id`; btree on `representative_id`; btree on `warehouse_id` 9. **Composite Indexes:** `(warehouse_id, state)` — receiving-dock operations queue 10. **Partial Indexes:** `idx_customer_return_open ON customer_return (warehouse_id) WHERE state NOT IN ('CLOSED','REJECTED')` 11. **Partitioning Strategy:** None initially 12. **Soft Delete Strategy:** Supported pre-`CLOSED` 13. **Audit Strategy:** Standard UAC; state transitions should also flow to `audit_log` given downstream financial/commission impact 14. **Estimated Row Growth:** Low-to-moderate — proportional to return rate 15. **Notes:** — ## T28 — return_line 1. **Purpose:** Line-level detail of a return — product, quantity, and post-inspection condition/disposition. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** customer_return_id → customer_return.id; order_line_id → order_line.id (nullable); product_id → product.id; lot_id → product_lot.id (nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +UAC | — | — | — | Universal audit columns | | customer_return_id | UUID | NOT NULL | — | FK | | order_line_id | UUID | NULL | NULL | FK | | product_id | UUID | NOT NULL | — | FK | | lot_id | UUID | NULL | NULL | FK | | qty_returned | NUMERIC(18,4) | NOT NULL | — | — | | condition | VARCHAR(16) | NULL | NULL | `SALEABLE`\|`DAMAGED`\|`EXPIRED`\|`QUARANTINE`, set at inspection | | disposition | VARCHAR(16) | NULL | NULL | `RESTOCK`\|`SCRAP`\|`QUARANTINE`, set at inspection | | unit_refund_amount | NUMERIC(18,4) | NOT NULL | `0` | — | 5. **Unique Constraints:** `uq_return_line (customer_return_id, order_line_id)` where `order_line_id IS NOT NULL` 6. **Check Constraints:** `ck_return_line_qty_positive (qty_returned > 0)`; `ck_return_line_condition (condition IS NULL OR condition IN ('SALEABLE','DAMAGED','EXPIRED','QUARANTINE'))`; `ck_return_line_disposition (disposition IS NULL OR disposition IN ('RESTOCK','SCRAP','QUARANTINE'))` 7. **Business Constraints:** `disposition = 'RESTOCK'` is the only path that produces a `SALEABLE`-lot `SALE_RETURN_IN` transaction; `SCRAP`/`QUARANTINE` routes to a `DAMAGED`/`QUARANTINE` lot status instead — enforced at the application layer that posts the resulting `inventory_transaction`, since the constraint spans two tables. 8. **Recommended Indexes:** btree on `product_id` 9. **Composite Indexes:** none beyond partial unique 10. **Partial Indexes:** see Unique Constraints 11. **Partitioning Strategy:** None 12. **Soft Delete Strategy:** Supported pre-inspection 13. **Audit Strategy:** Standard UAC 14. **Estimated Row Growth:** Low-to-moderate, tracks `customer_return` at a per-line multiplier 15. **Notes:** — ## F.14 — Carrier / Logistics Reference **R14 — carrier** is documented in **PART B** above (reference tables are grouped together per the ERD's own structure; `carrier` sits physically with the other `*_ref`/lookup tables even though the ERD introduced it under its own "F.14" heading). ## F.15 — Notification History ## H8 (ERD id) — notification_history 1. **Purpose:** Immutable log of state transitions on a notification, including retries. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** notification_id → notification.id; actor_user_id → app_user.id (nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +AAC | — | — | — | Append-only audit columns | | notification_id | UUID | NOT NULL | — | FK | | actor_user_id | UUID | NULL | NULL | FK, NULL for automated system retries | | from_state | VARCHAR(16) | NOT NULL | — | — | | to_state | VARCHAR(16) | NOT NULL | — | — | | event_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | retry_attempt | SMALLINT | NOT NULL | `0` | — | | error_detail | TEXT | NULL | NULL | Populated on FAILED transitions | 5. **Unique Constraints:** none — chronological append 6. **Check Constraints:** `ck_notification_history_states (from_state IN (...) AND to_state IN (...NotificationState...))` 7. **Business Constraints:** Append-only 8. **Recommended Indexes:** btree on `notification_id` 9. **Composite Indexes:** `(notification_id, event_at)` 10. **Partial Indexes:** none 11. **Partitioning Strategy:** Range partition by `event_at` (monthly) — tracks `notification` volume, very high. 12. **Soft Delete Strategy:** None 13. **Audit Strategy:** Self-auditing 14. **Estimated Row Growth:** Very high — tracks `notification` at 1-4 rows each (queue → sent/failed → retries → acknowledged) 15. **Notes:** — ## F.16 — Reporting Snapshots ## H9 (ERD id) — report_snapshot 1. **Purpose:** Immutable point-in-time capture of a report_run's structured output, for historical trend comparison across runs. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** report_run_id → report_run.id; report_definition_id → report_definition.id 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +AAC | — | — | — | Append-only audit columns | | report_run_id | UUID | NOT NULL | — | FK, 1:1 | | report_definition_id | UUID | NOT NULL | — | FK | | snapshot_data | JSONB | NOT NULL | — | Structured report output | | captured_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | row_count | BIGINT | NOT NULL | `0` | — | 5. **Unique Constraints:** `uq_report_snapshot_run (report_run_id)` 6. **Check Constraints:** `ck_report_snapshot_row_count_nonneg (row_count >= 0)` 7. **Business Constraints:** Append-only; a re-run produces a new `report_run` + new `report_snapshot`, never an update to a prior one. 8. **Recommended Indexes:** btree on `report_definition_id` 9. **Composite Indexes:** `(report_definition_id, captured_at DESC)` — trend-comparison query 10. **Partial Indexes:** none 11. **Partitioning Strategy:** Range partition by `captured_at`, with aggressive retention/rollup per ERD PART L (daily kept 90 days, then rolled up to weekly). 12. **Soft Delete Strategy:** None 13. **Audit Strategy:** `created_by` (AAC) 14. **Estimated Row Growth:** Moderate-to-high — tracks `report_run` completion volume 1:1 15. **Notes:** GIN index on `snapshot_data` recommended only if ad-hoc querying into historical snapshot JSON is a real requirement — otherwise skip per JSONB Usage Policy (avoid indexing JSONB you don't query into). ## H10 (ERD id) — kpi_snapshot 1. **Purpose:** Periodic immutable capture of headline KPIs for dashboards/trend charts, decoupled from live query load on the operational ledgers. 2. **Primary Key:** id (UUID) 3. **Foreign Keys:** warehouse_id → warehouse.id (nullable); representative_id → representative.id (nullable) 4. **Column Definitions:** | Column | Type | Null | Default | Description | |---|---|---|---|---| | +AAC | — | — | — | Append-only audit columns | | warehouse_id | UUID | NULL | NULL | FK, scoping dimension | | representative_id | UUID | NULL | NULL | FK, scoping dimension | | kpi_key | VARCHAR(60) | NOT NULL | — | e.g. `TOTAL_STOCK_VALUE`, `AR_BALANCE`, `COMMISSION_PAYABLE` | | scope_type | VARCHAR(20) | NOT NULL | — | `GLOBAL`\|`WAREHOUSE`\|`REPRESENTATIVE` | | scope_id | UUID | NULL | NULL | Denormalized copy of whichever of `warehouse_id`/`representative_id` applies, or NULL for GLOBAL — kept for a single simple index (see Notes) | | value | NUMERIC(18,4) | NOT NULL | — | — | | captured_at | TIMESTAMPTZ | NOT NULL | `now()` | — | | period_granularity | VARCHAR(10) | NOT NULL | — | `DAILY`\|`WEEKLY`\|`MONTHLY` | 5. **Unique Constraints:** `uq_kpi_snapshot (kpi_key, scope_type, scope_id, captured_at, period_granularity)` 6. **Check Constraints:** `ck_kpi_snapshot_scope_type (scope_type IN ('GLOBAL','WAREHOUSE','REPRESENTATIVE'))`; `ck_kpi_snapshot_granularity (period_granularity IN ('DAILY','WEEKLY','MONTHLY'))`; `ck_kpi_snapshot_scope_consistency (scope_type <> 'GLOBAL' OR scope_id IS NULL)` 7. **Business Constraints:** Append-only; populated exclusively by a scheduled job reading the authoritative ledgers (`inventory_transaction`, `customer_ledger_entry`, `commission_transaction`) — never hand-edited; enforced via `REVOKE INSERT ... FROM app_role` except the reporting-job role. 8. **Recommended Indexes:** btree on `kpi_key` 9. **Composite Indexes:** `(kpi_key, scope_type, scope_id, captured_at DESC)` — dashboard trend-chart query 10. **Partial Indexes:** none 11. **Partitioning Strategy:** Range partition by `captured_at`, with aggressive retention/rollup per ERD PART L. 12. **Soft Delete Strategy:** None 13. **Audit Strategy:** `created_by` (AAC), typically the scheduler's service account 14. **Estimated Row Growth:** Moderate-to-high — proportional to KPI count × warehouses/reps × capture frequency 15. **Notes:** `scope_id` is a deliberate denormalization of `warehouse_id`/`representative_id` into one column purely to keep the unique constraint and composite index two-dimensional instead of needing a `COALESCE`-based expression index; kept in sync by the same job that writes the row (never edited afterward). EOF grep -c "^## " /home/claude/calculator_extracted/calculator/07_DATABASE_SPEC.md
-Output
-95 
-
+cat >> /home/claude/calculator_extracted/calculator/07_DATABASE_SPEC.md << 'EOF'
+#
+# F.11 — Files / Documents / Images
+#
+# M14 — attachment
+1. **Purpose:** Generic polymorphic file attachment — supporting evidence for adjustments, returns, disputes, KYC docs, etc.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** entity_type + entity_id (polymorphic); uploaded_by → app_user.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| entity_type | VARCHAR(60) | NOT NULL | — | Polymorphic discriminator |
+| entity_id | UUID | NOT NULL | — | Polymorphic target id |
+| uploaded_by | UUID | NOT NULL | — | FK |
+| file_name | VARCHAR(255) | NOT NULL | — | Original filename |
+| mime_type | VARCHAR(120) | NOT NULL | — | — |
+| size_bytes | BIGINT | NOT NULL | — | — |
+| storage_key | VARCHAR(512) | NOT NULL | — | S3-compatible object key |
+| checksum | CHAR(64) | NOT NULL | — | SHA-256 of file content, for integrity verification |
+5. **Unique Constraints:** `uq_attachment_storage_key (storage_key)`
+6. **Check Constraints:** `ck_attachment_size_positive (size_bytes > 0)`
+7. **Business Constraints:** Soft-deletable — unlike ledger/history tables, a wrongly-uploaded attachment may legitimately be removed without breaking financial integrity.
+8. **Recommended Indexes:** btree on `uploaded_by`
+9. **Composite Indexes:** `(entity_type, entity_id)`
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** None initially; consider by `created_at` if volume becomes very high
+12. **Soft Delete Strategy:** Supported — the intended removal path for mistaken uploads
+13. **Audit Strategy:** Standard UAC; upload/delete events also to `audit_log`
+14. **Estimated Row Growth:** Moderate — proportional to dispute/adjustment/KYC documentation volume
+15. **Notes:** Actual file bytes live in object storage (S3/MinIO per `08_Architecture.md`); this row is metadata only.
+#
+# M15 — product_image
+1. **Purpose:** Product-specific images (catalog, variant swatches); specializes attachment with display concerns.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** product_id → product.id; attachment_id → attachment.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| product_id | UUID | NOT NULL | — | FK |
+| attachment_id | UUID | NOT NULL | — | FK |
+| sort_order | SMALLINT | NOT NULL | `0` | Display order |
+| is_primary | BOOLEAN | NOT NULL | `false` | Primary catalog image flag |
+| alt_text | VARCHAR(255) | NULL | NULL | Accessibility text |
+5. **Unique Constraints:** `uq_product_image_sort (product_id, sort_order)`
+6. **Check Constraints:** none beyond NOT NULL
+7. **Business Constraints:** At most one `is_primary = true` per product — enforced via partial unique index.
+8. **Recommended Indexes:** btree on `attachment_id`
+9. **Composite Indexes:** none beyond unique constraint
+10. **Partial Indexes:** `uq_product_image_primary ON product_image (product_id) WHERE is_primary = true`
+11. **Partitioning Strategy:** None
+12. **Soft Delete Strategy:** Supported
+13. **Audit Strategy:** Standard UAC
+14. **Estimated Row Growth:** Moderate — several images per product
+15. **Notes:** —
+#
+# M16 — generated_document
+1. **Purpose:** System-generated PDF/document storage — invoice PDFs, credit note PDFs, report exports — distinct from user-uploaded attachment.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** entity_type + entity_id (polymorphic: invoice | credit_note | report_run); generated_by → app_user.id (nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| id | UUID | NOT NULL | `gen_random_uuid()` | Surrogate PK |
+| created_at | TIMESTAMPTZ | NOT NULL | `now()` | Generation timestamp |
+| generated_by | UUID | NULL | NULL | FK, NULL for system-generated |
+| entity_type | VARCHAR(40) | NOT NULL | — | `invoice`\|`credit_note`\|`report_run` |
+| entity_id | UUID | NOT NULL | — | Polymorphic target id |
+| document_type | VARCHAR(30) | NOT NULL | — | `INVOICE_PDF`\|`CREDIT_NOTE_PDF`\|`REPORT_EXPORT`\|... |
+| format | VARCHAR(10) | NOT NULL | — | `PDF`\|`CSV`\|`XLSX` |
+| storage_key | VARCHAR(512) | NOT NULL | — | Object storage key |
+| generated_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| version | INTEGER | NOT NULL | `1` | Version number, incremented on regeneration (not an optimistic-lock token here — see Notes) |
+5. **Unique Constraints:** `uq_generated_document_storage_key (storage_key)`; `uq_generated_document_version (entity_type, entity_id, document_type, version)`
+6. **Check Constraints:** `ck_generated_document_format (format IN ('PDF','CSV','XLSX'))`
+7. **Business Constraints:** Immutable once generated — a corrected invoice regenerates a new versioned row rather than overwriting; superseded versions are retained for audit.
+8. **Recommended Indexes:** btree on `generated_by`
+9. **Composite Indexes:** `(entity_type, entity_id, document_type, version DESC)` — "latest document for this entity" query
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** Consider range partition by `generated_at` (yearly) once report-export volume is high
+12. **Soft Delete Strategy:** None — append-only per version, consistent with H classification
+13. **Audit Strategy:** `generated_by` captures the actor (or NULL for system jobs); the version chain is itself the audit trail
+14. **Estimated Row Growth:** Moderate-to-high — one row per invoice/credit-note issuance plus report exports
+15. **Notes:** `version` here is a **domain versioning counter** (successive regenerations), not the optimistic-concurrency `version` column from UAC — this table uses AAC-style columns (`created_at`/`created_by`-as-`generated_by`) since it has no general UPDATE path, and its `version` column means something different from the UAC token; naming collision flagged explicitly so the ORM author does not conflate the two.
+#
+# F.12 — Reporting
+#
+# M17 — report_definition
+1. **Purpose:** Saved/scheduled report configuration (SRS E34).
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** report_type_id → report_type_ref.id; owner_user_id → app_user.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| report_type_id | UUID | NOT NULL | — | FK |
+| owner_user_id | UUID | NOT NULL | — | FK |
+| name | VARCHAR(160) | NOT NULL | — | — |
+| parameters | JSONB | NOT NULL | `'{}'` | Report parameter set (filters, date ranges, groupings) |
+| schedule_cron | VARCHAR(60) | NULL | NULL | Cron expression, NULL = on-demand only |
+| output_format | VARCHAR(10) | NOT NULL | `'PDF'` | `PDF`\|`CSV`\|`XLSX` |
+| is_active | BOOLEAN | NOT NULL | `true` | — |
+5. **Unique Constraints:** `uq_report_definition (owner_user_id, name)`
+6. **Check Constraints:** `ck_report_definition_format (output_format IN ('PDF','CSV','XLSX'))`
+7. **Business Constraints:** none beyond referential integrity
+8. **Recommended Indexes:** btree on `owner_user_id`; GIN index on `parameters` if parameter-based search is needed (see JSONB Usage Policy)
+9. **Composite Indexes:** none beyond unique constraint
+10. **Partial Indexes:** `idx_report_definition_scheduled ON report_definition (schedule_cron) WHERE schedule_cron IS NOT NULL AND is_active = true` — the scheduler's polling query
+11. **Partitioning Strategy:** None
+12. **Soft Delete Strategy:** Supported
+13. **Audit Strategy:** Standard UAC
+14. **Estimated Row Growth:** Low — tens to low-hundreds of saved report configs
+15. **Notes:** —
+#
+# T26 — report_run
+1. **Purpose:** A generated report instance/output, linked to its stored document (SRS E33).
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** report_definition_id → report_definition.id; generated_document_id → generated_document.id (nullable); triggered_by → app_user.id (nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| report_definition_id | UUID | NOT NULL | — | FK |
+| generated_document_id | UUID | NULL | NULL | FK |
+| triggered_by | UUID | NULL | NULL | FK, NULL = scheduler |
+| status | VARCHAR(16) | NOT NULL | `'QUEUED'` | `QUEUED`\|`RUNNING`\|`COMPLETE`\|`FAILED` |
+| started_at | TIMESTAMPTZ | NULL | NULL | — |
+| completed_at | TIMESTAMPTZ | NULL | NULL | — |
+| row_count | BIGINT | NULL | NULL | Rows in the resulting output |
+5. **Unique Constraints:** none beyond PK
+6. **Check Constraints:** `ck_report_run_status (status IN ('QUEUED','RUNNING','COMPLETE','FAILED'))`; `ck_report_run_row_count_nonneg (row_count IS NULL OR row_count >= 0)`
+7. **Business Constraints:** none beyond referential integrity
+8. **Recommended Indexes:** btree on `report_definition_id`
+9. **Composite Indexes:** `(report_definition_id, started_at DESC)` — "latest runs for this definition"
+10. **Partial Indexes:** `idx_report_run_active ON report_run (status) WHERE status IN ('QUEUED','RUNNING')`
+11. **Partitioning Strategy:** Range partition by `started_at` (yearly) if report volume grows large
+12. **Soft Delete Strategy:** Supported
+13. **Audit Strategy:** Standard UAC
+14. **Estimated Row Growth:** Moderate-to-high — tracks scheduled + on-demand report execution frequency
+15. **Notes:** —
+#
+# F.13 — Returns (Customer & Representative Returns)
+#
+# T27 — customer_return
+1. **Purpose:** Header for a physical return event — customer return, rep return-to-factory, or damaged return.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** order_id → order.id (nullable); customer_id → customer.id (nullable); representative_id → representative.id (nullable); warehouse_id → warehouse.id; initiated_by → app_user.id; reason_code_id → reason_code_ref.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| return_number | VARCHAR(40) | NOT NULL | — | Business key |
+| order_id | UUID | NULL | NULL | FK |
+| customer_id | UUID | NULL | NULL | FK, populated for CUSTOMER_RETURN/DAMAGED_RETURN |
+| representative_id | UUID | NULL | NULL | FK, populated for REP_RETURN_TO_FACTORY |
+| warehouse_id | UUID | NOT NULL | — | FK, receiving warehouse |
+| initiated_by | UUID | NOT NULL | — | FK |
+| reason_code_id | UUID | NOT NULL | — | FK |
+| return_type | VARCHAR(24) | NOT NULL | — | `CUSTOMER_RETURN`\|`REP_RETURN_TO_FACTORY`\|`DAMAGED_RETURN` |
+| state | VARCHAR(20) | NOT NULL | `'PENDING_APPROVAL'` | `PENDING_APPROVAL`\|`APPROVED`\|`RECEIVED`\|`INSPECTED`\|`CLOSED`\|`REJECTED` |
+| requested_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| received_at | TIMESTAMPTZ | NULL | NULL | — |
+| closed_at | TIMESTAMPTZ | NULL | NULL | — |
+5. **Unique Constraints:** `uq_customer_return_number (return_number)`
+6. **Check Constraints:** `ck_customer_return_type (return_type IN ('CUSTOMER_RETURN','REP_RETURN_TO_FACTORY','DAMAGED_RETURN'))`; `ck_customer_return_state (state IN ('PENDING_APPROVAL','APPROVED','RECEIVED','INSPECTED','CLOSED','REJECTED'))`; `ck_customer_return_party (customer_id IS NOT NULL OR representative_id IS NOT NULL)`
+7. **Business Constraints:** Exactly one of `customer_id`/`representative_id` populated per `return_type` — the CHECK above enforces "at least one"; the stricter "exactly one, matching return_type" rule is enforced via `BEFORE INSERT/UPDATE` trigger (cannot be a simple CHECK since the valid combination depends on `return_type`'s value); approval handled by the generic `approval_request`/`approval_history` pair with `entity_type='customer_return'` — no dedicated approval table for this entity, per ERD design-consistency addendum; closing posts a `SALE_RETURN_IN` `inventory_transaction` and, where applicable, a `CLAWED_BACK` `commission_transaction` and a `credit_note`.
+8. **Recommended Indexes:** btree on `customer_id`; btree on `representative_id`; btree on `warehouse_id`
+9. **Composite Indexes:** `(warehouse_id, state)` — receiving-dock operations queue
+10. **Partial Indexes:** `idx_customer_return_open ON customer_return (warehouse_id) WHERE state NOT IN ('CLOSED','REJECTED')`
+11. **Partitioning Strategy:** None initially
+12. **Soft Delete Strategy:** Supported pre-`CLOSED`
+13. **Audit Strategy:** Standard UAC; state transitions should also flow to `audit_log` given downstream financial/commission impact
+14. **Estimated Row Growth:** Low-to-moderate — proportional to return rate
+15. **Notes:** —
+#
+# T28 — return_line
+1. **Purpose:** Line-level detail of a return — product, quantity, and post-inspection condition/disposition.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** customer_return_id → customer_return.id; order_line_id → order_line.id (nullable); product_id → product.id; lot_id → product_lot.id (nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +UAC | — | — | — | Universal audit columns |
+| customer_return_id | UUID | NOT NULL | — | FK |
+| order_line_id | UUID | NULL | NULL | FK |
+| product_id | UUID | NOT NULL | — | FK |
+| lot_id | UUID | NULL | NULL | FK |
+| qty_returned | NUMERIC(18,4) | NOT NULL | — | — |
+| condition | VARCHAR(16) | NULL | NULL | `SALEABLE`\|`DAMAGED`\|`EXPIRED`\|`QUARANTINE`, set at inspection |
+| disposition | VARCHAR(16) | NULL | NULL | `RESTOCK`\|`SCRAP`\|`QUARANTINE`, set at inspection |
+| unit_refund_amount | NUMERIC(18,4) | NOT NULL | `0` | — |
+5. **Unique Constraints:** `uq_return_line (customer_return_id, order_line_id)` where `order_line_id IS NOT NULL`
+6. **Check Constraints:** `ck_return_line_qty_positive (qty_returned > 0)`; `ck_return_line_condition (condition IS NULL OR condition IN ('SALEABLE','DAMAGED','EXPIRED','QUARANTINE'))`; `ck_return_line_disposition (disposition IS NULL OR disposition IN ('RESTOCK','SCRAP','QUARANTINE'))`
+7. **Business Constraints:** `disposition = 'RESTOCK'` is the only path that produces a `SALEABLE`-lot `SALE_RETURN_IN` transaction; `SCRAP`/`QUARANTINE` routes to a `DAMAGED`/`QUARANTINE` lot status instead — enforced at the application layer that posts the resulting `inventory_transaction`, since the constraint spans two tables.
+8. **Recommended Indexes:** btree on `product_id`
+9. **Composite Indexes:** none beyond partial unique
+10. **Partial Indexes:** see Unique Constraints
+11. **Partitioning Strategy:** None
+12. **Soft Delete Strategy:** Supported pre-inspection
+13. **Audit Strategy:** Standard UAC
+14. **Estimated Row Growth:** Low-to-moderate, tracks `customer_return` at a per-line multiplier
+15. **Notes:** —
+#
+# F.14 — Carrier / Logistics Reference **R14 — carrier** is documented in **PART B** above (reference tables are grouped together per the ERD's own structure; `carrier` sits physically with the other `*_ref`/lookup tables even though the ERD introduced it under its own "F.14" heading).
+#
+# F.15 — Notification History
+#
+# H8 (ERD id) — notification_history
+1. **Purpose:** Immutable log of state transitions on a notification, including retries.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** notification_id → notification.id; actor_user_id → app_user.id (nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +AAC | — | — | — | Append-only audit columns |
+| notification_id | UUID | NOT NULL | — | FK |
+| actor_user_id | UUID | NULL | NULL | FK, NULL for automated system retries |
+| from_state | VARCHAR(16) | NOT NULL | — | — |
+| to_state | VARCHAR(16) | NOT NULL | — | — |
+| event_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| retry_attempt | SMALLINT | NOT NULL | `0` | — |
+| error_detail | TEXT | NULL | NULL | Populated on FAILED transitions |
+5. **Unique Constraints:** none — chronological append
+6. **Check Constraints:** `ck_notification_history_states (from_state IN (...) AND to_state IN (...NotificationState...))`
+7. **Business Constraints:** Append-only
+8. **Recommended Indexes:** btree on `notification_id`
+9. **Composite Indexes:** `(notification_id, event_at)`
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** Range partition by `event_at` (monthly) — tracks `notification` volume, very high.
+12. **Soft Delete Strategy:** None
+13. **Audit Strategy:** Self-auditing
+14. **Estimated Row Growth:** Very high — tracks `notification` at 1-4 rows each (queue → sent/failed → retries → acknowledged)
+15. **Notes:** —
+#
+# F.16 — Reporting Snapshots
+#
+# H9 (ERD id) — report_snapshot
+1. **Purpose:** Immutable point-in-time capture of a report_run's structured output, for historical trend comparison across runs.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** report_run_id → report_run.id; report_definition_id → report_definition.id
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +AAC | — | — | — | Append-only audit columns |
+| report_run_id | UUID | NOT NULL | — | FK, 1:1 |
+| report_definition_id | UUID | NOT NULL | — | FK |
+| snapshot_data | JSONB | NOT NULL | — | Structured report output |
+| captured_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| row_count | BIGINT | NOT NULL | `0` | — |
+5. **Unique Constraints:** `uq_report_snapshot_run (report_run_id)`
+6. **Check Constraints:** `ck_report_snapshot_row_count_nonneg (row_count >= 0)`
+7. **Business Constraints:** Append-only; a re-run produces a new `report_run` + new `report_snapshot`, never an update to a prior one.
+8. **Recommended Indexes:** btree on `report_definition_id`
+9. **Composite Indexes:** `(report_definition_id, captured_at DESC)` — trend-comparison query
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** Range partition by `captured_at`, with aggressive retention/rollup per ERD PART L (daily kept 90 days, then rolled up to weekly).
+12. **Soft Delete Strategy:** None
+13. **Audit Strategy:** `created_by` (AAC)
+14. **Estimated Row Growth:** Moderate-to-high — tracks `report_run` completion volume 1:1
+15. **Notes:** GIN index on `snapshot_data` recommended only if ad-hoc querying into historical snapshot JSON is a real requirement — otherwise skip per JSONB Usage Policy (avoid indexing JSONB you don't query into).
+#
+# H10 (ERD id) — kpi_snapshot
+1. **Purpose:** Periodic immutable capture of headline KPIs for dashboards/trend charts, decoupled from live query load on the operational ledgers.
+2. **Primary Key:** id (UUID)
+3. **Foreign Keys:** warehouse_id → warehouse.id (nullable); representative_id → representative.id (nullable)
+4. **Column Definitions:**
+| Column | Type | Null | Default | Description |
+|---|---|---|---|---|
+| +AAC | — | — | — | Append-only audit columns |
+| warehouse_id | UUID | NULL | NULL | FK, scoping dimension |
+| representative_id | UUID | NULL | NULL | FK, scoping dimension |
+| kpi_key | VARCHAR(60) | NOT NULL | — | e.g. `TOTAL_STOCK_VALUE`, `AR_BALANCE`, `COMMISSION_PAYABLE` |
+| scope_type | VARCHAR(20) | NOT NULL | — | `GLOBAL`\|`WAREHOUSE`\|`REPRESENTATIVE` |
+| scope_id | UUID | NULL | NULL | Denormalized copy of whichever of `warehouse_id`/`representative_id` applies, or NULL for GLOBAL — kept for a single simple index (see Notes) |
+| value | NUMERIC(18,4) | NOT NULL | — | — |
+| captured_at | TIMESTAMPTZ | NOT NULL | `now()` | — |
+| period_granularity | VARCHAR(10) | NOT NULL | — | `DAILY`\|`WEEKLY`\|`MONTHLY` |
+5. **Unique Constraints:** `uq_kpi_snapshot (kpi_key, scope_type, scope_id, captured_at, period_granularity)`
+6. **Check Constraints:** `ck_kpi_snapshot_scope_type (scope_type IN ('GLOBAL','WAREHOUSE','REPRESENTATIVE'))`; `ck_kpi_snapshot_granularity (period_granularity IN ('DAILY','WEEKLY','MONTHLY'))`; `ck_kpi_snapshot_scope_consistency (scope_type <> 'GLOBAL' OR scope_id IS NULL)`
+7. **Business Constraints:** Append-only; populated exclusively by a scheduled job reading the authoritative ledgers (`inventory_transaction`, `customer_ledger_entry`, `commission_transaction`) — never hand-edited; enforced via `REVOKE INSERT ... FROM app_role` except the reporting-job role.
+8. **Recommended Indexes:** btree on `kpi_key`
+9. **Composite Indexes:** `(kpi_key, scope_type, scope_id, captured_at DESC)` — dashboard trend-chart query
+10. **Partial Indexes:** none
+11. **Partitioning Strategy:** Range partition by `captured_at`, with aggressive retention/rollup per ERD PART L.
+12. **Soft Delete Strategy:** None
+13. **Audit Strategy:** `created_by` (AAC), typically the scheduler's service account
+14. **Estimated Row Growth:** Moderate-to-high — proportional to KPI count × warehouses/reps × capture frequency
+15. **Notes:** `scope_id` is a deliberate denormalization of `warehouse_id`/`representative_id` into one column purely to keep the unique constraint and composite index two-dimensional instead of needing a `COALESCE`-based expression index; kept in sync by the same job that writes the row (never edited afterward). EOF Output
+95
