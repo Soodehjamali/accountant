@@ -121,14 +121,40 @@ def uq_index_name(table_name: str, descriptor: str) -> str:
 
 
 def ck_index_name(table_name: str, descriptor: str) -> str:
-    """Check-constraint name: ``ck_<table>_<descriptor>``.
+    """Bare check-constraint descriptor to pass to ``CheckConstraint(name=)``.
 
-    e.g. ``ck_shipment_state``, ``ck_order_line_unit_price_nonneg``.
-    Passed an explicit ``name=`` on the ``CheckConstraint`` so the produced
-    DDL is identical to docs/07_DATABASE_SPEC.md verbatim.
+    Returns *only* the ``<descriptor>`` token — **not** the full
+    ``ck_<table>_<descriptor>`` name — because ``NAMING_CONVENTION["ck"]`` is
+    ``ck_%(table_name)s_%(constraint_name)s``: at compile time SQLAlchemy
+    substitutes ``%(constraint_name)s`` with the explicit ``name=`` passed to
+    ``CheckConstraint`` and supplies the ``ck_<table>_`` prefix itself. Passing
+    the full name here would render double-wrapped, e.g. for
+    ``ck_index_name("shipment", "state")`` the convention would emit
+    ``ck_shipment_ck_shipment_state``.
+
+    Usage::
+
+        from database.naming import ck_index_name
+        CheckConstraint("state IN ('A','B')", name=ck_index_name("shipment", "state"))
+        # -> compiled constraint name: ck_shipment_state  (matches spec verbatim)
+
+    The produced DDL therefore reads ``ck_<table>_<descriptor>`` exactly as in
+    docs/07_DATABASE_SPEC.md.
+
+    Args:
+        table_name: Table the constraint belongs to. **Accepted for the public
+          signature's consistency with the sibling helpers and for
+          documentation**, but deliberately NOT folded into the returned token
+          — the convention supplies it. Keeping it a parameter preserves a stable
+          call shape across all ``*_index_name`` helpers.
+        descriptor: Short descriptor for the constraint (e.g. ``"state"``,
+          ``"unit_price_nonneg"``).
+
+    Returns:
+        The bare descriptor ``<descriptor>``.
     """
 
-    return _join(CHECK_PREFIX, table_name, descriptor)
+    return descriptor
 
 
 def idx_index_name(table_name: str, descriptor: str) -> str:

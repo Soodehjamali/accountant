@@ -38,8 +38,13 @@ Naming convention:
     (convention: ``uq_%(table_name)s_%(column_0_name)s``). The partial
     single-base-currency index is hand-authored and given an explicit name via
     ``database.naming.idx_index_name("currency", "one_base")`` →
-    ``idx_currency_one_base``. The ``decimals`` range CHECK uses
-    ``ck_index_name("currency", "decimals_range")`` → ``ck_currency_decimals_range``.
+    ``idx_currency_one_base`` (the ``ix`` convention governs only implicit
+    indexes, so explicit index names pass through untouched). The ``decimals``
+    range CHECK uses ``database.naming.ck_index_name("currency",
+    "decimals_range")``, which returns the bare descriptor ``decimals_range``;
+    the convention's ``ck`` template ``ck_%(table_name)s_%(constraint_name)s``
+    supplies the ``ck_currency_`` prefix at compile time, rendering
+    ``ck_currency_decimals_range`` verbatim.
 
 Column-type notes:
     * ``code`` uses plain ``String(3)`` rather than a ``database.types`` helper
@@ -122,11 +127,10 @@ class Currency(Base, UniversalAuditColumns):
 
     # ------------------------------------------------------------------ constraints
     __table_args__ = (
-        # CHECK: decimals range. Named via the convention helper so the DDL
-        # reads ``ck_currency_decimals_range`` exactly. The ``ck`` convention
-        # template uses ``%(constraint_name)s``, which requires an explicit
-        # constraint name — so we MUST pass a name here; the helper produces
-        # the spec-aligned token.
+        # CHECK: decimals range. Named via the convention helper: ``ck_index_name``
+        # returns the bare descriptor (see its docstring — ``NAMING_CONVENTION["ck"]``
+        # supplies the ``ck_<table>_`` prefix at compile time), so the produced DDL
+        # reads ``ck_currency_decimals_range`` verbatim.
         CheckConstraint(
             "decimals >= 0 AND decimals <= 4",
             name=ck_index_name("currency", "decimals_range"),
