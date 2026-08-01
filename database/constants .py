@@ -167,6 +167,12 @@ class StringLength:
     CRON_EXPRESSION: Final[int] = 60
 
 
+#: PostgreSQL's hard identifier-length limit (NAMEDATALEN=64 internally,
+#: i.e. 63 usable characters before silent truncation). Any generated
+#: constraint/index name must be enforced to this ceiling — see
+#: database/naming.py's ``_enforce_length_limit``.
+POSTGRES_IDENTIFIER_MAX_LENGTH: Final[int] = 63
+
 #: Hash-chain column width (SHA-256 hex stored as CHAR(64)).
 #: (inventory_transaction/customer_ledger_entry/commission row_hash/prev_hash,
 #:  attachment checksum) — docs/07_DATABASE_SPEC.md.
@@ -191,6 +197,7 @@ __all__ = [
     "NumericPrecision",
     "OPTIMISTIC_LOCK_VERSION_START",
     "POSTGRES_DIALECT_NAME",
+    "POSTGRES_IDENTIFIER_MAX_LENGTH",
     "POSTGRES_MAJOR_VERSION",
     "RECONCILIATION_ROLE",
     "REPORTING_ROLE",
