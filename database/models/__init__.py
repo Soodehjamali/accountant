@@ -16,6 +16,7 @@ Submodules:
 * :mod:`database.models.role_permission` — ``R8 — role_permission`` (RBAC role-permission junction).
 * :mod:`database.models.warehouse` — ``M4 — warehouse`` (factory + representative warehouses).
 * :mod:`database.models.app_user` — ``M10 — app_user`` (system auth account linked to staff/rep).
+* :mod:`database.models.representative` — ``M6 — representative`` (sales representative master).
 
 This package intentionally re-exports nothing by name yet (no eager model
 loading here) to keep ``import database`` cheap and to avoid forcing a model
