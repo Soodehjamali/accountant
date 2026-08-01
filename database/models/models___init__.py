@@ -9,6 +9,7 @@ Submodules:
 
 * :mod:`database.models.currency` — ``R5 — currency`` (ISO 4217 reference).
 * :mod:`database.models.product_category` — ``R1 — product_category`` (hierarchical product taxonomy).
+* :mod:`database.models.product` — ``M1 — product`` (core product master data).
 * :mod:`database.models.role` — ``R6 — role`` (RBAC role definition).
 * :mod:`database.models.permission` — ``R7 — permission`` (RBAC permission definition).
 * :mod:`database.models.role_permission` — ``R8 — role_permission`` (RBAC role-permission junction).
