@@ -22,17 +22,23 @@ authority — M6 has no detailed section in ``07_DATABASE_SPEC.md``.
     required, so it is nullable — the exact same treatment
     ``warehouse.city_ref_id`` gives its own ``city_ref`` FK.
 
-``commission_config_id`` — no ``ForeignKey()`` yet:
-    ``commission_config`` (C1) does not exist in the codebase yet, so
-    ``commission_config_id`` is a plain ``UUID`` column with **no**
-    ``ForeignKey()`` — the same deferred-FK pattern already used for
-    ``app_user.representative_id`` and ``inventory_transaction.lot_id``
-    (and documented in ``database.mixins`` for ``created_by`` /
-    ``updated_by``). Nullable: the ERD describes ``commission_config``'s own
-    ``representative_id`` FK as "nullable for global default", which implies
-    a representative need not have a bespoke commission_config row bound to
-    it — the relationship is optional from this side too. The FK is added by
-    a later migration once ``commission_config`` lands.
+``commission_config_id`` — ``ForeignKey()`` retrofitted now that C1 exists:
+    ``commission_config_id`` was originally a plain ``UUID`` column with no
+    ``ForeignKey()`` because ``commission_config`` (C1) did not exist in the
+    codebase yet — the same deferred-FK deviation used at the time for
+    ``app_user.representative_id`` and ``inventory_transaction.lot_id``. Now
+    that ``database/models/commission_config.py`` has landed, this column
+    carries a real ``ForeignKey("commission_config.id", ...)``, named via
+    ``fk_index_name`` →
+    ``fk_representative_commission_config_id_commission_config_id`` (the
+    trailing ``_id`` is ``fk_index_name``'s default
+    ``referred_column_name="id"``, appended after the referred table name —
+    verified below, not assumed from the table name alone). ``nullable=True``
+    is unchanged: the ERD's "nullable for global default" reasoning (see
+    ``commission_config.py``'s own docstring) still applies — a
+    representative need not have a bespoke commission_config row bound to
+    it; the column simply now enforces referential integrity for the rows
+    that do populate it.
 
 ``national_id`` / ``tax_id`` — reading, stated explicitly:
     This is a different kind of ambiguity than ``app_user``'s
@@ -109,7 +115,6 @@ import datetime
 import uuid
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey
-from sqlalchemy import Uuid as _SAUuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base, GuidPk, id_column
@@ -175,11 +180,13 @@ class Representative(Base, UniversalAuditColumns):
     )
 
     # ------------------------------------------------- commission_config_id
-    # Plain UUID column, NO ForeignKey() — commission_config (C1) does not
-    # exist yet. Same deferred-FK pattern as app_user.representative_id /
-    # inventory_transaction.lot_id. Nullable (see module docstring).
+    # Retrofitted to a real ForeignKey now that commission_config (C1)
+    # exists (see module docstring). Nullable, unchanged.
     commission_config_id: Mapped[uuid.UUID | None] = mapped_column(
-        _SAUuid(as_uuid=True),
+        ForeignKey(
+            "commission_config.id",
+            name=fk_index_name("representative", "commission_config_id", "commission_config"),
+        ),
         nullable=True,
     )
 
