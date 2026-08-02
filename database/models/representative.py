@@ -84,7 +84,9 @@ Business constraints — service-layer only, no SQL:
 Naming convention:
     ``code`` uses column-level ``unique=True`` → ``uq_representative_code``,
     mirroring ``warehouse.code`` / ``product.sku``. ``home_city_ref_id`` uses
-    ``fk_index_name`` → ``fk_representative_home_city_ref_id_city_ref``,
+    ``fk_index_name`` → ``fk_representative_home_city_ref_id_city_ref_id``
+    (the trailing ``_id`` is ``fk_index_name``'s default
+    ``referred_column_name="id"``, appended after the referred table name),
     mirroring ``warehouse.city_ref_id``. The ``status`` vocabulary is bounded
     by a CHECK named via ``ck_index_name`` →
     ``ck_representative_status_values``.

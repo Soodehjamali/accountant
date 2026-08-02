@@ -17,6 +17,7 @@ Submodules:
 * :mod:`database.models.warehouse` — ``M4 — warehouse`` (factory + representative warehouses).
 * :mod:`database.models.app_user` — ``M10 — app_user`` (system auth account linked to staff/rep).
 * :mod:`database.models.representative` — ``M6 — representative`` (sales representative master).
+* :mod:`database.models.commission_config` — ``C1 — commission_config`` (commission rate configuration).
 
 This package intentionally re-exports nothing by name yet (no eager model
 loading here) to keep ``import database`` cheap and to avoid forcing a model

@@ -21,7 +21,9 @@ authority — M10 has no detailed section in ``07_DATABASE_SPEC.md``.
     ``warehouse.responsible_user_id`` and ``inventory_transaction.lot_id``.
     Now that ``database/models/representative.py`` has landed, this column
     carries a real ``ForeignKey("representative.id", ...)``, named via
-    ``fk_index_name`` → ``fk_app_user_representative_id_representative``.
+    ``fk_index_name`` → ``fk_app_user_representative_id_representative_id``
+    (the trailing ``_id`` is ``fk_index_name``'s default
+    ``referred_column_name="id"``, appended after the referred table name).
     ``nullable=True`` is unchanged: the ERD's own parenthetical — "staff
     users have none" — still applies; the column simply now enforces
     referential integrity for the rows that do populate it.
