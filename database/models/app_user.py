@@ -14,16 +14,17 @@ Authority: ``06_ERD.md``, PART C → ``M10 — app_user``::
 Same gap as every other M-table so far: ``06_ERD.md`` is M10's sole
 authority — M10 has no detailed section in ``07_DATABASE_SPEC.md``.
 
-``representative_id`` — no ``ForeignKey()`` yet:
-    ``representative`` (M6) does not exist in the codebase yet, so
-    ``representative_id`` is a plain ``UUID`` column with **no**
-    ``ForeignKey()`` — the exact same deferred-FK deviation already used for
-    ``warehouse.responsible_user_id`` (deferred because ``app_user`` did not
-    exist when ``warehouse.py`` was written) and for
-    ``inventory_transaction.lot_id``, and the same pattern documented in
-    ``database.mixins`` for ``created_by`` / ``updated_by``. Nullable, per
-    the ERD's own parenthetical: "staff users have none". The FK is added by
-    a later migration once ``representative`` lands.
+``representative_id`` — ``ForeignKey()`` retrofitted now that M6 exists:
+    ``representative_id`` was originally a plain ``UUID`` column with no
+    ``ForeignKey()`` because ``representative`` (M6) did not exist in the
+    codebase yet — the same deferred-FK deviation used at the time for
+    ``warehouse.responsible_user_id`` and ``inventory_transaction.lot_id``.
+    Now that ``database/models/representative.py`` has landed, this column
+    carries a real ``ForeignKey("representative.id", ...)``, named via
+    ``fk_index_name`` → ``fk_app_user_representative_id_representative``.
+    ``nullable=True`` is unchanged: the ERD's own parenthetical — "staff
+    users have none" — still applies; the column simply now enforces
+    referential integrity for the rows that do populate it.
 
 ``username`` — column-type choice:
     ``code_short_type()`` (``VARCHAR(40)``) is used rather than a wider
@@ -122,13 +123,12 @@ from __future__ import annotations
 import datetime
 import uuid
 
-from sqlalchemy import CheckConstraint, DateTime
-from sqlalchemy import Uuid as _SAUuid
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base, GuidPk, id_column
 from database.mixins import UniversalAuditColumns
-from database.naming import ck_index_name
+from database.naming import ck_index_name, fk_index_name
 from database.types import code_short_type, description_type, state_token_type, token_type
 
 
@@ -145,12 +145,13 @@ class AppUser(Base, UniversalAuditColumns):
     id: GuidPk = id_column()
 
     # ------------------------------------------------------ representative_id
-    # Plain UUID column, NO ForeignKey() — representative (M6) does not
-    # exist yet. Same deferred-FK deviation already used for
-    # warehouse.responsible_user_id / inventory_transaction.lot_id.
-    # Nullable, per the ERD: "staff users have none".
+    # Retrofitted to a real ForeignKey now that representative (M6) exists
+    # (see module docstring). Nullable, per the ERD: "staff users have none".
     representative_id: Mapped[uuid.UUID | None] = mapped_column(
-        _SAUuid(as_uuid=True),
+        ForeignKey(
+            "representative.id",
+            name=fk_index_name("app_user", "representative_id", "representative"),
+        ),
         nullable=True,
     )
 
