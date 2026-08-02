@@ -37,6 +37,7 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import ForeignKey, UniqueConstraint
+from sqlalchemy import Uuid as _SAUuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base
@@ -51,6 +52,7 @@ class RolePermission(Base, AppendOnlyAuditColumns):
 
     # Composite identity: a role may receive each permission at most once.
     role_id: Mapped[uuid.UUID] = mapped_column(
+        _SAUuid(as_uuid=True),
         ForeignKey(
             "role.id",
             name=fk_index_name("role_permission", "role_id", "role"),
@@ -59,6 +61,7 @@ class RolePermission(Base, AppendOnlyAuditColumns):
         nullable=False,
     )
     permission_id: Mapped[uuid.UUID] = mapped_column(
+        _SAUuid(as_uuid=True),
         ForeignKey(
             "permission.id",
             name=fk_index_name(

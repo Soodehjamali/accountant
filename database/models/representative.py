@@ -115,6 +115,7 @@ import datetime
 import uuid
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey
+from sqlalchemy import Uuid as _SAUuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base, GuidPk, id_column
@@ -139,6 +140,7 @@ class Representative(Base, UniversalAuditColumns):
     # ERD does not mark this required — nullable, mirrors
     # warehouse.city_ref_id.
     home_city_ref_id: Mapped[uuid.UUID | None] = mapped_column(
+        _SAUuid(as_uuid=True),
         ForeignKey(
             "city_ref.id",
             name=fk_index_name("representative", "home_city_ref_id", "city_ref"),
@@ -183,6 +185,7 @@ class Representative(Base, UniversalAuditColumns):
     # Retrofitted to a real ForeignKey now that commission_config (C1)
     # exists (see module docstring). Nullable, unchanged.
     commission_config_id: Mapped[uuid.UUID | None] = mapped_column(
+        _SAUuid(as_uuid=True),
         ForeignKey(
             "commission_config.id",
             name=fk_index_name("representative", "commission_config_id", "commission_config"),

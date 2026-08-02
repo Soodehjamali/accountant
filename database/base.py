@@ -87,9 +87,27 @@ class Base(DeclarativeBase):
     Models subclass this base; the ``metadata`` and ``registry`` are shared so
     that ``Base.metadata`` (and ``metadata`` directly) enumerate all known
     tables, and constraint / index naming stays spec-compliant by construction.
+
+    ``type_annotation_map``: maps the bare ``uuid.UUID`` Python annotation to
+    ``Uuid(as_uuid=True)`` for any *future* column that relies on
+    annotation-only type resolution (i.e. a plain, non-FK
+    ``Mapped[uuid.UUID]`` column with no explicit type passed to
+    ``mapped_column()``). This is defense-in-depth, not a fix for FK
+    columns: SQLAlchemy Core resolves a ``ForeignKey``-bearing column's type
+    via an import-order-dependent copy-from-referenced-column fallback that
+    bypasses ``type_annotation_map`` entirely, silently producing
+    ``NullType()`` when the referenced table isn't yet present in
+    ``metadata`` at class-definition time. Every existing FK column in this
+    codebase was fixed by giving it an explicit ``Uuid(as_uuid=True)`` first
+    positional argument to ``mapped_column()`` (verified via real
+    ``CreateTable(...).compile()`` DDL generation, not just
+    ``configure_mappers()`` or naming-collision checks — neither of those
+    catches this class of bug). This map only helps a *non-FK* UUID column
+    written without an explicit type going forward.
     """
 
     metadata: MetaData = metadata
+    type_annotation_map = {uuid.UUID: _SAUuid(as_uuid=True)}
 
 
 # ---------------------------------------------------------------------------

@@ -126,6 +126,7 @@ import datetime
 import uuid
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey
+from sqlalchemy import Uuid as _SAUuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base, GuidPk, id_column
@@ -150,6 +151,7 @@ class AppUser(Base, UniversalAuditColumns):
     # Retrofitted to a real ForeignKey now that representative (M6) exists
     # (see module docstring). Nullable, per the ERD: "staff users have none".
     representative_id: Mapped[uuid.UUID | None] = mapped_column(
+        _SAUuid(as_uuid=True),
         ForeignKey(
             "representative.id",
             name=fk_index_name("app_user", "representative_id", "representative"),

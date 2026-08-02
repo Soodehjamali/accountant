@@ -178,6 +178,7 @@ class Warehouse(Base, UniversalAuditColumns):
 
     # ------------------------------------------------------- city_ref_id
     city_ref_id: Mapped[uuid.UUID | None] = mapped_column(
+        _SAUuid(as_uuid=True),
         ForeignKey(
             "city_ref.id",
             name=fk_index_name("warehouse", "city_ref_id", "city_ref"),

@@ -57,6 +57,7 @@ import datetime
 import uuid
 
 from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer
+from sqlalchemy import Uuid as _SAUuid
 from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -75,6 +76,7 @@ class Product(Base, UniversalAuditColumns):
     id: GuidPk = id_column()
 
     category_id: Mapped[uuid.UUID | None] = mapped_column(
+        _SAUuid(as_uuid=True),
         ForeignKey(
             "product_category.id",
             name=fk_index_name("product", "category_id", "product_category"),
@@ -82,6 +84,7 @@ class Product(Base, UniversalAuditColumns):
         nullable=True,
     )
     base_uom_id: Mapped[uuid.UUID] = mapped_column(
+        _SAUuid(as_uuid=True),
         ForeignKey(
             "unit_of_measure.id",
             name=fk_index_name("product", "base_uom_id", "unit_of_measure"),
@@ -89,6 +92,7 @@ class Product(Base, UniversalAuditColumns):
         nullable=False,
     )
     variant_of_id: Mapped[uuid.UUID | None] = mapped_column(
+        _SAUuid(as_uuid=True),
         ForeignKey(
             "product.id",
             name=fk_index_name("product", "variant_of_id", "product"),

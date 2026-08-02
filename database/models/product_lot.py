@@ -88,6 +88,7 @@ import decimal
 import uuid
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Uuid as _SAUuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base, GuidPk, id_column
@@ -105,6 +106,7 @@ class ProductLot(Base, UniversalAuditColumns):
     id: GuidPk = id_column()
 
     product_id: Mapped[uuid.UUID] = mapped_column(
+        _SAUuid(as_uuid=True),
         ForeignKey(
             "product.id",
             name=fk_index_name("product_lot", "product_id", "product"),

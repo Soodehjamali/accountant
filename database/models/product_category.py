@@ -43,6 +43,7 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import ForeignKey
+from sqlalchemy import Uuid as _SAUuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base, GuidPk, id_column
@@ -64,6 +65,7 @@ class ProductCategory(Base, UniversalAuditColumns):
 
     # Optional parent permits root categories; it references this same table.
     parent_category_id: Mapped[uuid.UUID | None] = mapped_column(
+        _SAUuid(as_uuid=True),
         ForeignKey(
             "product_category.id",
             name=fk_index_name(

@@ -137,6 +137,7 @@ import decimal
 import uuid
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Uuid as _SAUuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base, GuidPk, id_column
@@ -160,6 +161,7 @@ class CommissionConfig(Base, UniversalAuditColumns):
     # ------------------------------------------------------ representative_id
     # NULL = global default (see module docstring's ERD parenthetical).
     representative_id: Mapped[uuid.UUID | None] = mapped_column(
+        _SAUuid(as_uuid=True),
         ForeignKey(
             "representative.id",
             name=fk_index_name("commission_config", "representative_id", "representative"),
@@ -170,6 +172,7 @@ class CommissionConfig(Base, UniversalAuditColumns):
     # --------------------------------------------------- product_category_id
     # ERD marks this nullable explicitly.
     product_category_id: Mapped[uuid.UUID | None] = mapped_column(
+        _SAUuid(as_uuid=True),
         ForeignKey(
             "product_category.id",
             name=fk_index_name("commission_config", "product_category_id", "product_category"),
