@@ -11,7 +11,15 @@ from database.models.role_permission import RolePermission
 from database.models.warehouse import Warehouse
 from database.models.app_user import AppUser
 from database.models.representative import Representative
-
+from database.models.bot_platform_ref import BotPlatformRef
+from database.models.carrier import Carrier
+from database.models.city_ref import CityRef
+from database.models.commission_config import CommissionConfig
+from database.models.movement_type_ref import MovementTypeRef
+from database.models.notification_type_ref import NotificationTypeRef
+from database.models.reason_code_ref import ReasonCodeRef
+from database.models.report_type_ref import ReportTypeRef
+from database.models.unit_of_measure import UnitOfMeasure
 # بقیه مدل‌ها را هم اضافه می‌کنیم
 
 configure_mappers()
