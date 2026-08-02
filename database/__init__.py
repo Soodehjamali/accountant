@@ -18,7 +18,7 @@ See:
 
 from __future__ import annotations
 
-from database import constants as constants
+from . import constants
 from database.constants import (
     APP_ROLE,
     APP_SCHEMA,
