@@ -30,6 +30,7 @@ except this ``__init__.py`` itself; kept in sync each time a model is added):
 * :mod:`database.models.unit_of_measure` — ``UnitOfMeasure`` (R2 — UoM definitions and conversions).
 * :mod:`database.models.uom_conversion` — ``UomConversion`` (R3 — conversion factors between UoMs).
 * :mod:`database.models.inventory_transaction` — ``InventoryTransaction`` (T1 — append-only inventory ledger).
+* :mod:`database.models.stock_reservation` — ``StockReservation`` (T2 — holds stock against a pending order).
 * :mod:`database.models.order` — ``Order`` (T10 — sales order header).
 * :mod:`database.models.order_line` — ``OrderLine`` (T11 — order lines, frozen resolved price/discount).
 

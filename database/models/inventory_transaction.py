@@ -27,19 +27,17 @@ first resort::
         reference a given original row -- partial unique index
         uq_inventory_transaction_one_reversal.
 
-Deferred ForeignKey() deviations (two columns cannot be real FKs yet):
-    Same deferred-FK deviation already established for
-    ``warehouse.responsible_user_id`` / ``mixins.py``'s ``created_by`` /
-    ``updated_by``:
+Retrofitted ForeignKey() columns -- ``lot_id`` / ``actor_user_id``:
+    Both ``product_lot`` (M2) and ``app_user`` (M10) now exist in this
+    codebase, so the deferred-FK deviation previously documented here (the
+    same one still open for other columns, e.g. ``warehouse``'s remaining
+    deferred columns) is resolved for this table's two columns:
 
-    * ``lot_id`` -> ``product_lot.id`` -- ``product_lot`` (M2) does not exist
-      yet. Plain ``UUID`` column, **nullable** (per spec: ``lot_id UUID NULL``),
-      no ``ForeignKey()``.
-    * ``actor_user_id`` -> ``app_user.id`` -- ``app_user`` (M10) does not
-      exist yet. Plain ``UUID`` column, **NOT NULL** (per spec: *"FK,
-      mandatory (no anonymous ledger writes)"*), no ``ForeignKey()``. The FK
-      is added by a later migration once ``app_user`` lands, same as every
-      other deferred FK in this codebase.
+    * ``lot_id`` -> ``product_lot.id`` -- real ``ForeignKey``, **nullable**
+      (per spec: ``lot_id UUID NULL``), named via ``fk_index_name`` as usual.
+    * ``actor_user_id`` -> ``app_user.id`` -- real ``ForeignKey``, **NOT
+      NULL** (per spec: *"FK, mandatory (no anonymous ledger writes)"*),
+      named via ``fk_index_name`` as usual.
 
 Flagged, not resolved -- AAC/``actor_user_id`` apparent duplication:
     ``AppendOnlyAuditColumns`` (AAC)'s own ``created_by`` is **nullable by
@@ -90,8 +88,9 @@ Naming convention -- three literal, spec-mandated overrides:
     ``idx_inventory_transaction_unreversed``.
 
     FK columns that *do* have a real ``ForeignKey()`` (``product_id``,
-    ``warehouse_id``, ``movement_type_id``, ``reason_code_id``,
-    ``currency_id``, ``reversal_of_id``) use ``fk_index_name`` as usual.
+    ``lot_id``, ``warehouse_id``, ``movement_type_id``, ``actor_user_id``,
+    ``reason_code_id``, ``currency_id``, ``reversal_of_id``) use
+    ``fk_index_name`` as usual.
     ``reversal_of_id`` is an unqualified self-reference
     (``ForeignKey("inventory_transaction.id", ...)``), the same pattern as
     ``product.variant_of_id``.
@@ -174,10 +173,13 @@ class InventoryTransaction(Base, AppendOnlyAuditColumns):
     )
 
     # ----------------------------------------------------------------- lot_id
-    # No ForeignKey() -- product_lot (M2) does not exist yet. Same deferred-FK
-    # deviation as warehouse.responsible_user_id / mixins.py's created_by.
+    # Real FK -- product_lot (M2) now exists.
     lot_id: Mapped[uuid.UUID | None] = mapped_column(
         _SAUuid(as_uuid=True),
+        ForeignKey(
+            "product_lot.id",
+            name=fk_index_name("inventory_transaction", "lot_id", "product_lot"),
+        ),
         nullable=True,
     )
 
@@ -202,11 +204,15 @@ class InventoryTransaction(Base, AppendOnlyAuditColumns):
     )
 
     # ------------------------------------------------------------- actor_user_id
-    # No ForeignKey() -- app_user (M10) does not exist yet. Same deferred-FK
-    # deviation as above. NOT NULL per spec: "mandatory, no anonymous ledger
-    # writes" -- see the module docstring's AAC/actor_user_id flag above.
+    # Real FK -- app_user (M10) now exists. NOT NULL per spec: "mandatory,
+    # no anonymous ledger writes" -- see the module docstring's
+    # AAC/actor_user_id flag above.
     actor_user_id: Mapped[uuid.UUID] = mapped_column(
         _SAUuid(as_uuid=True),
+        ForeignKey(
+            "app_user.id",
+            name=fk_index_name("inventory_transaction", "actor_user_id", "app_user"),
+        ),
         nullable=False,
     )
 

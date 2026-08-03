@@ -41,13 +41,11 @@ Address — no dedicated type exists yet:
     not a considered address representation (no structured street/unit/postal
     breakdown).
 
-``responsible_user_id`` — no ``ForeignKey()`` yet:
-    ``app_user`` (M10) does not exist yet, so ``responsible_user_id`` is a
-    plain ``UUID`` column with **no** ``ForeignKey()`` — the exact same
-    deviation already documented in ``database.mixins`` for
-    ``created_by`` / ``updated_by`` (UAC/AAC). Nullable, since the ERD does
-    not mark it required. The FK is added by a later migration once
-    ``app_user`` lands.
+``responsible_user_id`` — real ``ForeignKey("app_user.id")``:
+    ``app_user`` (M10) now exists in this codebase, so this column carries a
+    real ``ForeignKey`` to it, named via ``fk_index_name`` as usual
+    (``fk_warehouse_responsible_user_id_app_user``). Nullable, since the ERD
+    does not mark it required.
 
 ``city_ref_id`` — nullable FK:
     ``city_ref_id → city_ref`` (R13). The ERD does not mark it required, so
@@ -90,6 +88,8 @@ Business constraints — service-layer only:
 Naming convention:
     ``code`` uses column-level ``unique=True`` → ``uq_warehouse_code``.
     ``city_ref_id`` uses ``fk_index_name`` → ``fk_warehouse_city_ref_id_city_ref``.
+    ``responsible_user_id`` likewise uses ``fk_index_name`` →
+    ``fk_warehouse_responsible_user_id_app_user``.
     ``type`` / ``ownership_mode`` / ``status`` vocabularies are bounded by
     CHECKs named via ``ck_index_name``, mirroring ``carrier.py``'s
     ``ck_carrier_status_values`` pattern:
@@ -208,11 +208,14 @@ class Warehouse(Base, UniversalAuditColumns):
     )
 
     # ------------------------------------------------- responsible_user_id
-    # Plain UUID column, NO ForeignKey() — app_user (M10) does not exist yet.
-    # Same deviation already documented in database/mixins.py for
-    # created_by/updated_by. Nullable — the ERD does not mark it required.
+    # Real FK -- app_user (M10) now exists. Nullable — the ERD does not
+    # mark it required.
     responsible_user_id: Mapped[uuid.UUID | None] = mapped_column(
         _SAUuid(as_uuid=True),
+        ForeignKey(
+            "app_user.id",
+            name=fk_index_name("warehouse", "responsible_user_id", "app_user"),
+        ),
         nullable=True,
     )
 
