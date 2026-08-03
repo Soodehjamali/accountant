@@ -8,6 +8,8 @@ from database.models.city_ref import CityRef
 from database.models.commission_config import CommissionConfig
 from database.models.currency import Currency
 from database.models.customer import Customer
+from database.models.discount import Discount
+from database.models.inventory_balance_snapshot import InventoryBalanceSnapshot
 from database.models.inventory_transaction import InventoryTransaction
 from database.models.movement_type_ref import MovementTypeRef
 from database.models.notification_type_ref import NotificationTypeRef
@@ -70,6 +72,14 @@ checks = [
     ("stock_reservation", "lot_id", "product_lot"),
     ("stock_reservation", "order_id", "order"),
     ("stock_reservation", "reserved_by", "app_user"),
+    ("inventory_balance_snapshot", "warehouse_id", "warehouse"),
+    ("inventory_balance_snapshot", "product_id", "product"),
+    ("inventory_balance_snapshot", "lot_id", "product_lot"),
+    ("order_line", "discount_id", "discount"),
+    ("discount", "product_id", "product"),
+    ("discount", "category_id", "product_category"),
+    ("discount", "customer_id", "customer"),
+    ("discount", "representative_id", "representative"),
 ]
 for table_name, column_name, referred_table in checks:
     table = Base.metadata.tables[f"erp.{table_name}"]

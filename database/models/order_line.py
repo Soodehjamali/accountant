@@ -27,26 +27,22 @@ secondary/corroborating only::
     Audit Strategy: Standard UAC.
     Notes: --
 
-Deferred-FK deviation -- ``discount_id`` / ``price_history_id``:
-    Same deferred-FK deviation used throughout this codebase (e.g.
-    ``inventory_transaction.lot_id`` / ``actor_user_id``, ``mixins.py``'s
-    ``created_by``): a spec-mandated FK target table does not exist yet, so
-    the column is declared as a plain ``Uuid`` with **no** ``ForeignKey()``,
-    to be retrofitted once the referenced table lands.
+Retrofitted ForeignKey() -- ``discount_id``; still deferred -- ``price_history_id``:
+    ``discount`` (H3) now exists in this codebase, so the deferred-FK
+    deviation previously documented here for ``discount_id`` is resolved:
+    it now carries a real ``ForeignKey("discount.id")``, nullable (spec:
+    *"FK, snapshot reference"*), named via ``fk_index_name`` as usual.
 
-    * ``discount_id`` -> ``discount.id`` -- the ``discount`` table (H3 in
-      the ERD's entity map) does not exist yet. Spec: *"FK, snapshot
-      reference"*, nullable (``NULL`` / no default given beyond ``NULL``) --
-      declared ``nullable=True``.
-    * ``price_history_id`` -> ``price_history.id`` -- the ``price_history``
-      table (H1) does not exist yet. Spec: *"FK, frozen price provenance"*
-      -- unlike ``discount_id``'s row, the spec gives **no** nullability
-      qualifier here, so this column is declared ``nullable=False``. A
-      NOT-NULL deferred FK is not a new shape in this codebase --
-      ``inventory_transaction.actor_user_id`` is the same combination
-      (mandatory column, FK deferred because the referenced table doesn't
-      exist yet), so this is not a contradiction, just the second instance
-      of an already-established pattern.
+    ``price_history_id`` -> ``price_history.id`` remains deferred --
+    ``price_history`` (H1) does not exist yet in this codebase. Spec: *"FK,
+    frozen price provenance"* -- unlike ``discount_id``'s row, the spec
+    gives **no** nullability qualifier here, so this column stays declared
+    ``nullable=False`` with **no** ``ForeignKey()``, the same deferred-FK
+    deviation used throughout this codebase (e.g.
+    ``inventory_transaction.actor_user_id`` before ``app_user`` landed). A
+    NOT-NULL deferred FK is not a new shape in this codebase, so this is not
+    a contradiction, just the same already-established pattern, still
+    awaiting ``price_history``.
 
 CRITICAL naming trap -- the unique constraint:
     The spec's literal constraint name is ``uq_order_line`` -- **not**
@@ -122,8 +118,10 @@ Naming convention:
     ``ck_order_line_unit_price_nonneg``) -- no override needed, verified by
     inspection of the assembled ``ck_<table>_<descriptor>`` convention
     template against each spec name. Every FK uses ``fk_index_name``
-    normally (for the two real FKs; ``discount_id`` / ``price_history_id``
-    have no FK at all per the deferred-FK section above). The explicit
+    normally (for ``order_id``, ``product_id``, ``lot_id``,
+    ``fulfillment_warehouse_id``, and now ``discount_id``;
+    ``price_history_id`` still has no FK at all per the deferred-FK section
+    above). The explicit
     ``order_id`` index and the recommended ``product_id`` index use
     ``idx_index_name`` with no override needed. The partial index
     ``idx_order_line_open`` is likewise produced by plain
@@ -258,11 +256,14 @@ class OrderLine(Base, UniversalAuditColumns):
     )
 
     # ------------------------------------------------------------- discount_id
-    # No ForeignKey() -- discount table does not exist yet. See module
-    # docstring's "Deferred-FK deviation" section. Spec: nullable snapshot
+    # Real FK -- discount (H3) now exists. Nullable per spec: snapshot
     # reference.
     discount_id: Mapped[uuid.UUID | None] = mapped_column(
         _SAUuid(as_uuid=True),
+        ForeignKey(
+            "discount.id",
+            name=fk_index_name("order_line", "discount_id", "discount"),
+        ),
         nullable=True,
     )
 
@@ -270,7 +271,7 @@ class OrderLine(Base, UniversalAuditColumns):
     # No ForeignKey() -- price_history table does not exist yet. NOT NULL
     # per spec (no nullability qualifier given, unlike discount_id) -- same
     # NOT-NULL-deferred-FK shape as inventory_transaction.actor_user_id.
-    # See module docstring's "Deferred-FK deviation" section.
+    # See module docstring's "Retrofitted ForeignKey()" section.
     price_history_id: Mapped[uuid.UUID] = mapped_column(
         _SAUuid(as_uuid=True),
         nullable=False,

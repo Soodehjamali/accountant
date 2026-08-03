@@ -23,6 +23,7 @@ except this ``__init__.py`` itself; kept in sync each time a model is added):
 * :mod:`database.models.carrier` — ``Carrier`` (R14 — shipping carrier reference).
 * :mod:`database.models.city_ref` — ``CityRef`` (R13 — canonical city/locality reference).
 * :mod:`database.models.commission_config` — ``CommissionConfig`` (C1 — commission rate configuration).
+* :mod:`database.models.discount` — ``Discount`` (H3 — defined discounts, scoped + time-bounded).
 * :mod:`database.models.movement_type_ref` — ``MovementTypeRef`` (R4 — runtime-editable movement-type catalog).
 * :mod:`database.models.notification_type_ref` — ``NotificationTypeRef`` (R9 — notification template/type catalog).
 * :mod:`database.models.reason_code_ref` — ``ReasonCodeRef`` (R11 — standardized reason catalog).
@@ -31,6 +32,7 @@ except this ``__init__.py`` itself; kept in sync each time a model is added):
 * :mod:`database.models.uom_conversion` — ``UomConversion`` (R3 — conversion factors between UoMs).
 * :mod:`database.models.inventory_transaction` — ``InventoryTransaction`` (T1 — append-only inventory ledger).
 * :mod:`database.models.stock_reservation` — ``StockReservation`` (T2 — holds stock against a pending order).
+* :mod:`database.models.inventory_balance_snapshot` — ``InventoryBalanceSnapshot`` (T3 — non-authoritative derived stock cache).
 * :mod:`database.models.order` — ``Order`` (T10 — sales order header).
 * :mod:`database.models.order_line` — ``OrderLine`` (T11 — order lines, frozen resolved price/discount).
 
