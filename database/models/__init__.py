@@ -10,14 +10,11 @@ Submodules:
 * :mod:`database.models.currency` — ``R5 — currency`` (ISO 4217 reference).
 * :mod:`database.models.product_category` — ``R1 — product_category`` (hierarchical product taxonomy).
 * :mod:`database.models.product` — ``M1 — product`` (core product master data).
-* :mod:`database.models.product_lot` — ``M2 — product_lot`` (batch/lot records for traceability).
 * :mod:`database.models.role` — ``R6 — role`` (RBAC role definition).
 * :mod:`database.models.permission` — ``R7 — permission`` (RBAC permission definition).
 * :mod:`database.models.role_permission` — ``R8 — role_permission`` (RBAC role-permission junction).
 * :mod:`database.models.warehouse` — ``M4 — warehouse`` (factory + representative warehouses).
-* :mod:`database.models.app_user` — ``M10 — app_user`` (system auth account linked to staff/rep).
-* :mod:`database.models.representative` — ``M6 — representative`` (sales representative master).
-* :mod:`database.models.commission_config` — ``C1 — commission_config`` (commission rate configuration).
+* :mod:`database.models.inventory_transaction` — ``T1 — inventory_transaction`` (append-only inventory ledger).
 
 This package intentionally re-exports nothing by name yet (no eager model
 loading here) to keep ``import database`` cheap and to avoid forcing a model
