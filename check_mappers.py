@@ -15,7 +15,9 @@ from database.models.movement_type_ref import MovementTypeRef
 from database.models.notification_type_ref import NotificationTypeRef
 from database.models.order import Order
 from database.models.order_line import OrderLine
+from database.models.order_status_history import OrderStatusHistory
 from database.models.permission import Permission
+from database.models.price_history import PriceHistory
 from database.models.price_list import PriceList
 from database.models.product import Product
 from database.models.product_category import ProductCategory
@@ -82,6 +84,12 @@ checks = [
     ("discount", "customer_id", "customer"),
     ("discount", "representative_id", "representative"),
     ("price_list", "currency_id", "currency"),
+    ("order_line", "price_history_id", "price_history"),
+    ("price_history", "product_id", "product"),
+    ("price_history", "price_list_id", "price_list"),
+    ("price_history", "currency_id", "currency"),
+    ("order_status_history", "order_id", "order"),
+    ("order_status_history", "actor_user_id", "app_user"),
 ]
 for table_name, column_name, referred_table in checks:
     table = Base.metadata.tables[f"erp.{table_name}"]

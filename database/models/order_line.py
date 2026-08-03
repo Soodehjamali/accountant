@@ -27,22 +27,23 @@ secondary/corroborating only::
     Audit Strategy: Standard UAC.
     Notes: --
 
-Retrofitted ForeignKey() -- ``discount_id``; still deferred -- ``price_history_id``:
-    ``discount`` (H3) now exists in this codebase, so the deferred-FK
-    deviation previously documented here for ``discount_id`` is resolved:
-    it now carries a real ``ForeignKey("discount.id")``, nullable (spec:
-    *"FK, snapshot reference"*), named via ``fk_index_name`` as usual.
+Retrofitted ForeignKey() -- ``discount_id`` AND ``price_history_id``:
+    ``discount`` (H3) now exists, so ``discount_id`` carries a real
+    ``ForeignKey("discount.id")``, nullable (spec: *"FK, snapshot
+    reference"*), named via ``fk_index_name`` as usual.
 
-    ``price_history_id`` -> ``price_history.id`` remains deferred --
-    ``price_history`` (H1) does not exist yet in this codebase. Spec: *"FK,
-    frozen price provenance"* -- unlike ``discount_id``'s row, the spec
-    gives **no** nullability qualifier here, so this column stays declared
-    ``nullable=False`` with **no** ``ForeignKey()``, the same deferred-FK
-    deviation used throughout this codebase (e.g.
-    ``inventory_transaction.actor_user_id`` before ``app_user`` landed). A
-    NOT-NULL deferred FK is not a new shape in this codebase, so this is not
-    a contradiction, just the same already-established pattern, still
-    awaiting ``price_history``.
+    ``price_history`` (H1) also now exists, so ``price_history_id`` -->
+    ``price_history.id`` is retrofitted in this same change into a real
+    ``ForeignKey("price_history.id")`` too. Spec: *"FK, frozen price
+    provenance"* -- unlike ``discount_id``, the spec gives **no**
+    nullability qualifier here, so this column stays ``nullable=False``,
+    now paired with a real (not deferred) ``ForeignKey()``. This closes the
+    **last** deferred-FK deviation remaining anywhere in this codebase --
+    every column that was ever declared as a plain ``Uuid`` pending a
+    not-yet-built target table (``app_user``, ``product_lot``,
+    ``discount``, and now ``price_history``) has been retrofitted; a
+    project-wide search for the deferred-FK deviation phrasing finds no
+    remaining occurrence pointing at a target table that doesn't exist.
 
 CRITICAL naming trap -- the unique constraint:
     The spec's literal constraint name is ``uq_order_line`` -- **not**
@@ -118,10 +119,11 @@ Naming convention:
     ``ck_order_line_unit_price_nonneg``) -- no override needed, verified by
     inspection of the assembled ``ck_<table>_<descriptor>`` convention
     template against each spec name. Every FK uses ``fk_index_name``
-    normally (for ``order_id``, ``product_id``, ``lot_id``,
-    ``fulfillment_warehouse_id``, and now ``discount_id``;
-    ``price_history_id`` still has no FK at all per the deferred-FK section
-    above). The explicit
+    normally (``order_id``, ``product_id``, ``lot_id``,
+    ``fulfillment_warehouse_id``, ``discount_id``, and now
+    ``price_history_id`` -- every FK column on this table is a real FK as
+    of this change; there is no longer a deferred-FK column left on this
+    model at all). The explicit
     ``order_id`` index and the recommended ``product_id`` index use
     ``idx_index_name`` with no override needed. The partial index
     ``idx_order_line_open`` is likewise produced by plain
@@ -268,12 +270,16 @@ class OrderLine(Base, UniversalAuditColumns):
     )
 
     # -------------------------------------------------------- price_history_id
-    # No ForeignKey() -- price_history table does not exist yet. NOT NULL
-    # per spec (no nullability qualifier given, unlike discount_id) -- same
-    # NOT-NULL-deferred-FK shape as inventory_transaction.actor_user_id.
-    # See module docstring's "Retrofitted ForeignKey()" section.
+    # Real FK -- price_history (H1) now exists. NOT NULL per spec (no
+    # nullability qualifier given, unlike discount_id). This is the last
+    # deferred-FK retrofit remaining in the codebase -- see module
+    # docstring's "Retrofitted ForeignKey()" section.
     price_history_id: Mapped[uuid.UUID] = mapped_column(
         _SAUuid(as_uuid=True),
+        ForeignKey(
+            "price_history.id",
+            name=fk_index_name("order_line", "price_history_id", "price_history"),
+        ),
         nullable=False,
     )
 

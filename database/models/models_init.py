@@ -24,6 +24,7 @@ except this ``__init__.py`` itself; kept in sync each time a model is added):
 * :mod:`database.models.city_ref` — ``CityRef`` (R13 — canonical city/locality reference).
 * :mod:`database.models.commission_config` — ``CommissionConfig`` (C1 — commission rate configuration).
 * :mod:`database.models.price_list` — ``PriceList`` (C3 — named price list binding price versions to a scope).
+* :mod:`database.models.price_history` — ``PriceHistory`` (H1 — immutable versioned selling price, append-only).
 * :mod:`database.models.discount` — ``Discount`` (H3 — defined discounts, scoped + time-bounded).
 * :mod:`database.models.movement_type_ref` — ``MovementTypeRef`` (R4 — runtime-editable movement-type catalog).
 * :mod:`database.models.notification_type_ref` — ``NotificationTypeRef`` (R9 — notification template/type catalog).
@@ -36,6 +37,7 @@ except this ``__init__.py`` itself; kept in sync each time a model is added):
 * :mod:`database.models.inventory_balance_snapshot` — ``InventoryBalanceSnapshot`` (T3 — non-authoritative derived stock cache).
 * :mod:`database.models.order` — ``Order`` (T10 — sales order header).
 * :mod:`database.models.order_line` — ``OrderLine`` (T11 — order lines, frozen resolved price/discount).
+* :mod:`database.models.order_status_history` — ``OrderStatusHistory`` (T12/H5 — immutable order state-machine log).
 
 This package intentionally re-exports nothing by name yet (no eager model
 loading here) to keep ``import database`` cheap and to avoid forcing a model
