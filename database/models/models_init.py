@@ -23,6 +23,7 @@ except this ``__init__.py`` itself; kept in sync each time a model is added):
 * :mod:`database.models.carrier` — ``Carrier`` (R14 — shipping carrier reference).
 * :mod:`database.models.city_ref` — ``CityRef`` (R13 — canonical city/locality reference).
 * :mod:`database.models.commission_config` — ``CommissionConfig`` (C1 — commission rate configuration).
+* :mod:`database.models.price_list` — ``PriceList`` (C3 — named price list binding price versions to a scope).
 * :mod:`database.models.discount` — ``Discount`` (H3 — defined discounts, scoped + time-bounded).
 * :mod:`database.models.movement_type_ref` — ``MovementTypeRef`` (R4 — runtime-editable movement-type catalog).
 * :mod:`database.models.notification_type_ref` — ``NotificationTypeRef`` (R9 — notification template/type catalog).

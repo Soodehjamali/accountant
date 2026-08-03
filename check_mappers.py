@@ -16,6 +16,7 @@ from database.models.notification_type_ref import NotificationTypeRef
 from database.models.order import Order
 from database.models.order_line import OrderLine
 from database.models.permission import Permission
+from database.models.price_list import PriceList
 from database.models.product import Product
 from database.models.product_category import ProductCategory
 from database.models.product_lot import ProductLot
@@ -80,6 +81,7 @@ checks = [
     ("discount", "category_id", "product_category"),
     ("discount", "customer_id", "customer"),
     ("discount", "representative_id", "representative"),
+    ("price_list", "currency_id", "currency"),
 ]
 for table_name, column_name, referred_table in checks:
     table = Base.metadata.tables[f"erp.{table_name}"]
