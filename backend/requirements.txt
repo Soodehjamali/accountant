@@ -1,0 +1,45 @@
+# Enterprise ERP (SIWRMS) -- runtime, migration, and backend dependencies.
+#
+# Pinned to major.minor (not exact patch) so security/bugfix patch releases
+# install automatically, while a minor-version bump (which could change
+# SQLAlchemy 2.x's own generated-DDL behavior, Alembic's autogenerate diff
+# logic, or FastAPI's request-handling behavior) requires a deliberate,
+# reviewed requirements.txt edit.
+
+# --- ORM / migrations ------------------------------------------------------
+SQLAlchemy==2.0.*
+alembic==1.13.*
+
+# --- PostgreSQL driver -------------------------------------------------
+# psycopg2-binary is used here (per direct instruction) as the synchronous
+# DBAPI driver -- the "binary" wheel avoids requiring a local build
+# toolchain / libpq-dev at install time, at the cost of being a less
+# production-hardened build than compiling psycopg2 from source against the
+# system libpq (a tradeoff acceptable for this project's current stage;
+# revisit -> plain `psycopg2` compiled from source, or the newer `psycopg`
+# (v3) driver, before a production deployment).
+psycopg2-binary==2.9.*
+
+# --- Environment / config ---------------------------------------------
+# Loads DATABASE_URL (and any other secrets) from a local, gitignored .env
+# file during development -- see migrations/env.py's own use of this.
+python-dotenv==1.0.*
+
+# --- Backend Foundation milestone ---------------------------------------
+# FastAPI app (backend/app/) + ASGI server + Pydantic v2 settings support.
+# database/session.py is synchronous (plain sqlalchemy.orm.Session), so
+# endpoints are defined as regular `def` (not `async def`) -- FastAPI runs
+# sync path functions in a threadpool automatically, avoiding the need for
+# an async DB driver in this milestone.
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+# pydantic itself comes in transitively via fastapi; pydantic-settings is
+# the separate package Pydantic v2 split BaseSettings into (not bundled
+# with core pydantic v2 the way it was in v1).
+pydantic-settings==2.6.*
+
+# --- Testing --------------------------------------------------------------
+pytest==8.3.*
+# Required by fastapi.testclient.TestClient (httpx-based since Starlette
+# dropped its bundled requests-based TestClient).
+httpx==0.27.*

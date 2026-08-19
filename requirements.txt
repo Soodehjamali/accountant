@@ -1,0 +1,25 @@
+# Enterprise ERP (SIWRMS) -- runtime and migration dependencies.
+#
+# Pinned to major.minor (not exact patch) so security/bugfix patch releases
+# install automatically, while a minor-version bump (which could change
+# SQLAlchemy 2.x's own generated-DDL behavior, or Alembic's autogenerate
+# diff logic) requires a deliberate, reviewed requirements.txt edit.
+
+# --- ORM / migrations ------------------------------------------------------
+SQLAlchemy==2.0.*
+alembic==1.13.*
+
+# --- PostgreSQL driver -------------------------------------------------
+# psycopg2-binary is used here (per direct instruction) as the synchronous
+# DBAPI driver -- the "binary" wheel avoids requiring a local build
+# toolchain / libpq-dev at install time, at the cost of being a less
+# production-hardened build than compiling psycopg2 from source against the
+# system libpq (a tradeoff acceptable for this project's current stage;
+# revisit -> plain `psycopg2` compiled from source, or the newer `psycopg`
+# (v3) driver, before a production deployment).
+psycopg2-binary==2.9.*
+
+# --- Environment / config ---------------------------------------------
+# Loads DATABASE_URL (and any other secrets) from a local, gitignored .env
+# file during development -- see migrations/env.py's own use of this.
+python-dotenv==1.0.*
