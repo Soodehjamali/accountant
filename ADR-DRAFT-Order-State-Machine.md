@@ -1,8 +1,9 @@
 # ADR-DRAFT: Order (T10) State Transition Graph
 
-**Status: DRAFT — NOT APPROVED. Do not implement `services/order_service.py`
-or wire `endpoints/orders.py` off of this document until someone accepts
-or amends it and moves the accepted version into `09_Decisions.md`.**
+**Status: RESOLVED — see `09_Decisions.md` ADR-004 for the accepted graph.**
+This file is kept only as supporting rationale/comparison table for that
+decision — implement `services/order_service.py` against ADR-004, not
+against this file directly.
 
 ## Why this exists
 

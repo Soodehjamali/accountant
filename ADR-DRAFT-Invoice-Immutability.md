@@ -1,8 +1,8 @@
 # ADR-DRAFT: Invoice (T17/T18) — Immutability Trigger Point
 
-**Status: DRAFT — NOT APPROVED.** Do not implement `services/invoice_service.py`
-off of this document until someone picks a resolution and moves it into
-`09_Decisions.md`.
+**Status: RESOLVED — see `09_Decisions.md` ADR-006 for the accepted trigger point.**
+Kept only as supporting rationale — implement the invoice immutability
+trigger against ADR-006, not against this file directly.
 
 ## The conflict — three documents, three different answers
 

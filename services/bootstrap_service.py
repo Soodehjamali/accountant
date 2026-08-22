@@ -206,6 +206,8 @@ def ensure_movement_types(session: Session, actor_id: uuid.UUID) -> list[Movemen
 _ADMIN_DEFAULT_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
     ("CUSTOMER_MANAGE", "Manage customers", "customer", "manage"),
     ("AUDIT_LOG_VIEW", "View audit log", "audit_log", "view"),
+    ("ORDER_MANAGE", "Manage sales orders", "order", "manage"),
+    ("ORDER_APPROVE", "Approve sales orders", "order", "approve"),
 )
 
 

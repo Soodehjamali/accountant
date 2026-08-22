@@ -185,3 +185,65 @@ adding those two endpoints in this same review. New endpoints that
 introduce their own require_permission(...) gate should add their code
 to the _ADMIN_DEFAULT_PERMISSIONS tuple at the same time, rather than
 leaving ADMIN unable to use its own endpoints by default.
+
+-----------------
+
+Design decisions (update) -- Order/Transfer/Invoice ADRs approved
+
+✅ Done -- ADR-004 (Order state machine), ADR-005 (Stock Transfer
+two-phase confirmation), and ADR-006 (Invoice immutability at ISSUED)
+were reviewed and accepted; see 09_Decisions.md. 04_Business_Policies.md
+(Transfer section) and 07_DATABASE_SPEC.md (§T17 point 7) were corrected
+to match. The three ADR-DRAFT-*.md files are kept as supporting
+rationale, marked RESOLVED, pointing at the canonical decisions.
+
+This unblocks services/order_service.py, services/stock_transfer_service.py
+(plus its still-unbuilt database/models/stock_transfer.py /
+transfer_line.py / transfer_history.py), and services/invoice_service.py
+-- none of these exist yet as of this note; implementing them is the
+next milestone, starting with Order since its endpoint/schema files
+already exist (currently unwired, see endpoints/orders.py's status
+note) and its models are already built.
+
+-----------------
+
+Task 3/4 (update) -- Order (T10) service + API, wired in
+
+Done, following ADR-004 -- services/order_service.py implements the
+accepted 13-state graph (create/submit/approve/reserve-or-backorder/
+resubmit/cancel/start-fulfillment/ship/return/invoice/pay/complete),
+each transition writing an order_status_history (T12) row. Two points
+ADR-004 leaves as direct consequences of its own decisions rather than
+separate edges are recorded explicitly in that module's own docstring
+(BACKORDERED's entry point at APPROVED -> BACKORDERED, and
+PARTIALLY_FULFILLED -> SHIPPED as the "returns to the FULFILLING ->
+SHIPPED path" edge) -- not invented ad hoc, but not literally spelled
+out in the ADR's own edge list either, so flagged rather than silently
+assumed.
+
+app/api/v1/endpoints/orders.py has been rebuilt against this service
+(the old, unwired version imported nonexistent app.models.* and a
+5-value status enum -- see that module's own prior status note, now
+superseded) and is wired into router.py. Two new permission codes,
+ORDER_MANAGE (create/submit/reserve/ship/etc.) and ORDER_APPROVE
+(the approval step specifically, a deliberately separate gate -- see
+services/order_service.py's module docstring), have been added to
+services/bootstrap_service.py's _ADMIN_DEFAULT_PERMISSIONS so ADMIN can
+use the new endpoints out of the box, matching the same loose-end fix
+already applied for CUSTOMER_MANAGE/AUDIT_LOG_VIEW.
+
+Scope explicitly NOT covered by this milestone (see order_service.py's
+own docstring for the full list): a pricing/discount resolution engine
+(callers must supply an already-resolved price_history_id per line) and
+real Invoice/Payment-domain integration (mark_invoiced/mark_paid/
+mark_completed are order-header bookkeeping only, pending
+services/invoice_service.py, which still does not exist).
+
+backend/tests/test_orders.py was added, mirroring test_customers.py's
+live-DB-required pattern (skipped without DATABASE_URL) -- covers
+create->submit->approve->reserve happy path, the ORDER_APPROVE
+permission gate, the insufficient-stock->BACKORDERED path, cancel
+releasing reservations and becoming terminal, an invalid-transition
+409, and a full ship-to-SHIPPED path. Not executed in this environment
+(no live PostgreSQL instance available here) -- please run it against
+a real database before relying on it.

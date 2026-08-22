@@ -10,18 +10,18 @@ first's ``include_router`` calls for ``health``/``auth``/``products``/
 ``inventory``/``rbac``) -- fixed in a prior pass; noted here so a future
 edit merges into the single block below instead of repeating that bug.
 
-``orders`` is still deliberately NOT included -- see
-``backend/app/api/v1/endpoints/orders.py``'s own status note: it depends
-on an Order state-machine design that is not yet written down anywhere
-in the project's docs, and ``CLAUDE.md`` requires design approval before
-that code is wired in.
+``orders`` is now included: ADR-004 (see ``09_Decisions.md``) accepted the
+Order state-transition graph that was the blocker noted here previously,
+and ``backend/app/api/v1/endpoints/orders.py`` has been rebuilt against
+``services/order_service.py`` to implement it -- the same
+service-wrapping pattern every other domain router below already uses.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import audit_log, auth, customers, health, inventory, products, rbac
+from app.api.v1.endpoints import audit_log, auth, customers, health, inventory, orders, products, rbac
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -31,5 +31,6 @@ api_router.include_router(inventory.router)
 api_router.include_router(rbac.router)
 api_router.include_router(customers.router)
 api_router.include_router(audit_log.router)
+api_router.include_router(orders.router)
 
 __all__ = ["api_router"]

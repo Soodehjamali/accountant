@@ -1,8 +1,8 @@
 # ADR-DRAFT: Stock Transfer (T4) — Confirmation Model
 
-**Status: DRAFT — NOT APPROVED.** Do not implement a transfer service off
-of this document until someone picks a resolution and moves it into
-`09_Decisions.md`.
+**Status: RESOLVED — see `09_Decisions.md` ADR-005 for the accepted model.**
+Kept only as supporting rationale — implement `services/stock_transfer_service.py`
+against ADR-005, not against this file directly.
 
 ## The conflict (direct contradiction, not just a gap)
 
