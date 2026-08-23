@@ -208,6 +208,8 @@ _ADMIN_DEFAULT_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
     ("AUDIT_LOG_VIEW", "View audit log", "audit_log", "view"),
     ("ORDER_MANAGE", "Manage sales orders", "order", "manage"),
     ("ORDER_APPROVE", "Approve sales orders", "order", "approve"),
+    ("INVOICE_MANAGE", "Manage invoices", "invoice", "manage"),
+    ("TRANSFER_MANAGE", "Manage stock transfers", "stock_transfer", "manage"),
 )
 
 

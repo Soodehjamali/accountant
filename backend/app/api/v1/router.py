@@ -21,7 +21,18 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import audit_log, auth, customers, health, inventory, orders, products, rbac
+from app.api.v1.endpoints import (
+    audit_log,
+    auth,
+    customers,
+    health,
+    inventory,
+    invoices,
+    orders,
+    products,
+    rbac,
+    transfers,
+)
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -32,5 +43,7 @@ api_router.include_router(rbac.router)
 api_router.include_router(customers.router)
 api_router.include_router(audit_log.router)
 api_router.include_router(orders.router)
+api_router.include_router(invoices.router)
+api_router.include_router(transfers.router)
 
 __all__ = ["api_router"]

@@ -247,3 +247,83 @@ releasing reservations and becoming terminal, an invalid-transition
 409, and a full ship-to-SHIPPED path. Not executed in this environment
 (no live PostgreSQL instance available here) -- please run it against
 a real database before relying on it.
+
+-----------------
+
+Task 3/4 (update) -- Invoice (T17/T18) service + API, wired in
+
+Done, following ADR-006 -- services/invoice_service.py implements the
+invoice lifecycle: create_invoice_from_order (DRAFT, copies order lines)
+-> issue_invoice (DRAFT->ISSUED, sets issued_at/due_at, prices frozen
+per BR-P3) -> record_payment (updates amount_paid/balance_due per the
+column-level exception in ADR-006, transitions ISSUED->PARTIALLY_PAID
+or PAID) -> void_invoice (DRAFT->VOID only, per spec's "pre-ISSUED"
+soft-delete strategy). Each transition writes an invoice_history (H4)
+row via the _transition choke point, mirroring order_service.py's own
+pattern.
+
+app/api/v1/endpoints/invoices.py wraps this service with thin
+endpoints, gated behind a new INVOICE_MANAGE permission (added to
+services/bootstrap_service.py's _ADMIN_DEFAULT_PERMISSIONS so ADMIN can
+use the new endpoints out of the box). Router updated.
+
+Open question left by this milestone: the invoice creation does NOT
+call order_service.mark_invoiced() -- order state and invoice state are
+kept independent. A future orchestration layer should coordinate the
+SHIPPED->INVOICED order transition with invoice issuance.
+
+Scope explicitly NOT covered by this milestone: payment_allocation (J2)
+ledger, credit_note (T20) corrections, customer_ledger (T22) entries,
+and the DB-level BEFORE UPDATE immutability trigger (application-layer
+enforcement only).
+
+backend/tests/test_invoices.py covers: full happy path (create->issue->
+partial pay->full pay), void-from-DRAFT, void-from-ISSUED rejected (409),
+payment-exceeds-balance rejected (422), permission gate (403), and
+invoice_history verification.
+
+-----------------
+
+Task 3/4 (update) -- Stock Transfer (T4/T5/T6) service + API, wired in
+
+Done, following ADR-005 -- services/stock_transfer_service.py implements
+the stock transfer lifecycle: create_transfer (DRAFT, creates lines) ->
+dispatch_transfer (DRAFT -> DISPATCHED, posts TRANSFER_OUT from source
+warehouse) -> receive_transfer (DISPATCHED -> RECEIVED, posts TRANSFER_IN
+to destination warehouse) -> cancel_transfer (DRAFT -> CANCELLED). Each
+transition writes a transfer_history (T6) row via the _transition choke
+point, mirroring order_service.py's and invoice_service.py's own
+patterns.
+
+app/api/v1/endpoints/transfers.py wraps this service with thin
+endpoints, gated behind a new TRANSFER_MANAGE permission (added to
+services/bootstrap_service.py's _ADMIN_DEFAULT_PERMISSIONS so ADMIN can
+use the new endpoints out of the box). Router updated.
+
+ADR-005's two-phase model is fully implemented: dispatch debits source
+warehouse via TRANSFER_OUT; receive credits destination warehouse via
+TRANSFER_IN. The source warehouse is debited at dispatch time; the
+destination is credited only at receive time -- not before, not
+simultaneously.
+
+Open questions left by this milestone:
+* PENDING/APPROVED intermediate states exist in the DB CHECK and the
+  ALLOWED_TRANSITIONS graph but are not exposed via service functions or
+  endpoints. A future milestone can add submit_transfer (DRAFT -> PENDING)
+  and approve_transfer (PENDING -> APPROVED -> DISPATCHED) if the business
+  requires a formal approval workflow before dispatch.
+* IN_TRANSIT / PARTIAL_RECEIVED are in the graph but not exposed. These
+  would support multi-leg transfers or partial receipts.
+* The currency_id for inventory postings is resolved from existing
+  inventory_transaction rows at the source warehouse (or falls back to
+  the default IRR currency). The Transfer model itself does not carry a
+  currency_id per spec.
+
+Scope explicitly NOT covered by this milestone: approval workflow
+(PENDING/APPROVED), partial receipts (PARTIAL_RECEIVED), multi-leg
+transfers (IN_TRANSIT), or a formal transfer-to-invoice linkage.
+
+backend/tests/test_transfers.py covers: full happy path (create ->
+dispatch with TRANSFER_OUT -> receive with TRANSFER_IN) with inventory
+balance checks at each step, cancel-from-DRAFT, and double-dispatch
+rejected (409).
