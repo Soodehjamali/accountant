@@ -114,6 +114,14 @@ def commission_fixtures() -> dict:
     """All supporting rows plus a completed order (grand_total=500)."""
     session = get_session_factory()()
     try:
+        # Clean up any stale commission configs from prior runs so tests
+        # are isolated (each test creates its own config).
+        from database.models.commission_config import CommissionConfig
+        from database.models.commission_transaction import CommissionTransaction
+        session.execute(CommissionTransaction.__table__.delete())
+        session.execute(CommissionConfig.__table__.delete())
+        session.flush()
+
         system_user = bootstrap_service.ensure_system_user(session)
         currency = bootstrap_service.ensure_default_currency(session, actor_id=system_user.id)
         warehouse = bootstrap_service.ensure_default_warehouse(session, actor_id=system_user.id)
@@ -255,6 +263,7 @@ def commission_fixtures() -> dict:
         session.refresh(invoice)
         assert invoice.state == "PAID", f"Invoice state is {invoice.state}"
 
+        order_service.mark_paid(session, order.id, actor_user_id=system_user.id)
         order_service.mark_completed(session, order.id, actor_user_id=system_user.id)
         session.refresh(order)
         assert order.state == "COMPLETED", f"Order state is {order.state}"
@@ -349,12 +358,14 @@ def test_commission_amount_calculation(
     commission_fixtures: dict,
 ) -> None:
     """Verify commission amount = rate * grand_total for a non-trivial rate."""
-    # Create config with 7.5% rate.
+    # Create config with 7.5% rate.  Use a later effective_from so this
+    # config wins over any earlier global config that shares the same
+    # specificity level (the resolver orders by effective_from DESC).
     resp = client.post(
         "/api/v1/commission-configs",
         json={
             "rate": "7.5000",
-            "effective_from": "2024-01-01T00:00:00Z",
+            "effective_from": "2024-06-01T00:00:00Z",
             "order_type": "LOCAL",
         },
         headers=manage_auth_headers,
