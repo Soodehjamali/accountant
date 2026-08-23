@@ -356,3 +356,83 @@ decide this; for now, voided invoices do not affect order state.
 
 backend/tests/test_invoices.py gained test_issue_invoice_transitions_order_to_invoiced,
 which verifies the SHIPPED -> INVOICED order transition after invoice issuance.
+
+-----------------
+
+Task 3/4 (update) -- Payment / PaymentAllocation Service (J2)
+
+Done -- services/payment_service.py implements the payment allocation
+ledger: record_payment() creates a Payment row (append-only, AAC per
+spec) plus one or more PaymentAllocation rows that resolve the N:N
+between payments and invoices. Business constraints are enforced at
+the application layer (no DB trigger exists): SUM(allocated_amount)
+per payment <= payment.amount; SUM(allocated_amount) per invoice <=
+invoice.grand_total; each allocation > 0; invoice must be in ISSUED
+or PARTIALLY_PAID state.
+
+The payment service updates each invoice's amount_paid / balance_due
+(the non-authoritative cache columns) and transitions invoice state
+(ISSUED -> PARTIALLY_PAID or PAID) at allocation time, writing an
+invoice_history (H4) row for each transition.
+
+Relationship to existing invoice_service.record_payment(): the existing
+function continues to work as before (direct amount_paid/balance_due
+update without payment_allocation rows). The new payment service is
+the intended path going forward; the old endpoint
+(POST /invoices/{id}/pay) is retained for backward compatibility.
+Open question: should POST /invoices/{id}/pay be deprecated in favor
+of POST /payments? The two paths write different amounts to the same
+cache columns; reconciliation between them should be decided by the
+product owner.
+
+app/api/v1/endpoints/payments.py wraps this service with thin
+endpoints, gated behind PAYMENT_MANAGE permission (added to
+services/bootstrap_service.py's _ADMIN_DEFAULT_PERMISSIONS).
+Endpoints: POST /payments (record with allocations),
+GET /payments/{id} (get with allocations),
+GET /invoices/{id}/payments (payments allocated to an invoice).
+Router updated.
+
+backend/tests/test_payments.py covers: full payment to a single
+invoice (-> PAID), split payment across two invoices, over-allocation
+of payment amount rejected (422), over-allocation of invoice balance
+rejected (422).
+
+-----------------
+
+Task 3/4 (update) -- Commission Service (C1 + Commission Transaction)
+
+Done -- services/commission_service.py implements commission rate
+configuration and transaction calculation:
+
+* create_commission_config(): creates a commission_config row (C1)
+  with effective_from/effective_to time bounds, rate (0..100%), and
+  optional representative_id / product_category_id / order_type
+  specificity.
+* resolve_commission_rate(): finds the most specific matching config
+  for a given order. Matching priority: most-specific-first
+  (representative + product_category + order_type) then falling back
+  to progressively less specific matches until the global default
+  (all three fields NULL). Resolution docstring explicitly documents
+  the specificity ordering.
+* calculate_commission_for_order(): creates an ACCRUED
+  commission_transaction (T23) row with signed_amount = rate * order.grand_total.
+  Commission is calculated at order COMPLETED time (documented as
+  an explicit assumption: commission is definitive only after the
+  sale is finalized).
+
+The commission calculation is exposed as a standalone service function
+that can be called externally on a COMPLETED order. Direct integration
+with order_service.py is flagged as an open question (the task
+constraint prohibits modifying order_service.py).
+
+app/api/v1/endpoints/commissions.py wraps this service with thin
+endpoints, gated behind COMMISSION_MANAGE permission (added to
+services/bootstrap_service.py's _ADMIN_DEFAULT_PERMISSIONS).
+Endpoints: POST /commission-configs, GET /commission-configs,
+POST /orders/{id}/commission (calculate for a specific order).
+Router updated.
+
+backend/tests/test_commissions.py covers: create config and resolve
+for matching order, fallback to broader config when no specific match,
+commission transaction amount calculation (rate * grand_total).

@@ -29,6 +29,7 @@ from app.api.v1.endpoints import (
     inventory,
     invoices,
     orders,
+    payments,
     products,
     rbac,
     transfers,
@@ -45,5 +46,6 @@ api_router.include_router(audit_log.router)
 api_router.include_router(orders.router)
 api_router.include_router(invoices.router)
 api_router.include_router(transfers.router)
+api_router.include_router(payments.router)
 
 __all__ = ["api_router"]
