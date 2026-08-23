@@ -327,3 +327,32 @@ backend/tests/test_transfers.py covers: full happy path (create ->
 dispatch with TRANSFER_OUT -> receive with TRANSFER_IN) with inventory
 balance checks at each step, cancel-from-DRAFT, and double-dispatch
 rejected (409).
+
+-----------------
+
+Task 3/4 (update) -- Order <-> Invoice coordination (resolved open question)
+
+Done -- the invoice issuance milestone's open question ("invoice creation
+does NOT call order_service.mark_invoiced()") has been resolved.
+
+services/invoice_service.py's issue_invoice() now, after the successful
+DRAFT -> ISSUED transition, looks up the related order via the
+invoice_order (J1) junction and calls order_service.mark_invoiced() to
+transition the order from SHIPPED -> INVOICED.  If the order is not in
+SHIPPED state (e.g., already invoiced, cancelled), an
+OrderNotInShippableStateForInvoiceError is raised and the entire
+session is rolled back -- both the invoice state change and the order
+state change are atomic within the same session.
+
+Design rationale for rollback: allowing the invoice to remain ISSUED
+while the order is in a non-SHIPPED state creates an inconsistent
+cross-aggregate state.  Rolling back the entire session ensures
+atomicity -- the caller can retry after resolving the order's state.
+
+Open question (not implemented): voiding an invoice -- should the order
+revert from INVOICED back to SHIPPED?  Neither 07_DATABASE_SPEC.md nor
+09_Decisions.md addresses this explicitly.  A future milestone should
+decide this; for now, voided invoices do not affect order state.
+
+backend/tests/test_invoices.py gained test_issue_invoice_transitions_order_to_invoiced,
+which verifies the SHIPPED -> INVOICED order transition after invoice issuance.
