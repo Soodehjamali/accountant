@@ -248,6 +248,15 @@ def list_payment_allocations(session: Session, invoice_id: uuid.UUID) -> Iterabl
     ).scalars().all()
 
 
+def list_allocations_for_payment(session: Session, payment_id: uuid.UUID) -> Iterable[PaymentAllocation]:
+    """Return all payment allocations for a given payment."""
+    return session.execute(
+        select(PaymentAllocation)
+        .where(PaymentAllocation.payment_id == payment_id)
+        .order_by(PaymentAllocation.allocated_at)
+    ).scalars().all()
+
+
 def list_payments_for_invoice(session: Session, invoice_id: uuid.UUID) -> Iterable[Payment]:
     """Return all payments that have allocations to a given invoice."""
     allocation_subq = (
@@ -270,6 +279,7 @@ __all__ = [
     "PaymentExceedsTotalAllocationsError",
     "PaymentNotFoundError",
     "get_payment",
+    "list_allocations_for_payment",
     "list_payment_allocations",
     "list_payments_for_invoice",
     "record_payment",

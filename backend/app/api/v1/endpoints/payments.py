@@ -88,7 +88,7 @@ def create_payment(
     )
     db.commit()
     db.refresh(payment)
-    allocations = payment_service.list_payment_allocations(db, payment.id)
+    allocations = payment_service.list_allocations_for_payment(db, payment.id)
     return _to_response(payment, allocations)
 
 
@@ -103,7 +103,7 @@ def read_payment(
     _current_user: AppUser = Depends(get_current_user),
 ) -> PaymentResponse:
     payment = _run(payment_service.get_payment, db, payment_id)
-    allocations = payment_service.list_payment_allocations(db, payment.id)
+    allocations = payment_service.list_allocations_for_payment(db, payment.id)
     return _to_response(payment, allocations)
 
 
