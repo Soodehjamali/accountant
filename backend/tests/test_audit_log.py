@@ -67,7 +67,7 @@ def viewer_auth_headers() -> dict[str, str]:
         )
 
         role_code = f"AUDIT_VIEWER_{suffix}"
-        rbac_service.create_role(session, code=role_code, name="Audit Viewer (test)")
+        rbac_service.create_role(session, code=role_code, name="Audit Viewer (test)", created_by=system_user.id)
         try:
             rbac_service.create_permission(
                 session,
@@ -75,6 +75,7 @@ def viewer_auth_headers() -> dict[str, str]:
                 name="View audit log",
                 resource="audit_log",
                 action="view",
+                created_by=system_user.id,
             )
         except rbac_service.DuplicatePermissionCodeError:
             pass

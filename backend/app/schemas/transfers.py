@@ -18,13 +18,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class TransferState(str, Enum):
     DRAFT = "DRAFT"
-    PENDING = "PENDING"
-    APPROVED = "APPROVED"
     DISPATCHED = "DISPATCHED"
-    IN_TRANSIT = "IN_TRANSIT"
     RECEIVED = "RECEIVED"
-    PARTIAL_RECEIVED = "PARTIAL_RECEIVED"
-    CLOSED = "CLOSED"
     CANCELLED = "CANCELLED"
 
 

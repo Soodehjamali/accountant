@@ -164,10 +164,23 @@ def _current_balance(
     product_id: uuid.UUID,
     lot_id: uuid.UUID | None,
 ) -> decimal.Decimal:
+    """Sum ``signed_quantity`` across ALL rows for this
+    (warehouse, product, lot) -- including reversed ones.
+
+    The ledger is append-only and immutable (``CLAUDE.md``: *"Inventory
+    is always calculated from immutable InventoryTransaction"*). A
+    reversal row's ``signed_quantity`` is the exact negation of the
+    original, so both rows together sum to zero -- the correct net
+    effect. The ``is_reversed`` flag on the original row exists solely
+    to prevent double-reversal (checked in ``reverse_transaction``),
+    **not** to exclude the original from the balance. Filtering it out
+    would count only the reversal's negative quantity, producing an
+    incorrect negative balance instead of the expected zero.
+    """
+
     stmt = select(func.coalesce(func.sum(InventoryTransaction.signed_quantity), 0)).where(
         InventoryTransaction.warehouse_id == warehouse_id,
         InventoryTransaction.product_id == product_id,
-        InventoryTransaction.is_reversed.is_(False),
     )
     if lot_id is not None:
         stmt = stmt.where(InventoryTransaction.lot_id == lot_id)

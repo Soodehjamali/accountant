@@ -23,15 +23,12 @@ Every state transition writes a ``transfer_history`` row -- see
 ``_transition`` below, the single choke point every state-changing
 function funnels through.
 
-Explicitly OUT OF SCOPE for this module:
-* PENDING/APPROVED intermediate states -- the DB CHECK allows them but
-  no service function transitions through them yet. A future milestone
-  can add ``submit_transfer`` (DRAFT -> PENDING) and
-  ``approve_transfer`` (PENDING -> APPROVED -> DISPATCHED) if the
-  business requires a formal approval workflow.
-* IN_TRANSIT / PARTIAL_RECEIVED -- not exposed via endpoints in this
-  milestone; the spec describes them but ADR-005's core two-phase
-  model only needs DISPATCHED and RECEIVED.
+States present in the DB CHECK vocabulary (§T4) but omitted from
+``ALLOWED_TRANSITIONS`` above because no service function transitions
+through them: PENDING, APPROVED, IN_TRANSIT, PARTIAL_RECEIVED, CLOSED.
+A future milestone can add ``submit_transfer`` (DRAFT -> PENDING) and
+``approve_transfer`` (PENDING -> APPROVED -> DISPATCHED) if the
+business requires a formal approval workflow.
 """
 
 from __future__ import annotations
@@ -55,16 +52,14 @@ TRANSFER_MANAGE_PERMISSION_CODE = "TRANSFER_MANAGE"
 
 #: The accepted Stock Transfer state graph.  Keys are the "from" state;
 #: values are the set of states directly reachable from it.
-#: Derived from ADR-005 + §T4's TransferState CHECK vocabulary.
+#: Derived from ADR-005's two-phase model: DRAFT -> DISPATCHED -> RECEIVED.
+#: Unused intermediate states (PENDING, APPROVED, IN_TRANSIT, PARTIAL_RECEIVED,
+#: CLOSED) from the spec's 9-state vocabulary are omitted because no service
+#: function transitions through them.
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
-    "DRAFT": frozenset({"PENDING", "APPROVED", "DISPATCHED", "CANCELLED"}),
-    "PENDING": frozenset({"APPROVED", "CANCELLED"}),
-    "APPROVED": frozenset({"DISPATCHED", "CANCELLED"}),
-    "DISPATCHED": frozenset({"IN_TRANSIT", "CANCELLED"}),
-    "IN_TRANSIT": frozenset({"RECEIVED", "PARTIAL_RECEIVED"}),
-    "RECEIVED": frozenset({"CLOSED", "CANCELLED"}),
-    "PARTIAL_RECEIVED": frozenset({"RECEIVED", "CLOSED"}),
-    "CLOSED": frozenset(),
+    "DRAFT": frozenset({"DISPATCHED", "CANCELLED"}),
+    "DISPATCHED": frozenset({"RECEIVED", "CANCELLED"}),
+    "RECEIVED": frozenset(),
     "CANCELLED": frozenset(),
 }
 

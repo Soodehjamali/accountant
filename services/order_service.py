@@ -78,7 +78,7 @@ from database.models.price_history import PriceHistory
 from database.models.product import Product
 from database.models.representative import Representative
 from database.models.stock_reservation import StockReservation
-from services import inventory_service
+from services import audit_service, inventory_service
 
 #: Permission code gating the ordinary order-lifecycle mutations (create,
 #: submit, reserve, resubmit, cancel, start-fulfillment, ship, invoice,
@@ -369,6 +369,21 @@ def create_order(
         session.add(order_line)
     session.flush()
 
+    audit_service.record(
+        session,
+        entity_type="order",
+        entity_id=order.id,
+        action="CREATE",
+        actor_user_id=created_by,
+        after={
+            "order_number": order.order_number,
+            "customer_id": str(customer_id),
+            "state": "DRAFT",
+            "grand_total": str(grand_total),
+        },
+    )
+    session.flush()
+
     return order
 
 
@@ -449,6 +464,17 @@ def _transition(
             to_state=to_state,
             note=note,
         )
+    )
+    session.flush()
+
+    audit_service.record(
+        session,
+        entity_type="order",
+        entity_id=order.id,
+        action="UPDATE",
+        actor_user_id=actor_user_id,
+        before={"state": from_state},
+        after={"state": to_state, "note": note},
     )
     session.flush()
     return order

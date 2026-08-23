@@ -71,7 +71,7 @@ def manage_auth_headers() -> dict[str, str]:
         )
 
         role_code = f"CUSTOMER_MANAGER_{suffix}"
-        rbac_service.create_role(session, code=role_code, name="Customer Manager (test)")
+        rbac_service.create_role(session, code=role_code, name="Customer Manager (test)", created_by=system_user.id)
         try:
             rbac_service.create_permission(
                 session,
@@ -79,6 +79,7 @@ def manage_auth_headers() -> dict[str, str]:
                 name="Manage customers",
                 resource="customer",
                 action="manage",
+                created_by=system_user.id,
             )
         except rbac_service.DuplicatePermissionCodeError:
             pass

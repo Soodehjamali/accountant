@@ -79,11 +79,11 @@ def _user_with_permissions(*permission_codes: str) -> dict[str, str]:
         )
 
         role_code = f"ORDER_TESTER_{suffix}"
-        rbac_service.create_role(session, code=role_code, name="Order Tester (test)")
+        rbac_service.create_role(session, code=role_code, name="Order Tester (test)", created_by=system_user.id)
         for code in permission_codes:
             try:
                 rbac_service.create_permission(
-                    session, code=code, name=code, resource="order", action="test"
+                    session, code=code, name=code, resource="order", action="test", created_by=system_user.id
                 )
             except rbac_service.DuplicatePermissionCodeError:
                 pass
@@ -358,3 +358,52 @@ def test_ship_full_order_reaches_shipped(
     )
     assert shipped.status_code == 200, shipped.text
     assert shipped.json()["state"] == "SHIPPED"
+
+
+@requires_database
+def test_status_history_recorded_on_transitions(
+    client: TestClient,
+    manage_auth_headers: dict[str, str],
+    approve_auth_headers: dict[str, str],
+    order_fixtures: dict[str, str],
+) -> None:
+    """Verify that each state transition writes a correct row to
+    ``order_status_history`` (T12) via the ``GET /orders/{id}/history``
+    endpoint."""
+
+    order = client.post(
+        "/api/v1/orders", json=_order_payload(order_fixtures), headers=manage_auth_headers
+    ).json()
+    order_id = order["id"]
+
+    # DRAFT -> PENDING_APPROVAL
+    client.post(f"/api/v1/orders/{order_id}/submit", json={}, headers=manage_auth_headers)
+
+    # PENDING_APPROVAL -> APPROVED
+    client.post(f"/api/v1/orders/{order_id}/approve", json={}, headers=approve_auth_headers)
+
+    # APPROVED -> RESERVED
+    client.post(f"/api/v1/orders/{order_id}/reserve", headers=manage_auth_headers)
+
+    # Fetch the history
+    resp = client.get(f"/api/v1/orders/{order_id}/history", headers=manage_auth_headers)
+    assert resp.status_code == 200, resp.text
+    history = resp.json()["items"]
+
+    # 3 transitions: DRAFT->PENDING_APPROVAL, PENDING_APPROVAL->APPROVED,
+    # APPROVED->RESERVED
+    assert len(history) == 3, f"Expected 3 history rows, got {len(history)}"
+
+    assert history[0]["from_state"] == "DRAFT"
+    assert history[0]["to_state"] == "PENDING_APPROVAL"
+
+    assert history[1]["from_state"] == "PENDING_APPROVAL"
+    assert history[1]["to_state"] == "APPROVED"
+
+    assert history[2]["from_state"] == "APPROVED"
+    assert history[2]["to_state"] == "RESERVED"
+
+    # Each row must have an actor_user_id and event_at
+    for row in history:
+        assert row["actor_user_id"] is not None
+        assert row["event_at"] is not None

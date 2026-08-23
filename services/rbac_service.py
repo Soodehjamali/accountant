@@ -77,9 +77,11 @@ class UserNotFoundError(LookupError):
 
 
 def create_role(
-    session: Session, *, code: str, name: str, description: str | None = None
+    session: Session, *, code: str, name: str, description: str | None = None, created_by: uuid.UUID
 ) -> Role:
     """Create and return a new ``Role``.
+
+    ``created_by`` is mandatory — ``Role.created_by`` (UAC) is NOT NULL.
 
     Raises:
         DuplicateRoleCodeError: if ``code`` is already taken.
@@ -88,7 +90,7 @@ def create_role(
     existing = session.execute(select(Role).where(Role.code == code)).scalar_one_or_none()
     if existing is not None:
         raise DuplicateRoleCodeError(code)
-    role = Role(code=code, name=name, description=description)
+    role = Role(code=code, name=name, description=description, created_by=created_by, updated_by=created_by)
     session.add(role)
     session.flush()
     return role
@@ -99,9 +101,11 @@ def list_roles(session: Session) -> Iterable[Role]:
 
 
 def create_permission(
-    session: Session, *, code: str, name: str, resource: str, action: str
+    session: Session, *, code: str, name: str, resource: str, action: str, created_by: uuid.UUID
 ) -> Permission:
     """Create and return a new ``Permission``.
+
+    ``created_by`` is mandatory — ``Permission.created_by`` (UAC) is NOT NULL.
 
     Raises:
         DuplicatePermissionCodeError: if ``code`` is already taken.
@@ -112,7 +116,7 @@ def create_permission(
     ).scalar_one_or_none()
     if existing is not None:
         raise DuplicatePermissionCodeError(code)
-    permission = Permission(code=code, name=name, resource=resource, action=action)
+    permission = Permission(code=code, name=name, resource=resource, action=action, created_by=created_by, updated_by=created_by)
     session.add(permission)
     session.flush()
     return permission

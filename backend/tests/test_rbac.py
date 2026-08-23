@@ -135,13 +135,15 @@ def test_grant_and_check_permission() -> None:
     session = get_session_factory()()
     try:
         suffix = uuid.uuid4().hex[:8]
-        role = rbac_service.create_role(session, code=f"ROLE_{suffix}", name="Test Role")
+        system_user = bootstrap_service.ensure_system_user(session)
+        role = rbac_service.create_role(session, code=f"ROLE_{suffix}", name="Test Role", created_by=system_user.id)
         permission = rbac_service.create_permission(
             session,
             code=f"PERM_{suffix}",
             name="Test Permission",
             resource="test",
             action="do",
+            created_by=system_user.id,
         )
         rbac_service.grant_permission_to_role(
             session, role_code=role.code, permission_code=permission.code
@@ -174,10 +176,11 @@ def test_create_role_with_duplicate_code_raises() -> None:
     session = get_session_factory()()
     try:
         suffix = uuid.uuid4().hex[:8]
-        rbac_service.create_role(session, code=f"DUP_{suffix}", name="First")
+        system_user = bootstrap_service.ensure_system_user(session)
+        rbac_service.create_role(session, code=f"DUP_{suffix}", name="First", created_by=system_user.id)
         session.commit()
         with pytest.raises(rbac_service.DuplicateRoleCodeError):
-            rbac_service.create_role(session, code=f"DUP_{suffix}", name="Second")
+            rbac_service.create_role(session, code=f"DUP_{suffix}", name="Second", created_by=system_user.id)
     finally:
         session.close()
 

@@ -47,11 +47,11 @@ _require_rbac_manage = require_permission(RBAC_MANAGE_PERMISSION_CODE)
 def create_role(
     body: RoleCreateRequest,
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(_require_rbac_manage),
+    current_user: AppUser = Depends(_require_rbac_manage),
 ) -> RoleResponse:
     try:
         role = rbac_service.create_role(
-            db, code=body.code, name=body.name, description=body.description
+            db, code=body.code, name=body.name, description=body.description, created_by=current_user.id
         )
     except rbac_service.DuplicateRoleCodeError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -77,7 +77,7 @@ def list_roles(
 def create_permission(
     body: PermissionCreateRequest,
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(_require_rbac_manage),
+    current_user: AppUser = Depends(_require_rbac_manage),
 ) -> PermissionResponse:
     try:
         permission = rbac_service.create_permission(
@@ -86,6 +86,7 @@ def create_permission(
             name=body.name,
             resource=body.resource,
             action=body.action,
+            created_by=current_user.id,
         )
     except rbac_service.DuplicatePermissionCodeError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -106,6 +107,7 @@ def list_permissions(
 
 @router.post(
     "/roles/{role_code}/permissions/{permission_code}",
+    response_model=None,
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Grant a permission to a role",
 )
@@ -126,6 +128,7 @@ def grant_permission_to_role(
 
 @router.post(
     "/users/{user_id}/roles",
+    response_model=None,
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Assign a role to a user",
 )
@@ -149,6 +152,7 @@ def assign_role(
 
 @router.delete(
     "/users/{user_id}/roles/{role_code}",
+    response_model=None,
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Revoke a role from a user",
 )
