@@ -24,6 +24,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     audit_log,
     auth,
+    commissions,
     customers,
     health,
     inventory,
@@ -47,5 +48,6 @@ api_router.include_router(orders.router)
 api_router.include_router(invoices.router)
 api_router.include_router(transfers.router)
 api_router.include_router(payments.router)
+api_router.include_router(commissions.router)
 
 __all__ = ["api_router"]

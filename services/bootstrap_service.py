@@ -211,6 +211,7 @@ _ADMIN_DEFAULT_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
     ("INVOICE_MANAGE", "Manage invoices", "invoice", "manage"),
     ("TRANSFER_MANAGE", "Manage stock transfers", "stock_transfer", "manage"),
     ("PAYMENT_MANAGE", "Manage payments", "payment", "manage"),
+    ("COMMISSION_MANAGE", "Manage commissions", "commission", "manage"),
 )
 
 
