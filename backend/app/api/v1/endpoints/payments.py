@@ -25,7 +25,7 @@ from app.schemas.payments import (
     PaymentResponse,
 )
 from database.models.app_user import AppUser
-from services import payment_service
+from services import customer_ledger_service, payment_service
 
 router = APIRouter(tags=["payments"])
 
@@ -85,6 +85,7 @@ def create_payment(
         actor_user_id=current_user.id,
         reference=body.reference,
         received_at=body.received_at,
+        record_entry=customer_ledger_service.record_entry,
     )
     db.commit()
     db.refresh(payment)

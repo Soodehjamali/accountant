@@ -25,14 +25,18 @@ from app.api.v1.endpoints import (
     audit_log,
     auth,
     commissions,
+    credit_notes,
+    customer_ledger,
     customers,
     health,
     inventory,
     invoices,
+    kpi_snapshot,
     orders,
     payments,
     products,
     rbac,
+    reports,
     transfers,
 )
 
@@ -43,11 +47,15 @@ api_router.include_router(products.router)
 api_router.include_router(inventory.router)
 api_router.include_router(rbac.router)
 api_router.include_router(customers.router)
+api_router.include_router(customer_ledger.router)
 api_router.include_router(audit_log.router)
 api_router.include_router(orders.router)
 api_router.include_router(invoices.router)
 api_router.include_router(transfers.router)
 api_router.include_router(payments.router)
 api_router.include_router(commissions.router)
+api_router.include_router(credit_notes.router)
+api_router.include_router(kpi_snapshot.router)
+api_router.include_router(reports.router)
 
 __all__ = ["api_router"]

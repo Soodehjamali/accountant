@@ -23,7 +23,8 @@ from __future__ import annotations
 import datetime
 import decimal
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -106,12 +107,29 @@ def record_payment(
     actor_user_id: uuid.UUID,
     reference: str | None = None,
     received_at: datetime.datetime | None = None,
+    record_entry: Callable[..., Any] | None = None,
 ) -> Payment:
     """Record a payment and allocate it to one or more invoices.
 
     Creates a ``Payment`` row (append-only) plus one or more
     ``PaymentAllocation`` rows.  Updates each invoice's
     ``amount_paid`` / ``balance_due`` and transitions state as needed.
+
+    After a successful allocation, records a customer ledger entry (T22)
+    with type ``PAYMENT_RECEIVED`` via the ``record_entry`` callback, if
+    one is provided.
+
+    ``record_entry`` is an injectable dependency (see
+    ``credit_note_service.py`` for the pattern).  When ``None`` (the
+    default), no ledger entry is written -- the caller should supply the
+    real ``customer_ledger_service.record_entry`` function to complete
+    the integration.
+
+    The callback signature should be::
+
+        record_entry(session, *, customer_id, reference_type="payment",
+                     reference_id, signed_amount, currency_id,
+                     entry_type="PAYMENT_RECEIVED", actor_user_id)
 
     Args:
         allocations: List of ``(invoice_id, allocated_amount)`` tuples.
@@ -225,6 +243,22 @@ def record_payment(
         },
     )
     session.flush()
+
+    # --- Customer Ledger entry (T22) ---
+    # PAYMENT_RECEIVED is a -credit (negative signed_amount) per the
+    # spec's "+debit / -credit" convention.  A payment decreases the
+    # customer's AR balance.
+    if record_entry is not None:
+        record_entry(
+            session,
+            customer_id=customer_id,
+            reference_type="payment",
+            reference_id=payment.id,
+            signed_amount=-amount,
+            currency_id=currency_id,
+            entry_type="PAYMENT_RECEIVED",
+            actor_user_id=actor_user_id,
+        )
 
     return payment
 

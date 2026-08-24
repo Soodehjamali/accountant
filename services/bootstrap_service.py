@@ -26,6 +26,8 @@ from database.models.app_user import AppUser
 from database.models.currency import Currency
 from database.models.movement_type_ref import MovementTypeRef
 from database.models.permission import Permission
+from database.models.reason_code_ref import ReasonCodeRef
+from database.models.report_type_ref import ReportTypeRef
 from database.models.role import Role
 from database.models.role_permission import RolePermission
 from database.models.unit_of_measure import UnitOfMeasure
@@ -212,7 +214,72 @@ _ADMIN_DEFAULT_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
     ("TRANSFER_MANAGE", "Manage stock transfers", "stock_transfer", "manage"),
     ("PAYMENT_MANAGE", "Manage payments", "payment", "manage"),
     ("COMMISSION_MANAGE", "Manage commissions", "commission", "manage"),
+    ("CREDIT_NOTE_MANAGE", "Manage credit notes", "credit_note", "manage"),
+    ("CUSTOMER_LEDGER_VIEW", "View customer ledger", "customer_ledger", "view"),
+    ("CUSTOMER_LEDGER_MANAGE", "Manage customer ledger reconciliation", "customer_ledger", "manage"),
+    ("KPI_SNAPSHOT_VIEW", "View KPI snapshots", "kpi_snapshot", "view"),
+    ("KPI_SNAPSHOT_MANAGE", "Manage KPI snapshots", "kpi_snapshot", "manage"),
+    ("REPORT_MANAGE", "Manage reports", "report", "manage"),
 )
+
+
+def ensure_default_reason_code(session: Session, actor_id: uuid.UUID) -> ReasonCodeRef:
+    """Return the seeded "PRICING_ERROR" ``ReasonCodeRef``, creating it if absent.
+
+    ``credit_note.reason_code_id`` is NOT NULL, so at least one reason code
+    must exist before credit notes can be created.
+    """
+    code = "PRICING_ERROR"
+    existing = session.execute(
+        select(ReasonCodeRef).where(ReasonCodeRef.code == code)
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    rc = ReasonCodeRef(
+        code=code,
+        label="Pricing error",
+        scope="ADJUSTMENT",
+        created_by=actor_id,
+        updated_by=actor_id,
+    )
+    session.add(rc)
+    session.flush()
+    return rc
+
+
+#: Default report types to seed -- codes matched by
+#: ``services/report_service.py``'s ``REPORT_BUILDERS`` registry.
+_REPORT_TYPE_CODES: tuple[str, ...] = (
+    "AR_AGING",
+    "INVENTORY_VALUATION",
+    "COMMISSION_PAYABLE",
+)
+
+
+def ensure_report_types(session: Session, actor_id: uuid.UUID) -> list[ReportTypeRef]:
+    """Seed the default ``ReportTypeRef`` rows (AR_AGING,
+    INVENTORY_VALUATION, COMMISSION_PAYABLE), creating any missing rows.
+
+    Idempotent -- safe to call every run.  Same pattern as
+    ``ensure_movement_types()``.
+    """
+    result: list[ReportTypeRef] = []
+    for code in _REPORT_TYPE_CODES:
+        existing = session.execute(
+            select(ReportTypeRef).where(ReportTypeRef.code == code)
+        ).scalar_one_or_none()
+        if existing is not None:
+            result.append(existing)
+            continue
+        rt = ReportTypeRef(
+            code=code,
+            created_by=actor_id,
+            updated_by=actor_id,
+        )
+        session.add(rt)
+        session.flush()
+        result.append(rt)
+    return result
 
 
 def _ensure_permission(

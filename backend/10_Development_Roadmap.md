@@ -436,3 +436,327 @@ Router updated.
 backend/tests/test_commissions.py covers: create config and resolve
 for matching order, fallback to broader config when no specific match,
 commission transaction amount calculation (rate * grand_total).
+
+-----------------
+
+Task 3/4 (update) -- Credit Note (T20/T21) service + API, wired in
+
+Done -- services/credit_note_service.py implements the credit note
+lifecycle following the same _transition choke-point pattern as
+invoice_service.py / order_service.py / stock_transfer_service.py:
+
+* create_credit_note(): creates a DRAFT credit note with lines,
+  computes total_amount from lines, validates qty > 0 and
+  total_amount > 0 (matching ck_credit_note_line_qty_positive and
+  ck_credit_note_amount_positive DB CHECK constraints).
+* issue_credit_note(): DRAFT -> ISSUED, sets issued_at.
+* apply_credit_note(): ISSUED -> APPLIED.  Per spec §T20 point 7,
+  never edits the original invoice's rows directly.  Marks the
+  original invoice CLOSED_CORRECTED (cross-table, same session for
+  atomicity -- mirrors the invoice_service.issue_invoice() ->
+  order_service.mark_invoiced() pattern).  Customer ledger entry
+  (T22) write is delegated to an injectable record_entry callback
+  (see below).
+* void_credit_note(): DRAFT -> VOID only (pre-ISSUED soft-delete,
+  same convention as invoice_service.void_invoice()).
+
+Dependency injection -- Customer Ledger:
+apply_credit_note() requires a record_entry callback to write the
+customer_ledger_entry (T22).  The callback is injected as a parameter
+with a default of None; when None, the function raises
+NotImplementedError with a clear message pointing at the pending
+Customer Ledger milestone.  Tests inject a fake/mock callable to
+verify the full apply path end-to-end.  The Customer Ledger task's
+job is to supply the real record_entry implementation as the default
+wiring (e.g. in main.py's dependency setup), not to change
+apply_credit_note()'s signature again.
+
+Invoice ALLOWED_TRANSITIONS updated: ISSUED and PARTIALLY_PAID now
+include CLOSED_CORRECTED as a reachable state, enabling credit note
+corrections to transition the invoice without modifying
+invoice_service.py's public API.
+
+app/api/v1/endpoints/credit_notes.py wraps this service with thin
+endpoints, gated behind CREDIT_NOTE_MANAGE permission (added to
+services/bootstrap_service.py's _ADMIN_DEFAULT_PERMISSIONS).
+Endpoints: POST /credit-notes (create DRAFT), GET /credit-notes/{id}
+(read with lines), POST /credit-notes/{id}/issue (DRAFT -> ISSUED),
+POST /credit-notes/{id}/apply (ISSUED -> APPLIED, 501 if no ledger),
+POST /credit-notes/{id}/void (DRAFT -> VOID).  Router updated.
+
+services/bootstrap_service.py gained ensure_default_reason_code() to
+seed a "PRICING_ERROR" reason code, needed because
+credit_note.reason_code_id is NOT NULL.
+
+Scope explicitly NOT covered by this milestone: the
+customer_ledger_entry (T22) service itself (stubbed behind the
+injectable callback), inventory reversal for returns (BR-F4), and
+the approval workflow (T25) for credit notes above threshold.
+
+backend/tests/test_credit_notes.py covers: full happy path
+(create -> issue -> apply with mock ledger, verify invoice
+CLOSED_CORRECTED), void-from-DRAFT, apply rejected if not ISSUED
+(409), qty <= 0 rejected (422), total_amount <= 0 rejected (422),
+permission gate (403), read with lines, and apply without ledger
+raises NotImplementedError (501).
+
+-----------------
+
+Task 3/4 (update) -- Customer Ledger (M13/T22) service + API, wired in
+
+Done -- services/customer_ledger_service.py implements the AR ledger:
+
+* record_entry(): appends one immutable customer_ledger_entry (T22) row,
+  hash-chained exactly like services/inventory_service.py's own
+  sequence_no/prev_hash/row_hash pattern, scoped per customer_ledger_id
+  instead of per warehouse_id. Get-or-creates the 1:1 customer_ledger
+  (M13) header on first use. Validates entry_type against the DB CHECK
+  vocabulary and rejects signed_amount == 0. Sign convention: positive =
+  debit (increases what the customer owes), negative = credit (decreases
+  it) -- INVOICE_ISSUED is a debit; PAYMENT_RECEIVED, CREDIT_NOTE_APPLIED,
+  and WRITE_OFF are credits.
+* get_balance() / list_entries(): read paths computed live from T22 --
+  deliberately never trust customer_ledger.current_balance, since that
+  cache is only as fresh as the last reconciliation run.
+* reconcile_customer_ledger(): the only function with write privilege
+  over customer_ledger.current_balance/last_entry_seq/last_reconciled_at,
+  mirroring the reconciliation-service-role column-level GRANT the spec
+  describes for invoice.amount_paid/balance_due.
+
+Three retrofit call sites, resolving the open TODOs left by the prior
+Invoice/Payment/Credit Note milestones:
+* invoice_service.issue_invoice() now calls record_entry() with
+  INVOICE_ISSUED (debit = grand_total) in the same session as the
+  DRAFT -> ISSUED transition and the existing Order coordination step.
+* payment_service.record_payment() now calls record_entry() with
+  PAYMENT_RECEIVED (credit = -amount) once per payment, not once per
+  allocation -- an unallocated remainder still reduces what the customer
+  owes even before it's matched to a specific invoice.
+* app/api/v1/endpoints/credit_notes.py's apply_credit_note handler now
+  passes customer_ledger_service.record_entry as the injectable
+  record_entry callback credit_note_service.apply_credit_note() has
+  expected since the Credit Note milestone -- POST
+  /credit-notes/{id}/apply no longer 501s; it posts a CREDIT_NOTE_APPLIED
+  credit entry and, unchanged from before, marks the original invoice
+  CLOSED_CORRECTED in the same transaction. credit_note_service.py's own
+  signature was NOT changed, per that milestone's own stated intent.
+
+app/api/v1/endpoints/customer_ledger.py adds two read-only endpoints:
+GET /customers/{id}/ledger (filterable by date range) and GET
+/customers/{id}/balance, gated behind a new CUSTOMER_LEDGER_VIEW
+permission (added to services/bootstrap_service.py's
+_ADMIN_DEFAULT_PERMISSIONS, matching current codebase convention that
+every new require_permission(...) gate is granted to ADMIN by default).
+No write endpoint exists here on purpose -- entries are written only by
+other domain services calling record_entry() themselves, never directly
+over HTTP, same "mechanism, not a write endpoint" shape as audit_log.
+Router updated.
+
+Also fixed during this review pass: CreditNoteCreateRequest.note (from
+the Credit Note milestone) was accepted by the schema but silently
+dropped -- never reached the service, never persisted anywhere.
+create_credit_note() now accepts note and records it in the audit_log
+CREATE entry's after payload (credit_note has no dedicated column or
+history table for it), matching how every transition function on that
+module already threads note through audit_service.record()'s after
+payload. Covered by a new regression test,
+test_create_note_persisted_to_audit_log.
+
+Scope explicitly NOT covered by this milestone: WRITE_OFF is a valid
+entry_type per the DB CHECK, but no service function creates one --
+writing off a balance is an authorization/threshold decision not
+specified anywhere in the source docs, left for a future milestone
+rather than guessed here. Multi-currency netting is also out of scope --
+customer_ledger.currency_id is a single column per customer; this
+milestone does not convert or net entries posted in a different currency
+than the header's.
+
+backend/tests/test_customer_ledger.py covers: INVOICE_ISSUED debit entry
+posted correctly, balance computed correctly across a mixed
+invoice+payment sequence, monotonic/gapless sequencing and hash-chaining,
+reconcile_customer_ledger() updating the cached projection, zero-amount
+and invalid-entry-type rejections, the credit note apply endpoint no
+longer 501ing and posting a correct credit entry, the balance/ledger read
+endpoints, the CUSTOMER_LEDGER_VIEW permission gate (403), and a
+customer with no ledger activity yet correctly returning balance 0 (not
+an error) while reconcile_customer_ledger() raises NoLedgerActivityError
+for that same customer. Not executed in this environment (no live
+PostgreSQL instance available here) -- please run against a real
+database before relying on it.
+
+-----------------
+
+Task 3/4 (update) -- KPI Snapshot (H10) service + API, wired in
+
+Done (2026-08-24) -- services/kpi_snapshot_service.py implements the
+KPI snapshot domain per 07_DATABASE_SPEC.md §H10, reading from the three
+ledgers that are now live: inventory_balance_snapshot (T3),
+customer_ledger_entry (T22) via customer_ledger_service.get_balance(),
+and commission_transaction (T23).
+
+services/kpi_snapshot_service.py delivers:
+
+* capture_kpi(): appends one immutable kpi_snapshot row.  Validates
+  scope_type against ck_kpi_snapshot_scope_type CHECK vocabulary
+  (GLOBAL | WAREHOUSE | REPRESENTATIVE).  Validates period_granularity
+  against ck_kpi_snapshot_granularity (DAILY | WEEKLY | MONTHLY).
+  Enforces ck_kpi_snapshot_scope_consistency at the application layer
+  (GLOBAL implies scope_id IS NULL; WAREHOUSE/REPRESENTATIVE require
+  scope_id set).  App-level uniqueness pre-check for uq_kpi_snapshot
+  (kpi_key, scope_type, scope_id, captured_at, period_granularity)
+  before inserting.
+
+* capture_global_kpis(): computes and captures three GLOBAL-scope KPIs:
+  - TOTAL_STOCK_VALUE: sum of inventory_balance_snapshot.quantity_on_hand
+    * latest_unit_cost across all warehouses.  unit_cost is resolved from
+    the latest inventory_transaction per (warehouse, product, lot) since
+    inventory_balance_snapshot does not carry a cost column.
+  - AR_BALANCE: sum of customer_ledger_entry.signed_amount across all
+    customers (the live balance computation, matching
+    customer_ledger_service.get_balance()'s own semantics).
+  - COMMISSION_PAYABLE: sum of commission_transaction.signed_amount where
+    state_event IN ('ACCRUED', 'APPROVED') -- unpaid commission.
+
+* get_latest_kpi(kpi_key, scope_type, scope_id): returns the most recent
+  captured row for that key/scope, or None.
+
+* list_kpi_history(kpi_key, scope_type, scope_id, period_granularity,
+  skip, limit): trend-chart read path, ordered by captured_at DESC.
+
+app/api/v1/endpoints/kpi_snapshot.py delivers:
+
+* POST /kpi-snapshots/capture -- triggers capture_global_kpis() on
+  demand, gated behind KPI_SNAPSHOT_MANAGE permission.
+* GET /kpi-snapshots/{kpi_key}/latest -- returns the most recent captured
+  row, gated behind KPI_SNAPSHOT_VIEW.
+* GET /kpi-snapshots/{kpi_key}/history -- trend-chart read path, gated
+  behind KPI_SNAPSHOT_VIEW.
+
+Both KPI_SNAPSHOT_VIEW and KPI_SNAPSHOT_MANAGE are auto-seeded in
+bootstrap_service._ADMIN_DEFAULT_PERMISSIONS so ADMIN can use the new
+endpoints out of the box.
+
+Scope explicitly covered by this milestone:
+* GLOBAL-scope KPI capture (TOTAL_STOCK_VALUE, AR_BALANCE,
+  COMMISSION_PAYABLE).
+* capture_global_kpis() on-demand via endpoint.
+* get_latest_kpi() and list_kpi_history() read paths.
+* All validation: scope consistency, uniqueness, vocabulary checks.
+
+Scope explicitly NOT covered by this milestone:
+* Per-warehouse / per-representative breakdowns (scope_type=WAREHOUSE /
+  REPRESENTATIVE) -- GLOBAL scope only; these would require separate
+  computation logic per KPI key (e.g. per-warehouse stock value, per-rep
+  commission) and are left for a future milestone.
+* Cron/scheduler triggers -- this codebase has no scheduler
+  infrastructure yet (see bootstrap_service.py's own docstring on what's
+  deliberately not built).  capture_global_kpis() is documented as
+  intended to be called by a future scheduled job or manually via the
+  endpoint.
+* The database/models/kpi_snapshot.py ORM model was built in a prior pass;
+  this milestone wires the service, endpoints, and tests.
+
+backend/tests/test_kpi_snapshot.py covers: capture computes correct values
+against known ledger state (TOTAL_STOCK_VALUE = 100 * 25.50 = 2550,
+AR_BALANCE = 500 - 200 = 300, COMMISSION_PAYABLE = 0),
+scope-consistency CHECK violations rejected (GLOBAL with scope_id,
+WAREHOUSE without scope_id), invalid scope_type and period_granularity
+rejected, duplicate uniqueness rejected, get_latest_kpi returns None
+for nonexistent, list_kpi_history returns empty for nonexistent, and
+permission gates (403 for view and manage).
+
+-----------------
+
+Task 3/4 (update) -- Reporting Run (M17/T26/H9) service + API, wired in
+
+Done (2026-08-24) -- services/report_service.py implements the
+reporting-run domain per 07_DATABASE_SPEC.md §M17/T26/H9, scoped to
+ON-DEMAND report generation only.
+
+services/report_service.py delivers:
+
+* create_report_definition(): creates an M17 row.  Validates
+  output_format against app-level vocabulary (PDF | CSV | XLSX).
+  Enforces uq_report_definition (owner_user_id, name) with a clear
+  error.  schedule_cron is writable via the API (so it can be set now)
+  but nothing reads/acts on it yet -- no scheduler infrastructure.
+
+* run_report(): executes a report synchronously (QUEUED -> RUNNING ->
+  COMPLETE|FAILED in the same call, no background job queue exists).
+  Dispatches to one of three named report builders based on
+  report_type_ref.code.  On success creates the H9 report_snapshot
+  row (uq_report_snapshot_run enforces one snapshot per run).  On
+  any exception, marks the run FAILED and re-raises, not swallows.
+  report_run has no error_message column -- this is noted as a schema
+  gap.
+
+* get_report_definition() / get_report_run() / get_report_snapshot():
+  read helpers for the API layer.
+
+Three report builders implemented (seeded via
+bootstrap_service.ensure_report_types()):
+
+* AR_AGING: one row per customer with a nonzero balance.  Each
+  outstanding INVOICE_ISSUED entry is aged independently from its
+  occurred_at to now, bucketed into 0-30/31-60/61-90/90+ day buckets.
+  This is the simplest defensible version -- real FIFO
+  invoice-to-payment matching is not attempted (documented in the
+  builder's own docstring).
+
+* INVENTORY_VALUATION: one row per (warehouse, product) from
+  inventory_balance_snapshot with quantity_on_hand > 0, valued at each
+  row's own unit_cost (resolved from the latest inventory_transaction
+  per (warehouse, product, lot), since the snapshot has no cost column).
+
+* COMMISSION_PAYABLE: one row per representative with unpaid commission
+  (state_event IN ('ACCRUED', 'APPROVED')), grouped by
+  representative_id.  Reuses the same query logic as
+  kpi_snapshot_service._compute_commission_payable().
+
+app/api/v1/endpoints/reports.py delivers:
+
+* POST /report-definitions -- create a report definition.
+* GET /report-definitions/{id} -- read a report definition.
+* POST /report-definitions/{id}/run -- run a report (returns the
+  report_run + its report_snapshot.snapshot_data inline).
+* GET /report-runs/{id} -- status + snapshot if COMPLETE.
+
+All gated behind REPORT_MANAGE permission (added to
+bootstrap_service._ADMIN_DEFAULT_PERMISSIONS so ADMIN can use the new
+endpoints out of the box).  Router updated.
+
+Scope explicitly covered by this milestone:
+* ON-DEMAND report generation (synchronous, no background queue).
+* Three report types: AR_AGING, INVENTORY_VALUATION, COMMISSION_PAYABLE.
+* Report definition CRUD, run execution, and run/snapshot read.
+* CSV output format (flattened CSV alongside JSON).
+* report_type_ref rows seeded via ensure_report_types().
+
+Scope explicitly NOT covered by this milestone:
+* schedule_cron-triggered runs: no scheduler infra exists in this
+  codebase yet (same gap noted in the KPI Snapshot milestone).  The
+  schedule_cron column is writable via the API so it can be set now,
+  but nothing reads/acts on it yet.
+* output_format PDF/XLSX rendering: this milestone only produces JSON
+  (stored in report_snapshot.snapshot_data) with optional CSV.  If
+  output_format is PDF or XLSX, the report still runs and stores JSON,
+  but generated_document_id stays NULL -- binary rendering is not
+  implemented.  No PDF/XLSX generation library is guessed at.
+* report_run has no error_message column for FAILED runs -- the
+  exception message is available via the re-raised exception only.
+  This is noted as a schema gap for a future spec revision.
+* Any other report types beyond the three implemented above.
+
+Per IMPLEMENTATION_AUDIT.md's dependency graph, this closes M9 and
+leaves M10 (Bots) and M11 (Frontend) as the only unscoped domains
+left in the roadmap.
+
+backend/tests/test_reports.py covers: AR_AGING report with known fixture
+data (verifies 31-60 day bucket contains 500.00), INVENTORY_VALUATION
+report (verifies 50 units * 10.00 = 500.00 total value),
+COMMISSION_PAYABLE with no transactions returns empty, FAILED run when
+report_type_ref code doesn't match any builder (501),
+DuplicateReportDefinitionError rejected, uq_report_snapshot_run
+uniqueness (two runs produce two separate snapshots), read definition
+endpoint, nonexistent definition 404, CSV output format includes CSV
+in snapshot_data, and permission gate (403).

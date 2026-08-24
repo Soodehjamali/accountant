@@ -43,7 +43,8 @@ from __future__ import annotations
 import datetime
 import decimal
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -65,8 +66,8 @@ INVOICE_MANAGE_PERMISSION_CODE = "INVOICE_MANAGE"
 #: §T17's InvoiceState CHECK vocabulary.
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "DRAFT": frozenset({"ISSUED", "VOID"}),
-    "ISSUED": frozenset({"PARTIALLY_PAID", "PAID", "VOID"}),
-    "PARTIALLY_PAID": frozenset({"PAID", "VOID"}),
+    "ISSUED": frozenset({"PARTIALLY_PAID", "PAID", "VOID", "CLOSED_CORRECTED"}),
+    "PARTIALLY_PAID": frozenset({"PAID", "VOID", "CLOSED_CORRECTED"}),
     "PAID": frozenset({"CLOSED_CORRECTED"}),
     "CLOSED_CORRECTED": frozenset(),
     "VOID": frozenset(),
@@ -388,6 +389,7 @@ def issue_invoice(
     actor_user_id: uuid.UUID,
     due_days: int = 30,
     note: str | None = None,
+    record_entry: Callable[..., Any] | None = None,
 ) -> Invoice:
     """``DRAFT -> ISSUED``.
 
@@ -396,15 +398,27 @@ def issue_invoice(
     line edits are permitted; only ``amount_paid``/``balance_due``
     may still be updated by ``record_payment``.
 
-    After the successful DRAFT -> ISSUED transition, this function
-    coordinates with the Order domain by calling
-    ``order_service.mark_invoiced()`` on the related order (via the
-    ``invoice_order`` J1 junction), transitioning the order from
-    SHIPPED -> INVOICED.  If the order is not in SHIPPED state
-    (e.g., already invoiced, cancelled, or in another non-SHIPPED
-    state), the entire issuance is rolled back -- the caller
-    receives an ``OrderNotInShippableStateForInvoiceError`` and
-    should not proceed with an invoice for a non-SHIPPED order.
+    After the successful DRAFT -> ISSUED transition, this function:
+
+    1. Coordinates with the Order domain by calling
+       ``order_service.mark_invoiced()`` on the related order (via the
+       ``invoice_order`` J1 junction), transitioning the order from
+       SHIPPED -> INVOICED.
+    2. Records a customer ledger entry (T22) with type
+       ``INVOICE_ISSUED`` via the ``record_entry`` callback, if one
+       is provided.
+
+    ``record_entry`` is an injectable dependency (see module docstring
+    for the credit_note_service pattern).  When ``None`` (the default),
+    no ledger entry is written -- the caller should supply the real
+    ``customer_ledger_service.record_entry`` function to complete the
+    integration.
+
+    The callback signature should be::
+
+        record_entry(session, *, customer_id, reference_type="invoice",
+                     reference_id, signed_amount, currency_id,
+                     entry_type="INVOICE_ISSUED", actor_user_id)
 
     Design rationale for rollback: both the invoice state change and
     the order state change happen within the same session.  If the
@@ -443,6 +457,22 @@ def issue_invoice(
             raise OrderNotInShippableStateForInvoiceError(
                 invoice_order_link.order_id, exc.from_state
             ) from exc
+
+    # --- Customer Ledger entry (T22) ---
+    # INVOICE_ISSUED is a +debit (positive signed_amount) per the
+    # spec's "+debit / -credit" convention.  The invoice's grand_total
+    # increases the customer's AR balance.
+    if record_entry is not None:
+        record_entry(
+            session,
+            customer_id=invoice.customer_id,
+            reference_type="invoice",
+            reference_id=invoice.id,
+            signed_amount=decimal.Decimal(invoice.grand_total),
+            currency_id=invoice.currency_id,
+            entry_type="INVOICE_ISSUED",
+            actor_user_id=actor_user_id,
+        )
 
     return issued
 

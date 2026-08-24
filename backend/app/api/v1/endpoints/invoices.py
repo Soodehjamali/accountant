@@ -29,7 +29,7 @@ from app.schemas.invoices import (
     InvoiceTransitionRequest,
 )
 from database.models.app_user import AppUser
-from services import invoice_service
+from services import customer_ledger_service, invoice_service
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
@@ -165,6 +165,7 @@ def issue_invoice(
         invoice_id,
         actor_user_id=current_user.id,
         note=body.note,
+        record_entry=customer_ledger_service.record_entry,
     )
     db.commit()
     db.refresh(invoice)
