@@ -142,11 +142,15 @@ Naming convention:
 
 Out of scope for this model (not implemented here):
     * The ``BEFORE UPDATE`` immutability trigger for "parent invoice's
-      state <> 'DRAFT'" -- a database-trigger-level, cross-table concern,
-      not an ORM column/constraint concern.
+      state <> 'DRAFT'" -- now implemented in Alembic migration
+      ``a1b2c3d4e5f6``
+      (``migrations/versions/20260824_1200_a1b2c3d4e5f6_add_invoice_immutability_triggers.py``).
+      The trigger function ``erp.fn_invoice_line_immutable_after_issue()``
+      blocks changes to all business columns (description, qty, unit_price,
+      tax_rate, tax_amount, discount_value, line_total) when the parent
+      invoice's state is not ``'DRAFT'``.
     * Partitioning -- spec marks this "Follows invoice's partitioning if
       adopted", i.e. no partitioning is declared here directly.
-    * Any Alembic migration.
 
 Audit-column family -- ``UniversalAuditColumns`` (UAC):
     Classification ``T`` (mutable transactional line item), spec §13:

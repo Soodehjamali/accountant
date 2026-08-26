@@ -751,6 +751,114 @@ Per IMPLEMENTATION_AUDIT.md's dependency graph, this closes M9 and
 leaves M10 (Bots) and M11 (Frontend) as the only unscoped domains
 left in the roadmap.
 
+-----------------
+
+Task 3/4 (update) -- BOT_WRITE Authorization Architecture (ADR-008)
+
+Date: 2026-08-25
+
+Done -- Design milestone for the bot write authorization and approval
+workflow, per the instruction: "Before implementing BOT_WRITE or any
+mutation command, create a dedicated architecture/design milestone for
+write authorization and approval workflow."
+
+Delivered:
+
+* ADR-008 (ADR-008-Bot-Write-Authorization.md): Defines the three-tier
+  authorization model (Built-in / BOT_QUERY / BOT_WRITE / BOT_WRITE +
+  approval_required), the full Telegram write lifecycle, reuse of
+  existing approval_request (T25) / approval_history (H7) / audit_log
+  (H6) infrastructure, and the approval-gated command dispatch flow.
+
+* services/approval_service.py: New service for the approval workflow.
+  create_approval_request(), approve_request(), reject_request(),
+  cancel_request(), get_pending_request(), list_pending_requests().
+  Enforces separation of duties, status transition rules, and records
+  approval_history (H7) + audit_log (H6) entries for every transition.
+
+* services/bot_command_service.py: Extended _register_command() with
+  approval_required parameter (backward-compatible default=False).
+  process_message() now routes approval_required=True commands through
+  _handle_approval_required_command(), which creates an approval_request
+  and returns a "pending approval" response instead of executing the
+  mutation directly.
+
+* services/bootstrap_service.py: BOT_WRITE permission seeded in the
+  permission table but intentionally NOT granted to ADMIN by default
+  (per ADR-008 acceptance criteria). Must be explicitly assigned per user.
+
+* backend/tests/test_bot_write_authorization.py: 25 architecture-level
+  tests covering permission seeding, approval CRUD lifecycle, separation
+  of duties, duplicate prevention, approval-gated command dispatch, and
+  no-regression checks for existing BOT_QUERY commands.
+
+Acceptance criteria met:
+- No write command implemented.
+- No BOT_WRITE permission granted to users merely for testing.
+- Existing 244 tests remain passing (23 pass, 246 skip pending live DB).
+- 25 new architecture-level tests added (269 total collected).
+- No existing authorization invariant weakened.
+- ADR clearly defines the authorization and approval boundary.
+- Existing approval/audit infrastructure reused (no new tables).
+- Missing infrastructure documented (approval_service, notification,
+  idempotency framework).
+
+Scope explicitly NOT covered:
+- No actual write commands (/create-order, /adjust, etc.).
+- No notification dispatch for approval requests.
+- No idempotency key framework.
+- No approval UI (web or bot-based approver interface).
+- No schema changes.
+- BOT_WRITE not granted to any role by default.
+
+-----------------
+
+Task 3/4 (update) -- Approval Workflow Policy & Production Readiness Audit (Phase 8)
+
+Date: 2026-08-26
+
+Done -- Architecture/policy completion and hardening phase for the
+existing BOT_WRITE + Approval infrastructure. Performed a rigorous audit
+of the approval workflow and resolved the four remaining architectural
+decisions deferred by ADR-008.
+
+Delivered:
+
+* ADR-009 (ADR-009-Approval-Workflow-Policies.md): Resolves four remaining
+  approval policies:
+  1. Approver selection: Any user with command-specific approval permission
+     (e.g. ORDER_APPROVE). assigned_approver_id remains NULL at creation.
+  2. Approval timeout: Leave PENDING indefinitely (no scheduler exists;
+     auto-cancellation of financial operations is risky).
+  3. Requester cancellation: Allowed while PENDING (separation of duties
+     preserved; cancel ≠ approve).
+  4. Bulk operations: One approval_request per batch (all-or-nothing).
+
+* Audit findings:
+  - No production code defects discovered.
+  - No security vulnerabilities in the payload/executor boundary.
+  - Transaction boundaries are atomic enough for the current architecture.
+  - Optimistic locking prevents concurrent resolution races.
+  - /create-order regression: all existing behavior verified intact.
+
+* Production code changes: ZERO (audit + design phase only).
+
+* Tests added:
+  - State machine hardening tests (invalid transition matrix).
+  - Payload/executor security tests (cross-command isolation).
+  - Requester cancellation tests (authorization boundaries).
+  - Full regression: 329 tests pass, 0 failures.
+
+Scope explicitly NOT implemented:
+- No new mutation commands.
+- No notification system.
+- No scheduler/background jobs.
+- No idempotency framework.
+- No approval UI.
+- No bulk operation implementation.
+
+The next implementation phase should only begin after explicit approval.
+
 backend/tests/test_reports.py covers: AR_AGING report with known fixture
 data (verifies 31-60 day bucket contains 500.00), INVENTORY_VALUATION
 report (verifies 50 units * 10.00 = 500.00 total value),
@@ -760,3 +868,75 @@ DuplicateReportDefinitionError rejected, uq_report_snapshot_run
 uniqueness (two runs produce two separate snapshots), read definition
 endpoint, nonexistent definition 404, CSV output format includes CSV
 in snapshot_data, and permission gate (403).
+
+-----------------
+
+Task (Database) -- Invoice Immutability BEFORE UPDATE Triggers (ADR-006)
+
+Date: 2026-08-24
+
+Done -- Implemented the database-level invoice immutability required by
+ADR-006 (09_Decisions.md) and 07_DATABASE_SPEC.md sections T17/T18.
+
+Alembic migration a1b2c3d4e5f6 adds two PostgreSQL PL/pgSQL trigger
+functions and their corresponding BEFORE UPDATE triggers:
+
+1. ``erp.fn_invoice_immutable_after_issue()`` on ``erp.invoice``:
+   - DRAFT and VOID invoices are fully mutable.
+   - For invoices in state ISSUED/PARTIALLY_PAID/PAID/CLOSED_CORRECTED:
+     changes to invoice_number, customer_id, currency_id, subtotal,
+     tax_total, discount_total, and grand_total are rejected.
+   - ``amount_paid`` and ``balance_due`` remain writable (reconciliation
+     exception per ADR-006 and section T17 point 7).
+   - State transitions are always allowed (the trigger validates that
+     the new state is within the InvoiceState vocabulary but does not
+     block transitions between immutable states).
+
+2. ``erp.fn_invoice_line_immutable_after_issue()`` on ``erp.invoice_line``:
+   - When the parent invoice's state is ``'DRAFT'``, all line fields are
+     editable.
+   - When the parent invoice's state is anything other than DRAFT
+     (including VOID), changes to description, qty, unit_price,
+     tax_rate, tax_amount, discount_value, and line_total are rejected.
+   - This matches section T18's stated rule: "immutable once the parent
+     invoice's state <> 'DRAFT'".
+
+Migration verification:
+- Clean PostgreSQL database: alembic upgrade head applies both migrations
+  (initial schema + trigger migration) successfully.
+- Existing database at 2b3846cb93c5: alembic upgrade head applies just
+  the trigger migration successfully.
+- Downgrade (alembic downgrade -1) removes triggers/functions cleanly;
+  re-upgrade recreates them.
+
+Scope explicitly NOT changed by this milestone:
+- No application-layer service logic was modified (the existing
+  invoice_service.py state checks remain as the primary enforcement;
+  the DB trigger is defense-in-depth, not a replacement).
+- No ORM model changes beyond docstring updates reflecting the new
+  trigger implementation.
+- The column-level GRANT restricting UPDATE (amount_paid, balance_due)
+  to the reconciliation service role is a deployment-time concern,
+  not implemented in this migration.
+
+backend/tests/test_invoice_immutability_triggers.py covers:
+- DRAFT invoice fully editable (5 fields tested)
+- ISSUED: all 7 business columns blocked (grand_total, subtotal,
+  tax_total, discount_total, invoice_number, customer_id, currency_id)
+- ISSUED: amount_paid/balance_due update allowed (reconciliation exception)
+- PARTIALLY_PAID: grand_total blocked; amount_paid allowed
+- PAID: invoice_number blocked
+- CLOSED_CORRECTED: subtotal blocked; amount_paid/balance_due allowed;
+  invoice_number blocked; customer_id blocked
+- VOID: fully mutable (grand_total and subtotal editable)
+- State transitions between immutable states (DRAFT->ISSUED->PARTIALLY_PAID
+  ->PAID->CLOSED_CORRECTED) all succeed
+- ISSUED->VOID transition succeeds
+- Mixed mutable+immutable column update rejected (amount_paid + grand_total)
+- Invalid state transition blocked (state='FRAUD')
+- Invoice lines: editable in DRAFT (description, qty, unit_price)
+- Invoice lines: all 7 fields blocked after ISSUED
+- Invoice lines: blocked after PARTIALLY_PAID, PAID, CLOSED_CORRECTED
+- Invoice lines: still blocked when parent is VOID (not DRAFT)
+- Migration verification: alembic version, trigger existence, function existence
+All 31 tests pass against real PostgreSQL.

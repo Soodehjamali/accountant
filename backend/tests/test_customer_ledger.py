@@ -479,7 +479,7 @@ def test_get_balance_empty(
         headers=view_auth_headers,
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["balance"] == "0.0000"
+    assert resp.json()["balance"] == "0"
 
 
 @requires_database

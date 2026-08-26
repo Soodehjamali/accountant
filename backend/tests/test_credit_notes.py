@@ -614,12 +614,12 @@ def test_total_amount_nonpositive_rejected(
 
 
 @requires_database
-def test_apply_without_ledger_raises_not_implemented(
+def test_apply_credit_note_succeeds_with_ledger_wired(
     client: TestClient,
     manage_auth_headers: dict[str, str],
     credit_note_fixtures: dict,
 ) -> None:
-    """The /apply endpoint returns 501 when no record_entry is wired."""
+    """The /apply endpoint succeeds when record_entry is wired (customer ledger is live)."""
     # Create and issue a credit note via the API.
     resp = client.post(
         "/api/v1/credit-notes",
@@ -628,7 +628,7 @@ def test_apply_without_ledger_raises_not_implemented(
             "reason_code_id": credit_note_fixtures["reason_code_id"],
             "lines": [
                 {
-                    "description": "Ledger not ready",
+                    "description": "Ledger wired",
                     "qty": "1.0000",
                     "unit_price": "10.0000",
                 }
@@ -646,11 +646,11 @@ def test_apply_without_ledger_raises_not_implemented(
     )
     assert resp.status_code == 200, resp.text
 
-    # Apply without a record_entry -- should 501.
+    # Apply -- should succeed (200) with the real record_entry wired.
     resp = client.post(
         f"/api/v1/credit-notes/{cn_id}/apply",
         json={},
         headers=manage_auth_headers,
     )
-    assert resp.status_code == 501, resp.text
-    assert "Customer Ledger" in resp.json()["detail"]
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["state"] == "APPLIED"

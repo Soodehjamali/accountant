@@ -210,6 +210,17 @@ class ShipmentQuantityError(ValueError):
         self.remaining = remaining
 
 
+class OrderAccessDeniedError(PermissionError):
+    """Raised when a representative tries to access an order belonging to another representative."""
+
+    def __init__(self, order_id: uuid.UUID, representative_id: uuid.UUID) -> None:
+        super().__init__(
+            f"Order '{order_id}' does not belong to representative '{representative_id}'."
+        )
+        self.order_id = order_id
+        self.representative_id = representative_id
+
+
 def _get_order_or_raise(session: Session, order_id: uuid.UUID) -> Order:
     order = session.execute(
         select(Order).where(Order.id == order_id, Order.deleted_at.is_(None))
@@ -391,6 +402,27 @@ def get_order(session: Session, order_id: uuid.UUID) -> Order:
     """Raises: OrderNotFoundError."""
 
     return _get_order_or_raise(session, order_id)
+
+
+def get_order_for_representative(
+    session: Session,
+    order_id: uuid.UUID,
+    representative_id: uuid.UUID,
+) -> Order:
+    """Return an order only if it belongs to the given representative.
+
+    Per ADR-007 §3: this function fetches an order by ID and rejects
+    access when ``order.representative_id != requested_representative_id``.
+    This prevents cross-representative data leakage.
+
+    Raises:
+        OrderNotFoundError: no order with this ID exists.
+        OrderAccessDeniedError: the order belongs to a different representative.
+    """
+    order = _get_order_or_raise(session, order_id)
+    if order.representative_id != representative_id:
+        raise OrderAccessDeniedError(order_id, representative_id)
+    return order
 
 
 def list_order_lines(session: Session, order_id: uuid.UUID) -> Iterable[OrderLine]:

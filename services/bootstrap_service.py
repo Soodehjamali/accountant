@@ -220,7 +220,22 @@ _ADMIN_DEFAULT_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
     ("KPI_SNAPSHOT_VIEW", "View KPI snapshots", "kpi_snapshot", "view"),
     ("KPI_SNAPSHOT_MANAGE", "Manage KPI snapshots", "kpi_snapshot", "manage"),
     ("REPORT_MANAGE", "Manage reports", "report", "manage"),
+    ("BOT_MANAGE", "Manage bot bindings and sessions", "bot", "manage"),
+    ("BOT_QUERY", "Query data via bot", "bot", "query"),
+    ("APPROVE", "Approve bot command requests", "approval", "approve"),
 )
+
+#: Permission codes that are seeded but intentionally NOT granted to the
+#: ADMIN role by default.  These are available for explicit assignment
+#: but must not be blanket-granted -- e.g. BOT_WRITE requires per-user
+#: authorization per ADR-008.
+_SEEDED_BUT_NOT_DEFAULT: tuple[tuple[str, str, str, str], ...] = (
+    ("BOT_WRITE", "Execute write commands via bot", "bot", "write"),
+)
+
+#: Permission code for approving bot command approval requests.
+#: Granted to ADMIN by default; required for /pending, /approve, /reject.
+APPROVE_PERMISSION_CODE = "APPROVE"
 
 
 def ensure_default_reason_code(session: Session, actor_id: uuid.UUID) -> ReasonCodeRef:
@@ -357,6 +372,15 @@ def ensure_rbac_bootstrap(session: Session) -> None:
         )
         _ensure_grant(session, role=role, permission=permission, actor_id=system_user.id)
 
+    # Seed BOT_WRITE (and any future non-default permissions) so they
+    # exist in the permission table, but do NOT grant them to ADMIN.
+    # Per ADR-008, BOT_WRITE must be explicitly assigned per user.
+    for code, name, resource, action in _SEEDED_BUT_NOT_DEFAULT:
+        _ensure_permission(
+            session, code=code, name=name, resource=resource, action=action,
+            actor_id=system_user.id,
+        )
+
     assignment = session.execute(
         select(UserRole).where(
             UserRole.user_id == system_user.id, UserRole.role_id == role.id
@@ -385,6 +409,7 @@ __all__ = [
     "ensure_default_uom",
     "ensure_default_warehouse",
     "ensure_movement_types",
+    "APPROVE_PERMISSION_CODE",
     "ensure_rbac_bootstrap",
     "ensure_system_user",
 ]

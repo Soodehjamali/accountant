@@ -157,16 +157,21 @@ Out of scope for this model (not implemented here):
       separate tables referencing this one, not part of this change's
       three-table scope (``order_price_freeze`` / ``invoice`` /
       ``invoice_line``).
-    * The ``BEFORE UPDATE`` immutability trigger for
-      ``state IN ('PAID','CLOSED_CORRECTED')`` -- a database-trigger-level
-      concern, not an ORM column/constraint concern.
+    * The ``BEFORE UPDATE`` immutability trigger -- now implemented in
+      Alembic migration ``a1b2c3d4e5f6``
+      (``migrations/versions/20260824_1200_a1b2c3d4e5f6_add_invoice_immutability_triggers.py``).
+      The trigger function ``erp.fn_invoice_immutable_after_issue()``
+      blocks changes to business columns (invoice_number, customer_id,
+      currency_id, subtotal, tax_total, discount_total, grand_total) when
+      ``state IN ('ISSUED','PARTIALLY_PAID','PAID','CLOSED_CORRECTED')``,
+      while allowing ``amount_paid``/``balance_due`` updates (reconciliation
+      exception per ADR-006) and state transitions.
     * The column-level ``GRANT`` restricting ``UPDATE (amount_paid,
       balance_due)`` to the reconciliation service role -- a
       permissions/deployment-time concern, not expressible in the ORM
       model layer.
     * Range partitioning by ``issued_at`` (yearly) -- spec marks this
       optional/future.
-    * Any Alembic migration.
 
 Audit-column family -- ``UniversalAuditColumns`` (UAC):
     Classification ``T`` (mutable transactional header), spec §13: *"Standard

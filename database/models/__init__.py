@@ -32,6 +32,7 @@ except this ``__init__.py`` itself; kept in sync each time a model is added):
 * :mod:`database.models.costing_method_config` — ``CostingMethodConfig`` (C2 — org-level costing method (FIFO/LIFO/WEIGHTED_AVERAGE), single-row, locked after financial transactions exist).
 * :mod:`database.models.system_config` — ``SystemConfig`` (C4 — key/value runtime tunables, key independently unique).
 * :mod:`database.models.customer_ledger` — ``CustomerLedger`` (M13 — non-authoritative per-customer running-balance cache).
+* :mod:`database.models.bot_binding_token` — ``BotBindingToken`` (persistent binding token for bot identity binding, single-use, short-lived).
 * :mod:`database.models.bot_session` — ``BotSession`` (M12 — bind a messenger-platform user to a representative identity).
 * :mod:`database.models.price_list` — ``PriceList`` (C3 — named price list binding price versions to a scope).
 * :mod:`database.models.warehouse_assignment` — ``WarehouseAssignment`` (C5 — representative ↔ warehouse assignment with primary flag).
@@ -139,6 +140,7 @@ from database.models.currency import Currency
 from database.models.customer import Customer
 from database.models.customer_contact import CustomerContact
 from database.models.customer_rep_assignment import CustomerRepAssignment
+from database.models.bot_binding_token import BotBindingToken
 from database.models.bot_session import BotSession
 from database.models.bot_message_log import BotMessageLog
 from database.models.customer_ledger import CustomerLedger

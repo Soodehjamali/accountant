@@ -54,6 +54,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    JSON,
     String,
     Text,
     Uuid,
@@ -142,6 +143,12 @@ class ApprovalRequest(Base, UniversalAuditColumns):
         nullable=True,
     )
 
+    # --- human-readable reference ------------------------------------------
+    # APR-XXXXXXXX format for Telegram bot UX.  Generated at creation time.
+    approval_number: Mapped[str | None] = mapped_column(
+        String(40), nullable=True, unique=True,
+    )
+
     # --- state ------------------------------------------------------------
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default=text("'PENDING'")
@@ -155,6 +162,15 @@ class ApprovalRequest(Base, UniversalAuditColumns):
     )
     threshold_marker: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
+    )
+
+    # --- payload (deferred execution data) ----------------------------------
+    # JSON payload storing the serialized command data for deferred execution.
+    # Per ADR-008 §6, approval_required=True commands store their execution
+    # data here so the mutation can be replayed after approval.
+    payload: Mapped[dict | None] = mapped_column(
+        JSON(),
+        nullable=True,
     )
 
     def __repr__(self) -> str:  # pragma: no cover

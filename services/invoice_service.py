@@ -33,9 +33,10 @@ Explicitly OUT OF SCOPE for this module:
   direct-amount update against the invoice's own cache columns.
 * ``credit_note`` (T20) -- corrections via credit note are a future
   milestone.
-* The BEFORE UPDATE immutability trigger in the database -- the
-  application layer enforces immutability via state checks; the DB
-  trigger is a defense-in-depth concern applied at migration time.
+* The BEFORE UPDATE immutability trigger in the database -- now
+  implemented in Alembic migration a1b2c3d4e5f6 as defense-in-depth.
+  The application layer enforces immutability via state checks; the DB
+  trigger provides an additional safety layer at the schema level.
 """
 
 from __future__ import annotations

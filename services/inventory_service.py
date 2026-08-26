@@ -204,6 +204,64 @@ def get_balance(
     return _current_balance(session, warehouse_id=warehouse_id, product_id=product_id, lot_id=lot_id)
 
 
+def list_warehouse_balances(
+    session: Session,
+    *,
+    warehouse_id: uuid.UUID,
+    limit: int = 50,
+) -> list[dict]:
+    """Return all products with positive stock in a given warehouse.
+
+    Computes balances live from the inventory ledger (per
+    ``CLAUDE.md``: *"Inventory is always calculated from immutable
+    InventoryTransaction"*).  Returns a list of dicts with
+    ``product_id``, ``sku``, ``name``, and ``balance`` keys.
+
+    Only products with a positive balance are included (products with
+    zero or negative net stock are omitted).
+
+    ``limit`` caps the number of rows returned to keep responses
+    manageable.
+    """
+    from database.models.product import Product
+
+    stmt = (
+        select(
+            InventoryTransaction.product_id,
+            func.coalesce(func.sum(InventoryTransaction.signed_quantity), 0).label("balance"),
+        )
+        .where(InventoryTransaction.warehouse_id == warehouse_id)
+        .group_by(InventoryTransaction.product_id)
+        .having(func.coalesce(func.sum(InventoryTransaction.signed_quantity), 0) > 0)
+        .order_by(func.sum(InventoryTransaction.signed_quantity).desc())
+        .limit(limit)
+    )
+
+    rows = session.execute(stmt).all()
+    if not rows:
+        return []
+
+    # Batch-load Product objects for the result set.
+    product_ids = [row.product_id for row in rows]
+    products = session.execute(
+        select(Product).where(Product.id.in_(product_ids))
+    ).scalars().all()
+    product_map = {p.id: p for p in products}
+
+    result = []
+    for row in rows:
+        product = product_map.get(row.product_id)
+        if product is None:
+            continue
+        result.append({
+            "product_id": row.product_id,
+            "sku": product.sku,
+            "name": product.name,
+            "balance": decimal.Decimal(row.balance),
+        })
+    return result
+
+
 def post_transaction(
     session: Session,
     *,
