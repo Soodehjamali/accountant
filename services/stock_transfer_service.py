@@ -52,12 +52,13 @@ TRANSFER_MANAGE_PERMISSION_CODE = "TRANSFER_MANAGE"
 
 #: The accepted Stock Transfer state graph.  Keys are the "from" state;
 #: values are the set of states directly reachable from it.
-#: Derived from ADR-005's two-phase model: DRAFT -> DISPATCHED -> RECEIVED.
-#: Unused intermediate states (PENDING, APPROVED, IN_TRANSIT, PARTIAL_RECEIVED,
-#: CLOSED) from the spec's 9-state vocabulary are omitted because no service
-#: function transitions through them.
+#: DRAFT -> PENDING -> APPROVED -> DISPATCHED -> RECEIVED.
+#: Manager approval is required before dispatch (ADR-005 open question
+#: resolved: transfers now require formal approval before factory dispatch).
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
-    "DRAFT": frozenset({"DISPATCHED", "CANCELLED"}),
+    "DRAFT": frozenset({"PENDING", "CANCELLED"}),
+    "PENDING": frozenset({"APPROVED", "CANCELLED"}),
+    "APPROVED": frozenset({"DISPATCHED", "CANCELLED"}),
     "DISPATCHED": frozenset({"RECEIVED", "CANCELLED"}),
     "RECEIVED": frozenset(),
     "CANCELLED": frozenset(),
@@ -421,11 +422,14 @@ def dispatch_transfer(
     actor_user_id: uuid.UUID,
     note: str | None = None,
 ) -> StockTransfer:
-    """``DRAFT -> DISPATCHED``.
+    """``APPROVED -> DISPATCHED``.
 
     Posts a ``TRANSFER_OUT`` inventory transaction against the source
     warehouse for every line, per ADR-005's two-phase model: the source
     warehouse is debited at dispatch time, not at receive time.
+
+    The transfer must be in ``APPROVED`` state (submitted and approved
+    by a manager) before dispatch.
 
     Raises:
         TransferNotFoundError, InvalidTransferStateTransitionError.
@@ -532,17 +536,65 @@ def cancel_transfer(
 ) -> StockTransfer:
     """Cancel a stock transfer.
 
-    Per the spec, cancellation is only permitted from DRAFT.  Post-DRAFT
-    transfers are not cancelled through this path -- they progress
-    through the state machine or require a separate reversal process.
+    Cancellation is permitted from DRAFT, PENDING, or APPROVED states.
+    DISPATCHED transfers cannot be cancelled (inventory already posted).
 
     Raises:
         TransferNotFoundError, TransferNotCancellableError.
     """
     transfer = _get_transfer_or_raise(session, transfer_id)
-    if transfer.state != "DRAFT":
+    if transfer.state not in ("DRAFT", "PENDING", "APPROVED"):
         raise TransferNotCancellableError(transfer.state)
     return _transition(session, transfer, "CANCELLED", actor_user_id=actor_user_id, note=note)
+
+
+def submit_transfer(
+    session: Session,
+    transfer_id: uuid.UUID,
+    *,
+    actor_user_id: uuid.UUID,
+    note: str | None = None,
+) -> StockTransfer:
+    """``DRAFT -> PENDING``.
+
+    Submits a draft transfer for manager approval.  The transfer
+    cannot be dispatched until approved.
+
+    Per SRS A2: "Office Manager / Sales Manager: approve transfers."
+
+    Raises:
+        TransferNotFoundError, InvalidTransferStateTransitionError.
+    """
+    transfer = _get_transfer_or_raise(session, transfer_id)
+    return _transition(session, transfer, "PENDING", actor_user_id=actor_user_id, note=note)
+
+
+def approve_transfer(
+    session: Session,
+    transfer_id: uuid.UUID,
+    *,
+    actor_user_id: uuid.UUID,
+    note: str | None = None,
+) -> StockTransfer:
+    """``PENDING -> APPROVED``.
+
+    Manager approves a pending transfer.  After approval, the transfer
+    can be dispatched via ``dispatch_transfer()``.
+
+    Sets ``approved_by`` and ``approved_at`` on the transfer header.
+
+    Per SRS A2: "Office Manager / Sales Manager: approve transfers."
+
+    Raises:
+        TransferNotFoundError, InvalidTransferStateTransitionError.
+    """
+    transfer = _get_transfer_or_raise(session, transfer_id)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    transfer.approved_by = actor_user_id
+    transfer.approved_at = now
+    transfer.updated_by = actor_user_id
+    session.flush()
+    return _transition(session, transfer, "APPROVED", actor_user_id=actor_user_id, note=note)
 
 
 __all__ = [
@@ -555,6 +607,7 @@ __all__ = [
     "TransferNotFoundError",
     "TransferNotCancellableError",
     "WarehouseNotFoundError",
+    "approve_transfer",
     "cancel_transfer",
     "create_transfer",
     "dispatch_transfer",
@@ -563,4 +616,5 @@ __all__ = [
     "list_transfer_lines",
     "list_transfers",
     "receive_transfer",
+    "submit_transfer",
 ]

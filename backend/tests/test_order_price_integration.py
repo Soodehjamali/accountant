@@ -631,3 +631,225 @@ def test_price_list_id_not_null_constraint_enforced() -> None:
         assert result[0] == 'NO', f"Expected NOT NULL, got is_nullable={result[0]}"
     finally:
         session.close()
+
+
+# -----------------------------------------------------------------------
+# DRAFT order line editing tests
+# -----------------------------------------------------------------------
+
+
+@requires_database
+def test_add_line_to_draft_order(
+    client: TestClient, manage_auth: dict, pricing_fixtures: dict,
+) -> None:
+    """A new line can be added to a DRAFT order."""
+    # Create order with one line.
+    payload = _order_payload(pricing_fixtures)
+    resp = client.post("/api/v1/orders", json=payload, headers=manage_auth)
+    assert resp.status_code == 201
+    order = resp.json()
+    order_id = order["id"]
+    assert len(order["lines"]) == 1
+    assert decimal.Decimal(order["grand_total"]) == decimal.Decimal("500.0000")
+
+    # Create a second product + price for the new line.
+    session = get_session_factory()()
+    try:
+        system_user = bootstrap_service.ensure_system_user(session)
+        currency = bootstrap_service.ensure_default_currency(session, actor_id=system_user.id)
+        uom = bootstrap_service.ensure_default_uom(session, actor_id=system_user.id)
+        suffix2 = uuid.uuid4().hex[:8]
+        product2 = Product(
+            sku=f"SKU-PI2-{suffix2}",
+            name="Second Product",
+            base_uom_id=uom.id,
+            status="ACTIVE",
+            created_by=system_user.id,
+            updated_by=system_user.id,
+        )
+        session.add(product2)
+        session.flush()
+
+        price_list = session.get(PriceList, uuid.UUID(pricing_fixtures["price_list_id"]))
+        price_history2 = PriceHistory(
+            product_id=product2.id,
+            price_list_id=price_list.id,
+            currency_id=currency.id,
+            price_type="RETAIL",
+            unit_price=decimal.Decimal("200.0000"),
+            effective_from=datetime.datetime.now(datetime.timezone.utc),
+            created_by=system_user.id,
+        )
+        session.add(price_history2)
+        session.flush()
+
+        product2_id = str(product2.id)
+        price_history2_id = str(price_history2.id)
+        session.commit()
+    finally:
+        session.close()
+
+    # Add the second line.
+    add_payload = {
+        "product_id": product2_id,
+        "fulfillment_warehouse_id": pricing_fixtures["warehouse_id"],
+        "price_history_id": price_history2_id,
+        "qty_ordered": "2",
+        "fulfillment_mode": "REP_LOCAL",
+    }
+    resp2 = client.post(
+        f"/api/v1/orders/{order_id}/lines",
+        json=add_payload,
+        headers=manage_auth,
+    )
+    assert resp2.status_code == 201, resp2.text
+    new_line = resp2.json()
+    assert decimal.Decimal(new_line["unit_price"]) == decimal.Decimal("200.0000")
+    assert decimal.Decimal(new_line["line_total"]) == decimal.Decimal("400.0000")
+
+    # Re-read order -- totals should be updated.
+    resp3 = client.get(f"/api/v1/orders/{order_id}", headers=manage_auth)
+    assert resp3.status_code == 200
+    updated_order = resp3.json()
+    assert len(updated_order["lines"]) == 2
+    assert decimal.Decimal(updated_order["subtotal"]) == decimal.Decimal("900.0000")
+    assert decimal.Decimal(updated_order["grand_total"]) == decimal.Decimal("900.0000")
+
+
+@requires_database
+def test_remove_line_from_draft_order(
+    client: TestClient, manage_auth: dict, pricing_fixtures: dict,
+) -> None:
+    """A line can be removed from a DRAFT order (soft-delete)."""
+    payload = _order_payload(pricing_fixtures, qty="3")
+    resp = client.post("/api/v1/orders", json=payload, headers=manage_auth)
+    assert resp.status_code == 201
+    order = resp.json()
+    order_id = order["id"]
+    line_id = order["lines"][0]["id"]
+    assert decimal.Decimal(order["grand_total"]) == decimal.Decimal("300.0000")
+
+    # Remove the line.
+    resp2 = client.delete(
+        f"/api/v1/orders/{order_id}/lines/{line_id}",
+        headers=manage_auth,
+    )
+    assert resp2.status_code == 200
+
+    # Re-read order -- totals should be zero, no active lines.
+    resp3 = client.get(f"/api/v1/orders/{order_id}", headers=manage_auth)
+    assert resp3.status_code == 200
+    updated_order = resp3.json()
+    assert len(updated_order["lines"]) == 0
+    assert decimal.Decimal(updated_order["grand_total"]) == decimal.Decimal("0.0000")
+
+
+@requires_database
+def test_update_qty_on_draft_order_line(
+    client: TestClient, manage_auth: dict, pricing_fixtures: dict,
+) -> None:
+    """Updating quantity on a DRAFT order line recalculates line total
+    using the frozen unit price."""
+    payload = _order_payload(pricing_fixtures, qty="5")
+    resp = client.post("/api/v1/orders", json=payload, headers=manage_auth)
+    assert resp.status_code == 201
+    order = resp.json()
+    order_id = order["id"]
+    line_id = order["lines"][0]["id"]
+    assert decimal.Decimal(order["grand_total"]) == decimal.Decimal("500.0000")
+
+    # Update quantity to 10.
+    resp2 = client.patch(
+        f"/api/v1/orders/{order_id}/lines/{line_id}",
+        json={"qty_ordered": "10"},
+        headers=manage_auth,
+    )
+    assert resp2.status_code == 200, resp2.text
+    updated_line = resp2.json()
+    assert decimal.Decimal(updated_line["unit_price"]) == decimal.Decimal("100.0000")
+    assert decimal.Decimal(updated_line["line_total"]) == decimal.Decimal("1000.0000")
+
+    # Re-read order -- totals should be updated.
+    resp3 = client.get(f"/api/v1/orders/{order_id}", headers=manage_auth)
+    assert resp3.status_code == 200
+    updated_order = resp3.json()
+    assert decimal.Decimal(updated_order["grand_total"]) == decimal.Decimal("1000.0000")
+
+
+@requires_database
+def test_edit_non_draft_order_rejected(
+    client: TestClient, manage_auth: dict, approve_auth_headers: dict, pricing_fixtures: dict,
+) -> None:
+    """Editing a non-DRAFT order is rejected with 409."""
+    payload = _order_payload(pricing_fixtures)
+    resp = client.post("/api/v1/orders", json=payload, headers=manage_auth)
+    assert resp.status_code == 201
+    order = resp.json()
+    order_id = order["id"]
+    line_id = order["lines"][0]["id"]
+
+    # Submit and approve the order.
+    client.post(f"/api/v1/orders/{order_id}/submit", json={}, headers=manage_auth)
+    client.post(f"/api/v1/orders/{order_id}/approve", json={}, headers=approve_auth_headers)
+
+    # Try to add a line -- should fail.
+    add_payload = {
+        "product_id": pricing_fixtures["product_id"],
+        "fulfillment_warehouse_id": pricing_fixtures["warehouse_id"],
+        "qty_ordered": "1",
+        "fulfillment_mode": "REP_LOCAL",
+    }
+    resp2 = client.post(
+        f"/api/v1/orders/{order_id}/lines",
+        json=add_payload,
+        headers=manage_auth,
+    )
+    assert resp2.status_code == 409
+
+    # Try to update qty -- should fail.
+    resp3 = client.patch(
+        f"/api/v1/orders/{order_id}/lines/{line_id}",
+        json={"qty_ordered": "1"},
+        headers=manage_auth,
+    )
+    assert resp3.status_code == 409
+
+    # Try to remove a line -- should fail.
+    resp4 = client.delete(
+        f"/api/v1/orders/{order_id}/lines/{line_id}",
+        headers=manage_auth,
+    )
+    assert resp4.status_code == 409
+
+
+@requires_database
+def test_duplicate_product_on_add_rejected(
+    client: TestClient, manage_auth: dict, pricing_fixtures: dict,
+) -> None:
+    """Adding a line with a product already on the order is rejected."""
+    payload = _order_payload(pricing_fixtures)
+    resp = client.post("/api/v1/orders", json=payload, headers=manage_auth)
+    assert resp.status_code == 201
+    order = resp.json()
+    order_id = order["id"]
+
+    # Try to add another line with the same product.
+    add_payload = {
+        "product_id": pricing_fixtures["product_id"],
+        "fulfillment_warehouse_id": pricing_fixtures["warehouse_id"],
+        "price_history_id": pricing_fixtures["price_history_id"],
+        "qty_ordered": "5",
+        "fulfillment_mode": "REP_LOCAL",
+    }
+    resp2 = client.post(
+        f"/api/v1/orders/{order_id}/lines",
+        json=add_payload,
+        headers=manage_auth,
+    )
+    assert resp2.status_code == 409
+
+
+@pytest.fixture()
+def approve_auth_headers() -> dict[str, str]:
+    """Holds both ORDER_MANAGE and ORDER_APPROVE."""
+    return _user_with_permissions(ORDER_MANAGE, "ORDER_APPROVE")

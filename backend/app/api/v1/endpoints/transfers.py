@@ -206,9 +206,67 @@ def read_transfer_history(
 
 
 @router.post(
+    "/{transfer_id}/submit",
+    response_model=TransferResponse,
+    summary="DRAFT -> PENDING (submit for manager approval)",
+)
+def submit_transfer(
+    transfer_id: uuid.UUID,
+    body: TransferTransitionRequest,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(_require_transfer_manage),
+) -> TransferResponse:
+    """Submit a draft transfer for manager approval.
+
+    DRAFT -> PENDING.  The transfer cannot be dispatched until
+    approved via POST /{transfer_id}/approve.
+    """
+    _require_transfer_scope(transfer_id, current_user, db)
+    transfer = _run(
+        stock_transfer_service.submit_transfer,
+        db,
+        transfer_id,
+        actor_user_id=current_user.id,
+        note=body.note,
+    )
+    db.commit()
+    db.refresh(transfer)
+    return _to_response(transfer)
+
+
+@router.post(
+    "/{transfer_id}/approve",
+    response_model=TransferResponse,
+    summary="PENDING -> APPROVED (manager approves transfer)",
+)
+def approve_transfer(
+    transfer_id: uuid.UUID,
+    body: TransferTransitionRequest,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(_require_transfer_manage),
+) -> TransferResponse:
+    """Approve a pending transfer.
+
+    PENDING -> APPROVED.  After approval, the transfer can be
+    dispatched via POST /{transfer_id}/dispatch.
+    """
+    _require_transfer_scope(transfer_id, current_user, db)
+    transfer = _run(
+        stock_transfer_service.approve_transfer,
+        db,
+        transfer_id,
+        actor_user_id=current_user.id,
+        note=body.note,
+    )
+    db.commit()
+    db.refresh(transfer)
+    return _to_response(transfer)
+
+
+@router.post(
     "/{transfer_id}/dispatch",
     response_model=TransferResponse,
-    summary="DRAFT -> DISPATCHED (posts TRANSFER_OUT from source warehouse)",
+    summary="APPROVED -> DISPATCHED (posts TRANSFER_OUT from source warehouse)",
 )
 def dispatch_transfer(
     transfer_id: uuid.UUID,

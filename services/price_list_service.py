@@ -439,6 +439,104 @@ def get_current_price(
     ).scalar_one_or_none()
 
 
+# ---------------------------------------------------------------------------
+# Customer Price List Assignment (BR-P1 resolution)
+# ---------------------------------------------------------------------------
+
+
+def resolve_customer_price_list(
+    session: Session,
+    customer_id: uuid.UUID,
+    at: datetime.datetime | None = None,
+) -> PriceList | None:
+    """Return the currently-active price list assigned to a customer.
+
+    Implements the first level of ``02_SRS.md`` BR-P1:
+    *"customer-specific > rep-tier > product default."*
+
+    Returns the highest-priority (lowest ``priority`` value) currently-active
+    ``CustomerPriceList`` assignment, or ``None`` if no assignment exists.
+
+    """
+    from database.models.customer_price_list import CustomerPriceList
+
+    if at is None:
+        at = datetime.datetime.now(datetime.timezone.utc)
+
+    row = session.execute(
+        select(CustomerPriceList).where(
+            CustomerPriceList.customer_id == customer_id,
+            CustomerPriceList.effective_from <= at,
+            (
+                CustomerPriceList.effective_to.is_(None)
+                | (CustomerPriceList.effective_to > at)
+            ),
+        ).order_by(CustomerPriceList.priority.asc()).limit(1)
+    ).scalar_one_or_none()
+
+    if row is None:
+        return None
+
+    return _get_price_list_or_raise(session, row.price_list_id)
+
+
+def list_customer_price_lists(
+    session: Session,
+    customer_id: uuid.UUID,
+    *,
+    skip: int = 0,
+    limit: int = 50,
+) -> Iterable:
+    """List all price-list assignments for a customer (current and historical)."""
+    from database.models.customer_price_list import CustomerPriceList
+
+    query = (
+        select(CustomerPriceList)
+        .where(CustomerPriceList.customer_id == customer_id)
+        .order_by(CustomerPriceList.effective_from.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    return session.execute(query).scalars().all()
+
+
+def assign_customer_price_list(
+    session: Session,
+    *,
+    customer_id: uuid.UUID,
+    price_list_id: uuid.UUID,
+    effective_from: datetime.datetime,
+    priority: int,
+    created_by: uuid.UUID,
+    effective_to: datetime.datetime | None = None,
+) -> "CustomerPriceList":
+    """Create a new customer → price list assignment.
+
+    Raises:
+        PriceListNotFoundError: if the price list does not exist.
+        PriceListNotActiveError: if the price list is inactive.
+    """
+    from database.models.customer_price_list import CustomerPriceList
+
+    # Validate price list exists and is active.
+    pl = _get_price_list_or_raise(session, price_list_id)
+    if not pl.is_active:
+        raise PriceListNotActiveError(price_list_id)
+
+    assignment = CustomerPriceList(
+        customer_id=customer_id,
+        price_list_id=price_list_id,
+        effective_from=effective_from,
+        effective_to=effective_to,
+        priority=priority,
+        created_by=created_by,
+        updated_by=created_by,
+    )
+    session.add(assignment)
+    session.flush()
+    return assignment
+
+
 __all__ = [
     "DuplicatePriceListNameError",
     "OverlappingPriceError",
@@ -448,12 +546,15 @@ __all__ = [
     "ProductNotFoundError",
     "add_price_entry",
     "activate_price_list",
+    "assign_customer_price_list",
     "create_price_list",
     "deactivate_price_list",
     "get_current_price",
     "get_price_entry",
     "get_price_list",
+    "list_customer_price_lists",
     "list_price_entries",
     "list_price_lists",
+    "resolve_customer_price_list",
     "update_price_list",
 ]

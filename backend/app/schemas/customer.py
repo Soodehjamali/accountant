@@ -91,9 +91,47 @@ class CustomerListResponse(BaseModel):
     items: list[CustomerResponse]
 
 
+# ---------------------------------------------------------------------------
+# Customer Price List Assignment
+# ---------------------------------------------------------------------------
+
+
+class CustomerPriceListAssignRequest(BaseModel):
+    """Request body for ``POST /customers/{id}/price-lists``.
+
+    Assigns a price list to a customer with a time window and priority.
+    Per ``02_SRS.md`` BR-P1, this is the mechanism that drives
+    customer-specific pricing.
+    """
+
+    price_list_id: uuid.UUID
+    effective_from: datetime.datetime
+    effective_to: datetime.datetime | None = None
+    priority: int = Field(ge=1)
+
+
+class CustomerPriceListResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    customer_id: uuid.UUID
+    price_list_id: uuid.UUID
+    effective_from: datetime.datetime
+    effective_to: datetime.datetime | None
+    priority: int
+    created_at: datetime.datetime
+
+
+class CustomerPriceListListResponse(BaseModel):
+    items: list[CustomerPriceListResponse]
+
+
 __all__ = [
     "CustomerCreateRequest",
     "CustomerListResponse",
+    "CustomerPriceListAssignRequest",
+    "CustomerPriceListListResponse",
+    "CustomerPriceListResponse",
     "CustomerResponse",
     "CustomerStatus",
     "CustomerType",

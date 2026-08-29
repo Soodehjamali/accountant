@@ -53,11 +53,14 @@ from app.dependencies.rbac import _require_customer_scope, require_permission
 from app.schemas.customer import (
     CustomerCreateRequest,
     CustomerListResponse,
+    CustomerPriceListAssignRequest,
+    CustomerPriceListListResponse,
+    CustomerPriceListResponse,
     CustomerResponse,
     CustomerUpdateRequest,
 )
 from database.models.app_user import AppUser
-from services import customer_service
+from services import customer_service, price_list_service
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 
@@ -176,6 +179,83 @@ def deactivate_customer(
     db.commit()
     db.refresh(customer)
     return customer
+
+
+@router.post(
+    "/{customer_id}/reactivate",
+    response_model=CustomerResponse,
+    summary="Reactivate a customer (status -> ACTIVE)",
+)
+def reactivate_customer(
+    customer_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(_require_customer_manage),
+) -> CustomerResponse:
+    # Customer scope: verify representative is assigned to this customer
+    # BEFORE allowing reactivation.
+    _require_customer_scope(customer_id, current_user, db)
+
+    try:
+        customer = customer_service.reactivate_customer(
+            db, customer_id, updated_by=current_user.id
+        )
+    except customer_service.CustomerNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except customer_service.CustomerAlreadyActiveError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(customer)
+    return customer
+
+
+# -----------------------------------------------------------------------
+# Customer Price List Assignments (BR-P1)
+# -----------------------------------------------------------------------
+
+
+@router.get(
+    "/{customer_id}/price-lists",
+    response_model=CustomerPriceListListResponse,
+    summary="List price-list assignments for a customer",
+)
+def list_customer_price_lists(
+    customer_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _current_user: AppUser = Depends(get_current_user),
+) -> CustomerPriceListListResponse:
+    items = price_list_service.list_customer_price_lists(db, customer_id)
+    return CustomerPriceListListResponse(items=list(items))
+
+
+@router.post(
+    "/{customer_id}/price-lists",
+    response_model=CustomerPriceListResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Assign a price list to a customer",
+)
+def assign_customer_price_list(
+    customer_id: uuid.UUID,
+    body: CustomerPriceListAssignRequest,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(_require_customer_manage),
+) -> CustomerPriceListResponse:
+    try:
+        assignment = price_list_service.assign_customer_price_list(
+            db,
+            customer_id=customer_id,
+            price_list_id=body.price_list_id,
+            effective_from=body.effective_from,
+            effective_to=body.effective_to,
+            priority=body.priority,
+            created_by=current_user.id,
+        )
+    except price_list_service.PriceListNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except price_list_service.PriceListNotActiveError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(assignment)
+    return assignment
 
 
 __all__ = ["router"]

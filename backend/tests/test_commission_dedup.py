@@ -118,6 +118,9 @@ def _create_admin_user(session, system_user, *, suffix: str):
 def _create_completed_order(session, system_user, rep, customer, currency, warehouse,
                             product, price_history):
     from services import invoice_service, order_service
+    from database.models.price_list import PriceList
+
+    price_list = session.get(PriceList, price_history.price_list_id)
 
     order = order_service.create_order(
         session,
@@ -169,7 +172,13 @@ def _create_completed_order(session, system_user, rep, customer, currency, wareh
     assert invoice.state == "PAID"
 
     order_service.mark_paid(session, order.id, actor_user_id=system_user.id)
-    order_service.mark_completed(session, order.id, actor_user_id=system_user.id)
+    # Set state to COMPLETED directly (bypass mark_completed's auto-commission
+    # calculation) so the manual commission endpoint can be tested.
+    from database.models.order import Order as OrderModel
+    order = session.get(OrderModel, order.id)
+    order.state = "COMPLETED"
+    order.updated_by = system_user.id
+    session.flush()
     session.refresh(order)
     assert order.state == "COMPLETED"
     return order

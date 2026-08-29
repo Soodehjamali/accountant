@@ -187,6 +187,22 @@ def _setup(client: TestClient):
         session.add_all([customer_a, customer_b])
         session.flush()
 
+        # Assign customers to representatives (required by customer scope check)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        session.add_all([
+            CustomerRepAssignment(
+                customer_id=customer_a.id, representative_id=rep_a.id,
+                effective_from=now, effective_to=now + datetime.timedelta(days=365),
+                priority=1, created_by=system_user.id, updated_by=system_user.id,
+            ),
+            CustomerRepAssignment(
+                customer_id=customer_b.id, representative_id=rep_b.id,
+                effective_from=now, effective_to=now + datetime.timedelta(days=365),
+                priority=1, created_by=system_user.id, updated_by=system_user.id,
+            ),
+        ])
+        session.flush()
+
         # Two users: one per representative
         user_a_headers, _ = _create_rep_user(session, system_user, rep_a, suffix=f"a_{suffix}")
         user_b_headers, _ = _create_rep_user(session, system_user, rep_b, suffix=f"b_{suffix}")

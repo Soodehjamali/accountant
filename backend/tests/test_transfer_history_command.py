@@ -155,6 +155,16 @@ def _create_transfer_with_lines(session, su, source_wh, dest_wh, products, *, qt
     return transfer
 
 
+def _submit_transfer(session, transfer, actor_user_id):
+    from services.stock_transfer_service import submit_transfer
+    return submit_transfer(session, transfer.id, actor_user_id=actor_user_id)
+
+
+def _approve_transfer(session, transfer, actor_user_id):
+    from services.stock_transfer_service import approve_transfer
+    return approve_transfer(session, transfer.id, actor_user_id=actor_user_id)
+
+
 def _dispatch_transfer(session, transfer, actor_user_id):
     from services.stock_transfer_service import dispatch_transfer
     return dispatch_transfer(session, transfer.id, actor_user_id=actor_user_id)
@@ -415,7 +425,11 @@ class TestTransferHistoryPersisted:
             _seed_stock(session, source_wh.id, product.id, 100, su)
             transfer = _create_transfer_with_lines(session, su, source_wh, dest_wh, [product])
 
-            # Dispatch: DRAFT -> DISPATCHED
+            # Submit + Approve before dispatch.
+            _submit_transfer(session, transfer, actor_user_id=su.id)
+            _approve_transfer(session, transfer, actor_user_id=su.id)
+
+            # Dispatch: APPROVED -> DISPATCHED
             _dispatch_transfer(session, transfer, actor_user_id=su.id)
 
             # Receive: DISPATCHED -> RECEIVED
@@ -427,7 +441,9 @@ class TestTransferHistoryPersisted:
 
             # Must contain the persisted history entries.
             assert "DRAFT -> DRAFT" in response.text  # Creation
-            assert "DRAFT -> DISPATCHED" in response.text
+            assert "DRAFT -> PENDING" in response.text
+            assert "PENDING -> APPROVED" in response.text
+            assert "APPROVED -> DISPATCHED" in response.text
             assert "DISPATCHED -> RECEIVED" in response.text
             assert "RECEIVED" in response.text
         finally:
@@ -511,18 +527,22 @@ class TestTransferHistoryOrdering:
             transfer = _create_transfer_with_lines(session, su, source_wh, dest_wh, [product])
 
             # Create multiple transitions.
+            _submit_transfer(session, transfer, actor_user_id=su.id)
+            _approve_transfer(session, transfer, actor_user_id=su.id)
             _dispatch_transfer(session, transfer, actor_user_id=su.id)
             _receive_transfer(session, transfer, actor_user_id=su.id)
 
             msg = BotMessage(platform_user_id=puid, platform_code="TELEGRAM", text=f"/transfer-history {transfer.transfer_number}")
             response = process_message(session, message=msg)
 
-            # All three persisted history entries must be present.
+            # All persisted history entries must be present.
             assert "DRAFT -> DRAFT" in response.text
-            assert "DRAFT -> DISPATCHED" in response.text
+            assert "DRAFT -> PENDING" in response.text
+            assert "PENDING -> APPROVED" in response.text
+            assert "APPROVED -> DISPATCHED" in response.text
             assert "DISPATCHED -> RECEIVED" in response.text
 
-            # Verify they appear as numbered entries (1. 2. 3.).
+            # Verify they appear as numbered entries (1. 2. 3. 4. 5.).
             assert "1." in response.text
             assert "2." in response.text
             assert "3." in response.text

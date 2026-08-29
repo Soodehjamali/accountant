@@ -434,12 +434,21 @@ def _handle_builtin(
             "/return <order> <product> <qty> <reason> [text] — Request a product return",
             "/dispatch <transfer_number> — Dispatch a stock transfer",
             "/confirm <transfer_number> — Confirm receipt of a stock transfer",
+            "/create-transfer <src> <dst> <sku> <qty> [cost] — Create a stock transfer",
             "/cancel-transfer <transfer_number> — Cancel a draft transfer",
             "/submit <order_number> — Submit a draft order for approval",
+            "/approve-order <order_number> — Approve a pending order",
+            "/reserve-stock <order_number> — Reserve stock for an approved order",
             "/cancel-order <order_number> — Cancel an order",
             "/backorder-resubmit <order_number> — Resubmit a backordered order",
             "/start-fulfillment <order_number> — Start fulfillment for a reserved order",
             "/ship <order_number> <sku> <qty> — Record a shipment",
+            "/create-invoice <order_number> — Create invoice from shipped order",
+            "/record-payment <invoice> <amount> <method> [ref] — Record a payment",
+            "/issue-invoice <invoice_number> — Issue a draft invoice",
+            "/mark-paid <order_number> — Mark order as paid",
+            "/mark-completed <order_number> — Mark order as completed",
+            "/set-price <product_sku> <price> — Override price on DRAFT order",
             "/order-history <order_number> — View order status history",
             "",
             "Type /help at any time to see this list.",
@@ -922,6 +931,42 @@ from services.bot_commands.ship_cmd import (
     validate_and_build_payload as _validate_ship,
     execute_ship as _execute_ship,
 )
+from services.bot_commands.approve_order_cmd import (
+    validate_and_build_payload as _validate_approve_order,
+    execute_approve_order as _execute_approve_order,
+)
+from services.bot_commands.reserve_stock_cmd import (
+    validate_and_build_payload as _validate_reserve_stock,
+    execute_reserve_stock as _execute_reserve_stock,
+)
+from services.bot_commands.create_invoice_cmd import (
+    validate_and_build_payload as _validate_create_invoice,
+    execute_create_invoice as _execute_create_invoice,
+)
+from services.bot_commands.record_payment_cmd import (
+    validate_and_build_payload as _validate_record_payment,
+    execute_record_payment as _execute_record_payment,
+)
+from services.bot_commands.issue_invoice_cmd import (
+    validate_and_build_payload as _validate_issue_invoice,
+    execute_issue_invoice as _execute_issue_invoice,
+)
+from services.bot_commands.mark_paid_cmd import (
+    validate_and_build_payload as _validate_mark_paid,
+    execute_mark_paid as _execute_mark_paid,
+)
+from services.bot_commands.mark_completed_cmd import (
+    validate_and_build_payload as _validate_mark_completed,
+    execute_mark_completed as _execute_mark_completed,
+)
+from services.bot_commands.create_transfer_cmd import (
+    validate_and_build_payload as _validate_create_transfer,
+    execute_create_transfer as _execute_create_transfer,
+)
+from services.bot_commands.set_price_cmd import (
+    validate_and_build_payload as _validate_set_price,
+    execute_set_price as _execute_set_price,
+)
 
 
 @_register_command(
@@ -1148,6 +1193,180 @@ def handle_ship(session: Session, user: AppUser, rep: Representative, args: str)
     return _execute_ship(session, payload, actor_user_id=user.id)
 
 
+@_register_command(
+    "approve-order",
+    required_permission=BOT_WRITE_PERMISSION,
+    approval_required=False,
+)
+def handle_approve_order(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Validate and execute /approve-order (PENDING_APPROVAL → APPROVED).
+
+    Syntax: /approve-order <order_number>
+
+    Tier 2 command: BOT_WRITE required, no approval.
+    Executes directly via canonical order_service.approve_order().
+    """
+    payload = _validate_approve_order(session, rep=rep, user=user, args=args)
+    if isinstance(payload, str):
+        return payload
+    return _execute_approve_order(session, payload, actor_user_id=user.id)
+
+
+@_register_command(
+    "reserve-stock",
+    required_permission=BOT_WRITE_PERMISSION,
+    approval_required=False,
+)
+def handle_reserve_stock(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Validate and execute /reserve-stock (APPROVED → RESERVED/BACKORDERED).
+
+    Syntax: /reserve-stock <order_number>
+
+    Tier 2 command: BOT_WRITE required, no approval.
+    Executes directly via canonical order_service.reserve_order_stock().
+    """
+    payload = _validate_reserve_stock(session, rep=rep, user=user, args=args)
+    if isinstance(payload, str):
+        return payload
+    return _execute_reserve_stock(session, payload, actor_user_id=user.id)
+
+
+@_register_command(
+    "create-invoice",
+    required_permission=BOT_WRITE_PERMISSION,
+    approval_required=False,
+)
+def handle_create_invoice(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Validate and execute /create-invoice (SHIPPED order → DRAFT invoice).
+
+    Syntax: /create-invoice <order_number>
+
+    Tier 2 command: BOT_WRITE required, no approval.
+    Executes directly via canonical invoice_service.create_invoice_from_order().
+    """
+    payload = _validate_create_invoice(session, rep=rep, user=user, args=args)
+    if isinstance(payload, str):
+        return payload
+    return _execute_create_invoice(session, payload, actor_user_id=user.id)
+
+
+@_register_command(
+    "record-payment",
+    required_permission=BOT_WRITE_PERMISSION,
+    approval_required=True,
+)
+def handle_record_payment(session: Session, user: AppUser, rep: Representative, args: str) -> dict | str:
+    """Validate /record-payment arguments and build payload.
+
+    Syntax: /record-payment <invoice_number> <amount> <method> [reference]
+
+    Returns a dict payload on success (caller creates approval request),
+    or an error string on failure.
+
+    Per ADR-008 §6, the mutation is NOT executed before approval.
+    """
+    payload = _validate_record_payment(session, rep=rep, user=user, args=args)
+    if isinstance(payload, str):
+        return payload
+    return payload
+
+
+@_register_command(
+    "issue-invoice",
+    required_permission=BOT_WRITE_PERMISSION,
+    approval_required=False,
+)
+def handle_issue_invoice(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Validate and execute /issue-invoice (DRAFT invoice → ISSUED).
+
+    Syntax: /issue-invoice <invoice_number>
+
+    Tier 2 command: BOT_WRITE required, no approval.
+    Executes directly via canonical invoice_service.issue_invoice().
+    """
+    payload = _validate_issue_invoice(session, rep=rep, user=user, args=args)
+    if isinstance(payload, str):
+        return payload
+    return _execute_issue_invoice(session, payload, actor_user_id=user.id)
+
+
+@_register_command(
+    "mark-paid",
+    required_permission=BOT_WRITE_PERMISSION,
+    approval_required=False,
+)
+def handle_mark_paid(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Validate and execute /mark-paid (INVOICED → PAID).
+
+    Syntax: /mark-paid <order_number>
+
+    Tier 2 command: BOT_WRITE required, no approval.
+    Executes directly via canonical order_service.mark_paid().
+    """
+    payload = _validate_mark_paid(session, rep=rep, user=user, args=args)
+    if isinstance(payload, str):
+        return payload
+    return _execute_mark_paid(session, payload, actor_user_id=user.id)
+
+
+@_register_command(
+    "mark-completed",
+    required_permission=BOT_WRITE_PERMISSION,
+    approval_required=False,
+)
+def handle_mark_completed(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Validate and execute /mark-completed (PAID → COMPLETED).
+
+    Syntax: /mark-completed <order_number>
+
+    Tier 2 command: BOT_WRITE required, no approval.
+    Executes directly via canonical order_service.mark_completed().
+    """
+    payload = _validate_mark_completed(session, rep=rep, user=user, args=args)
+    if isinstance(payload, str):
+        return payload
+    return _execute_mark_completed(session, payload, actor_user_id=user.id)
+
+
+@_register_command(
+    "create-transfer",
+    required_permission=BOT_WRITE_PERMISSION,
+    approval_required=False,
+)
+def handle_create_transfer(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Validate and execute /create-transfer (create a DRAFT stock transfer).
+
+    Syntax: /create-transfer <source_code> <dest_code> <product_sku> <qty> [unit_cost]
+
+    Tier 2 command: BOT_WRITE required, no approval.
+    Executes directly via canonical stock_transfer_service.create_transfer().
+    """
+    payload = _validate_create_transfer(session, rep=rep, user=user, args=args)
+    if isinstance(payload, str):
+        return payload
+    return _execute_create_transfer(session, payload, actor_user_id=user.id)
+
+
+@_register_command(
+    "set-price",
+    required_permission=BOT_WRITE_PERMISSION,
+    approval_required=False,
+)
+def handle_set_price(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Validate and execute /set-price (override price on a DRAFT order line).
+
+    Syntax: /set-price <product_sku> <price>
+
+    Tier 2 command: BOT_WRITE required, no approval.
+    Price override per 04_Business_Policies.md: affects only current invoice.
+    Executes directly via canonical order_service.update_order_line_price().
+    """
+    payload = _validate_set_price(session, rep=rep, user=user, args=args)
+    if isinstance(payload, str):
+        return payload
+    return _execute_set_price(session, payload, actor_user_id=user.id)
+
+
 @_register_command("order-history", required_permission=BOT_QUERY_PERMISSION)
 def handle_order_history(session: Session, user: AppUser, rep: Representative, args: str) -> str:
     """Show the state-transition history for a specific order.
@@ -1165,6 +1384,7 @@ from services.approval_execution_service import EXECUTOR_REGISTRY  # noqa: E402
 EXECUTOR_REGISTRY["create-order"] = _execute_create_order
 EXECUTOR_REGISTRY["adjust"] = _execute_adjust
 EXECUTOR_REGISTRY["return"] = _execute_return
+EXECUTOR_REGISTRY["record-payment"] = _execute_record_payment
 
 
 # ---------------------------------------------------------------------------
@@ -1206,6 +1426,7 @@ def handle_pending(session: Session, user: AppUser, rep: Representative, args: s
             "bot_command:create-order": "Create Order",
             "bot_command:adjust": "Stock Adjustment",
             "bot_command:return": "Product Return",
+            "bot_command:record-payment": "Record Payment",
         }.get(req.entity_type, req.entity_type)
 
         date_str = req.requested_at.strftime("%Y-%m-%d %H:%M") if req.requested_at else "N/A"

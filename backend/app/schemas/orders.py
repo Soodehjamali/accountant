@@ -64,6 +64,66 @@ class OrderLineCreateRequest(BaseModel):
     discount_value: decimal.Decimal = Field(default=decimal.Decimal("0"), ge=0)
 
 
+class OrderLineAddRequest(BaseModel):
+    """Request body for ``POST /orders/{id}/lines`` -- add a line to a DRAFT order.
+
+    Reuses the same field set as ``OrderLineCreateRequest`` since the
+    pricing resolution logic is identical.
+    """
+
+    product_id: uuid.UUID
+    fulfillment_warehouse_id: uuid.UUID
+    price_history_id: uuid.UUID | None = None
+    qty_ordered: decimal.Decimal = Field(gt=0)
+    fulfillment_mode: FulfillmentMode
+    lot_id: uuid.UUID | None = None
+    discount_id: uuid.UUID | None = None
+    discount_value: decimal.Decimal = Field(default=decimal.Decimal("0"), ge=0)
+
+
+class OrderLineUpdateQtyRequest(BaseModel):
+    """Request body for ``PATCH /orders/{id}/lines/{line_id}`` --
+    update quantity on a DRAFT order line.
+
+    Unit price is frozen and NOT changed by this operation.
+    """
+
+    qty_ordered: decimal.Decimal = Field(gt=0)
+
+
+class OrderLineUpdatePriceRequest(BaseModel):
+    """Request body for ``PATCH /orders/{id}/lines/{line_id}/price`` --
+    override the selling price on a DRAFT order line.
+
+    Per ``04_Business_Policies.md``: *"Representative may change selling
+    price.  Price change affects only current invoice."*  The override
+    affects only the current DRAFT order; ``price_history_id`` provenance
+    is preserved.
+    """
+
+    unit_price: decimal.Decimal = Field(ge=0)
+
+
+class OrderLineApplyDiscountRequest(BaseModel):
+    """Request body for ``PATCH /orders/{id}/lines/{line_id}/discount`` --
+    apply an explicit discount to a DRAFT order line.
+
+    BR-P2 Phase A: single explicit discount per line.  The caller
+    provides a ``discount_id``; the system validates validity,
+    applicability, and calculates the monetary discount value.
+    """
+
+    discount_id: uuid.UUID
+
+
+class OrderLineRemoveDiscountRequest(BaseModel):
+    """Request body for ``DELETE /orders/{id}/lines/{line_id}/discount`` --
+    remove the discount from a DRAFT order line.
+    """
+
+    pass
+
+
 class OrderCreateRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
@@ -90,7 +150,7 @@ class OrderCreateRequest(BaseModel):
     customer_id: uuid.UUID
     representative_id: uuid.UUID
     currency_id: uuid.UUID
-    price_list_id: uuid.UUID
+    price_list_id: uuid.UUID | None = None
     order_type: OrderType
     fulfillment_mode: FulfillmentMode
     sales_channel: str = Field(min_length=1, max_length=24)
@@ -101,10 +161,24 @@ class OrderCreateRequest(BaseModel):
 
 class OrderTransitionRequest(BaseModel):
     """Generic body for the simple one-step transition endpoints
-    (submit/approve/resubmit/cancel/start-fulfillment/return/invoice/
-    pay/complete). ``note`` is optional free text stored on the
+    (submit/approve/resubmit/cancel/start-fulfillment/return/complete).
+    ``note`` is optional free text stored on the
     ``order_status_history`` row."""
 
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class OrderPaymentRequest(BaseModel):
+    """Request body for ``POST /orders/{id}/pay``.
+
+    Records a real payment against the order's linked invoice,
+    transitioning both the invoice and order to PAID.
+    ``amount`` must be >= the invoice's ``balance_due`` to fully pay it.
+    """
+
+    amount: decimal.Decimal = Field(gt=0)
+    method: str = Field(min_length=1, max_length=40, description="Payment method (e.g. CASH, BANK_TRANSFER)")
+    reference: str | None = Field(default=None, max_length=200, description="Optional payment reference number")
     note: str | None = Field(default=None, max_length=2000)
 
 
@@ -193,10 +267,16 @@ __all__ = [
     "FulfillmentMode",
     "OrderCreateRequest",
     "OrderHistoryResponse",
+    "OrderLineAddRequest",
+    "OrderLineApplyDiscountRequest",
     "OrderLineCreateRequest",
     "OrderLineListResponse",
+    "OrderLineRemoveDiscountRequest",
     "OrderLineResponse",
+    "OrderLineUpdatePriceRequest",
+    "OrderLineUpdateQtyRequest",
     "OrderListResponse",
+    "OrderPaymentRequest",
     "OrderResponse",
     "OrderState",
     "OrderStatusHistoryResponse",

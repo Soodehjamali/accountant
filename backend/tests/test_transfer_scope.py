@@ -293,6 +293,15 @@ class TestTransferDispatchScope:
     def test_representative_can_dispatch_own_transfer(self, client):
         """Representative can dispatch a transfer involving their warehouse."""
         data = _setup(client)
+        # Submit + Approve before dispatch.
+        client.post(
+            f"/api/v1/transfers/{data['transfer_id']}/submit",
+            json={}, headers=data["headers_a"],
+        )
+        client.post(
+            f"/api/v1/transfers/{data['transfer_id']}/approve",
+            json={}, headers=data["headers_a"],
+        )
         resp = client.post(
             f"/api/v1/transfers/{data['transfer_id']}/dispatch",
             json={},
@@ -360,7 +369,15 @@ class TestTransferReceiveScope:
     def test_representative_can_receive_own_transfer(self, client):
         """Representative can receive a dispatched transfer involving their warehouse."""
         data = _setup(client)
-        # Dispatch first.
+        # Submit + Approve + Dispatch first.
+        client.post(
+            f"/api/v1/transfers/{data['transfer_id']}/submit",
+            json={}, headers=data["headers_a"],
+        )
+        client.post(
+            f"/api/v1/transfers/{data['transfer_id']}/approve",
+            json={}, headers=data["headers_a"],
+        )
         client.post(
             f"/api/v1/transfers/{data['transfer_id']}/dispatch",
             json={}, headers=data["headers_a"],
@@ -376,7 +393,15 @@ class TestTransferReceiveScope:
     def test_representative_cannot_receive_out_of_scope(self, client):
         """Representative cannot receive a transfer involving no warehouse they own — 404."""
         data = _setup(client)
-        # Dispatch as admin (who has access).
+        # Submit + Approve + Dispatch as admin (who has access).
+        client.post(
+            f"/api/v1/transfers/{data['transfer_id']}/submit",
+            json={}, headers=data["headers_admin"],
+        )
+        client.post(
+            f"/api/v1/transfers/{data['transfer_id']}/approve",
+            json={}, headers=data["headers_admin"],
+        )
         client.post(
             f"/api/v1/transfers/{data['transfer_id']}/dispatch",
             json={}, headers=data["headers_admin"],
@@ -391,7 +416,15 @@ class TestTransferReceiveScope:
     def test_out_of_scope_receive_produces_no_side_effects(self, client):
         """Out-of-scope receive changes nothing."""
         data = _setup(client)
-        # Dispatch as admin.
+        # Submit + Approve + Dispatch as admin.
+        client.post(
+            f"/api/v1/transfers/{data['transfer_id']}/submit",
+            json={}, headers=data["headers_admin"],
+        )
+        client.post(
+            f"/api/v1/transfers/{data['transfer_id']}/approve",
+            json={}, headers=data["headers_admin"],
+        )
         client.post(
             f"/api/v1/transfers/{data['transfer_id']}/dispatch",
             json={}, headers=data["headers_admin"],

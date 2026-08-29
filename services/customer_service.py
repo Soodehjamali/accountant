@@ -192,12 +192,42 @@ def deactivate_customer(session: Session, customer_id: uuid.UUID, *, updated_by:
     return customer
 
 
+def reactivate_customer(session: Session, customer_id: uuid.UUID, *, updated_by: uuid.UUID) -> Customer:
+    """Set ``status = ACTIVE``. Counterpart to ``deactivate_customer``.
+
+    Existing orders/invoices/payments are not affected -- this is a
+    lifecycle status change only, not a data mutation.
+
+    Raises:
+        CustomerNotFoundError: no matching row.
+        CustomerAlreadyActiveError: customer is already ACTIVE.
+    """
+
+    customer = _get_customer_or_raise(session, customer_id)
+    if customer.status == "ACTIVE":
+        raise CustomerAlreadyActiveError(customer_id)
+    customer.status = "ACTIVE"
+    customer.updated_by = updated_by
+    session.flush()
+    return customer
+
+
+class CustomerAlreadyActiveError(ValueError):
+    """Raised when ``reactivate_customer`` is called on an already ACTIVE customer."""
+
+    def __init__(self, customer_id: uuid.UUID) -> None:
+        super().__init__(f"Customer '{customer_id}' is already ACTIVE.")
+        self.customer_id = customer_id
+
+
 __all__ = [
+    "CustomerAlreadyActiveError",
     "CustomerNotFoundError",
     "DuplicateCustomerCodeError",
     "create_customer",
     "deactivate_customer",
     "get_customer",
     "list_customers",
+    "reactivate_customer",
     "update_customer",
 ]

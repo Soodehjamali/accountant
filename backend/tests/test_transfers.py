@@ -226,7 +226,25 @@ def test_happy_path_dispatch_receive(
     transfer_id = body["id"]
     assert len(body["lines"]) == 1
 
-    # -- Dispatch: DRAFT -> DISPATCHED --
+    # -- Submit: DRAFT -> PENDING --
+    resp = client.post(
+        f"/api/v1/transfers/{transfer_id}/submit",
+        json={},
+        headers=manage_auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["state"] == "PENDING"
+
+    # -- Approve: PENDING -> APPROVED --
+    resp = client.post(
+        f"/api/v1/transfers/{transfer_id}/approve",
+        json={},
+        headers=manage_auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["state"] == "APPROVED"
+
+    # -- Dispatch: APPROVED -> DISPATCHED --
     resp = client.post(
         f"/api/v1/transfers/{transfer_id}/dispatch",
         json={},
@@ -341,6 +359,18 @@ def test_double_dispatch_rejected(
         headers=manage_auth_headers,
     )
     transfer_id = resp.json()["id"]
+
+    # Submit + Approve before dispatch.
+    client.post(
+        f"/api/v1/transfers/{transfer_id}/submit",
+        json={},
+        headers=manage_auth_headers,
+    )
+    client.post(
+        f"/api/v1/transfers/{transfer_id}/approve",
+        json={},
+        headers=manage_auth_headers,
+    )
 
     # First dispatch -- succeeds.
     resp = client.post(

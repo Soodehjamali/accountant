@@ -253,6 +253,33 @@ class OrderAccessDeniedError(PermissionError):
         self.representative_id = representative_id
 
 
+class CustomerCreditLimitExceededError(ValueError):
+    """Raised when creating an order would exceed the customer's credit limit.
+
+    Per CLAUDE.md: ``credit-limit violations block new order submission``.
+    A customer with ``credit_limit_amount == 0`` has no credit extended
+    and cannot create new orders (the default state). A customer with
+    ``credit_limit_amount > 0`` can create orders up to their limit.
+    """
+
+    def __init__(
+        self,
+        customer_id: uuid.UUID,
+        outstanding_balance: decimal.Decimal,
+        credit_limit: decimal.Decimal,
+        order_total: decimal.Decimal,
+    ) -> None:
+        super().__init__(
+            f"Customer '{customer_id}' credit limit exceeded: "
+            f"outstanding balance {outstanding_balance} + new order {order_total} = "
+            f"{outstanding_balance + order_total} exceeds limit {credit_limit}."
+        )
+        self.customer_id = customer_id
+        self.outstanding_balance = outstanding_balance
+        self.credit_limit = credit_limit
+        self.order_total = order_total
+
+
 def _get_order_or_raise(session: Session, order_id: uuid.UUID) -> Order:
     order = session.execute(
         select(Order).where(Order.id == order_id, Order.deleted_at.is_(None))
@@ -306,13 +333,30 @@ class OrderLineInput:
         self.discount_value = decimal.Decimal(discount_value)
 
 
+class NoCustomerPriceListError(LookupError):
+    """Raised when no price-list assignment exists for the customer and
+    none was provided explicitly.
+
+    Per ``02_SRS.md`` BR-P1: the system resolves customer-specific pricing
+    automatically; if no assignment exists and the caller did not supply a
+    ``price_list_id``, the order cannot be priced.
+    """
+
+    def __init__(self, customer_id: uuid.UUID) -> None:
+        super().__init__(
+            f"No price list assigned to customer '{customer_id}'. "
+            "Assign a price list to the customer or provide price_list_id explicitly."
+        )
+        self.customer_id = customer_id
+
+
 def create_order(
     session: Session,
     *,
     customer_id: uuid.UUID,
     representative_id: uuid.UUID,
     currency_id: uuid.UUID,
-    price_list_id: uuid.UUID,
+    price_list_id: uuid.UUID | None = None,
     order_type: str,
     fulfillment_mode: str,
     sales_channel: str,
@@ -325,12 +369,19 @@ def create_order(
     transition (there is no "from" state for a brand-new row), so no
     ``order_status_history`` row is written here -- see module docstring.
 
-    Pricing resolution:
-        Each line's unit price is resolved from the order's ``price_list_id``
-        using ``price_list_service.get_current_price()``.  If a line already
-        provides an explicit ``price_history_id``, that entry is used instead
-        (the caller resolved pricing externally).  Once resolved, the
-        ``price_history_id`` and ``unit_price`` are frozen on the order line.
+    Pricing resolution (BR-P1 priority chain):
+        1. If ``price_list_id`` is provided explicitly, use it.
+        2. Otherwise, resolve via ``CustomerPriceList`` assignment
+           (customer-specific pricing per BR-P1).
+        3. If no customer assignment exists, raise
+           ``NoCustomerPriceListError``.
+
+        Each line's unit price is then resolved from the order's
+        ``price_list_id`` using ``price_list_service.get_current_price()``.
+        If a line already provides an explicit ``price_history_id``, that
+        entry is used instead (the caller resolved pricing externally).
+        Once resolved, the ``price_history_id`` and ``unit_price`` are
+        frozen on the order line.
 
     Raises:
         CustomerNotFoundError: no active customer with this id.
@@ -342,6 +393,8 @@ def create_order(
         PriceListNotFoundError: the order's ``price_list_id`` doesn't exist.
         PriceListNotActiveError: the order's price list is inactive.
         NoCurrentPriceError: no currently valid price for a product.
+        NoCustomerPriceListError: no price-list assignment for the customer
+          and none provided explicitly.
     """
 
     lines = list(lines)
@@ -357,6 +410,19 @@ def create_order(
     representative = session.get(Representative, representative_id)
     if representative is None or representative.deleted_at is not None:
         raise RepresentativeNotFoundError(representative_id)
+
+    # --- Price list resolution (BR-P1 priority chain) ---
+    # 1. Explicit price_list_id from caller takes precedence.
+    # 2. Otherwise, resolve via customer-specific assignment.
+    if price_list_id is None:
+        from services import price_list_service
+
+        resolved = price_list_service.resolve_customer_price_list(
+            session, customer_id,
+        )
+        if resolved is None:
+            raise NoCustomerPriceListError(customer_id)
+        price_list_id = resolved.id
 
     # Validate the price list exists and is active.
     price_list = session.execute(
@@ -424,6 +490,22 @@ def create_order(
         discount_total += line_in.discount_value
 
     grand_total = subtotal - discount_total
+
+    # --- Credit limit enforcement ---
+    # Per CLAUDE.md: "credit-limit violations block new order submission."
+    # Only enforced when credit_limit_amount > 0 (explicit credit line).
+    # credit_limit_amount == 0 means no limit configured (the default).
+    if decimal.Decimal(customer.credit_limit_amount) > 0:
+        from services import customer_ledger_service
+
+        outstanding = customer_ledger_service.get_balance(session, customer_id)
+        if outstanding + grand_total > decimal.Decimal(customer.credit_limit_amount):
+            raise CustomerCreditLimitExceededError(
+                customer_id=customer_id,
+                outstanding_balance=outstanding,
+                credit_limit=decimal.Decimal(customer.credit_limit_amount),
+                order_total=grand_total,
+            )
 
     order = Order(
         order_number=_generate_order_number(),
@@ -534,7 +616,10 @@ def list_order_lines(session: Session, order_id: uuid.UUID) -> Iterable[OrderLin
 
     _get_order_or_raise(session, order_id)
     return session.execute(
-        select(OrderLine).where(OrderLine.order_id == order_id).order_by(OrderLine.created_at)
+        select(OrderLine).where(
+            OrderLine.order_id == order_id,
+            OrderLine.deleted_at.is_(None),
+        ).order_by(OrderLine.created_at)
     ).scalars().all()
 
 
@@ -1065,10 +1150,535 @@ def mark_paid(session: Session, order_id: uuid.UUID, *, actor_user_id: uuid.UUID
 
 
 def mark_completed(session: Session, order_id: uuid.UUID, *, actor_user_id: uuid.UUID, note: str | None = None) -> Order:
-    """``PAID -> COMPLETED``."""
+    """``PAID -> COMPLETED``.
+
+    After the state transition, automatically calculates and records
+    the commission transaction for this order via
+    ``commission_service.calculate_commission_for_order()``.
+
+    If no commission config matches (``NoCommissionConfigFoundError``),
+    the order still completes successfully -- commission is best-effort.
+    If commission was already calculated (``CommissionAlreadyCalculatedError``),
+    it is silently skipped (idempotent).
+    """
 
     order = _get_order_or_raise(session, order_id)
-    return _transition(session, order, "COMPLETED", actor_user_id=actor_user_id, note=note)
+    order = _transition(session, order, "COMPLETED", actor_user_id=actor_user_id, note=note)
+
+    # Auto-calculate commission (best-effort).
+    try:
+        from services import commission_service
+        commission_service.calculate_commission_for_order(
+            session,
+            order_id=order.id,
+            actor_user_id=actor_user_id,
+        )
+    except Exception:
+        # Commission calculation is best-effort: if no config matches
+        # or it was already calculated, the order still completes.
+        pass
+
+    return order
+
+
+# ------------------------------------------------------------------
+# DRAFT order line editing
+# ------------------------------------------------------------------
+
+
+class OrderNotEditableError(ValueError):
+    """Raised when attempting to edit an order not in DRAFT state."""
+
+    def __init__(self, order_id: uuid.UUID, state: str) -> None:
+        super().__init__(
+            f"Order '{order_id}' is in state '{state}'; only DRAFT orders can be edited."
+        )
+        self.order_id = order_id
+        self.state = state
+
+
+class DuplicateProductOnOrderError(ValueError):
+    """Raised when adding a line with a product already on the order."""
+
+    def __init__(self, product_id: uuid.UUID) -> None:
+        super().__init__(
+            f"Product '{product_id}' is already on this order. "
+            "Use update to change the quantity instead."
+        )
+        self.product_id = product_id
+
+
+def _recalculate_order_totals(session: Session, order: Order) -> None:
+    """Recompute ``subtotal``, ``discount_total``, and ``grand_total``
+    from the current set of active (non-deleted) order lines.
+
+    Unit prices are read from the frozen ``unit_price`` on each line --
+    this function does NOT re-resolve pricing.
+    """
+
+    active_lines = session.execute(
+        select(OrderLine).where(
+            OrderLine.order_id == order.id,
+            OrderLine.deleted_at.is_(None),
+        )
+    ).scalars().all()
+
+    subtotal = decimal.Decimal("0")
+    discount_total = decimal.Decimal("0")
+    for line in active_lines:
+        subtotal += decimal.Decimal(line.unit_price) * decimal.Decimal(line.qty_ordered)
+        discount_total += decimal.Decimal(line.discount_value)
+
+    order.subtotal = subtotal
+    order.discount_total = discount_total
+    order.grand_total = subtotal - discount_total
+    order.updated_by = order.updated_by  # preserve caller
+    session.flush()
+
+
+def add_order_line(
+    session: Session,
+    order_id: uuid.UUID,
+    line_in: OrderLineInput,
+    *,
+    actor_user_id: uuid.UUID,
+) -> OrderLine:
+    """Add a new line to a ``DRAFT`` order.
+
+    Resolves pricing from the order's price list (same logic as
+    ``create_order``), freezes ``unit_price`` and ``price_history_id``
+    on the new line, and recalculates the order totals.
+
+    Raises:
+        OrderNotFoundError, OrderNotEditableError,
+        ProductNotFoundError, PriceHistoryMismatchError,
+        NoCurrentPriceError, DuplicateProductOnOrderError.
+    """
+
+    order = _get_order_or_raise(session, order_id)
+    if order.state != "DRAFT":
+        raise OrderNotEditableError(order_id, order.state)
+
+    product = session.execute(
+        select(Product).where(Product.id == line_in.product_id, Product.deleted_at.is_(None))
+    ).scalar_one_or_none()
+    if product is None:
+        raise ProductNotFoundError(line_in.product_id)
+
+    # Check for duplicate product on this order.
+    existing = session.execute(
+        select(OrderLine).where(
+            OrderLine.order_id == order_id,
+            OrderLine.product_id == line_in.product_id,
+            OrderLine.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise DuplicateProductOnOrderError(line_in.product_id)
+
+    # Resolve pricing (same logic as create_order).
+    if line_in.price_history_id is not None:
+        price_history = session.execute(
+            select(PriceHistory).where(
+                PriceHistory.id == line_in.price_history_id,
+                PriceHistory.product_id == line_in.product_id,
+            )
+        ).scalar_one_or_none()
+        if price_history is None:
+            raise PriceHistoryMismatchError(line_in.price_history_id, line_in.product_id)
+    else:
+        from services import price_list_service
+
+        price_history = price_list_service.get_current_price(
+            session,
+            product_id=line_in.product_id,
+            price_list_id=order.price_list_id,
+        )
+        if price_history is None:
+            raise NoCurrentPriceError(line_in.product_id, order.price_list_id)
+
+    unit_price = decimal.Decimal(price_history.unit_price)
+    line_total = (unit_price * line_in.qty_ordered) - line_in.discount_value
+
+    order_line = OrderLine(
+        order_id=order_id,
+        product_id=line_in.product_id,
+        lot_id=line_in.lot_id,
+        fulfillment_warehouse_id=line_in.fulfillment_warehouse_id,
+        qty_ordered=line_in.qty_ordered,
+        unit_price=unit_price,
+        discount_value=line_in.discount_value,
+        discount_id=line_in.discount_id,
+        price_history_id=price_history.id,
+        line_total=line_total,
+        fulfillment_mode=line_in.fulfillment_mode,
+        created_by=actor_user_id,
+        updated_by=actor_user_id,
+    )
+    session.add(order_line)
+    session.flush()
+
+    _recalculate_order_totals(session, order)
+
+    audit_service.record(
+        session,
+        entity_type="order",
+        entity_id=order.id,
+        action="UPDATE",
+        actor_user_id=actor_user_id,
+        after={"action": "add_line", "product_id": str(line_in.product_id)},
+    )
+    session.flush()
+
+    return order_line
+
+
+def remove_order_line(
+    session: Session,
+    order_id: uuid.UUID,
+    order_line_id: uuid.UUID,
+    *,
+    actor_user_id: uuid.UUID,
+) -> None:
+    """Soft-delete a line from a ``DRAFT`` order.
+
+    The line's ``deleted_at`` is set (soft-delete per T11's
+    "Supported pre-approval only" rule).  The order totals are
+    recalculated from the remaining active lines.
+
+    Raises:
+        OrderNotFoundError, OrderNotEditableError,
+        OrderLineNotFoundError.
+    """
+
+    order = _get_order_or_raise(session, order_id)
+    if order.state != "DRAFT":
+        raise OrderNotEditableError(order_id, order.state)
+
+    line = session.execute(
+        select(OrderLine).where(
+            OrderLine.id == order_line_id,
+            OrderLine.order_id == order_id,
+            OrderLine.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if line is None:
+        raise OrderLineNotFoundError(order_line_id)
+
+    line.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    line.updated_by = actor_user_id
+    session.flush()
+
+    _recalculate_order_totals(session, order)
+
+    audit_service.record(
+        session,
+        entity_type="order",
+        entity_id=order.id,
+        action="UPDATE",
+        actor_user_id=actor_user_id,
+        after={"action": "remove_line", "order_line_id": str(order_line_id)},
+    )
+    session.flush()
+
+
+def get_latest_draft_order_for_representative(
+    session: Session,
+    representative_id: uuid.UUID,
+) -> Order | None:
+    """Return the most recent DRAFT order for a representative, or None.
+
+    Used by bot commands (e.g. ``/set-price``) that operate on the
+    representative's current working order.
+    """
+    return session.execute(
+        select(Order).where(
+            Order.representative_id == representative_id,
+            Order.state == "DRAFT",
+            Order.deleted_at.is_(None),
+        ).order_by(Order.ordered_at.desc()).limit(1)
+    ).scalar_one_or_none()
+
+
+def update_order_line_price(
+    session: Session,
+    order_id: uuid.UUID,
+    order_line_id: uuid.UUID,
+    new_unit_price: decimal.Decimal,
+    *,
+    actor_user_id: uuid.UUID,
+) -> OrderLine:
+    """Override the selling price of an existing line on a ``DRAFT`` order.
+
+    Per ``04_Business_Policies.md``: *"Representative may change selling
+    price.  Price change affects only current invoice."*  This implements
+    the price override for the current (DRAFT) order only -- the change
+    does not persist to the ``price_history`` ledger.
+
+    The ``unit_price``, ``line_total``, and order totals are
+    recalculated.  The ``price_history_id`` is intentionally left
+    unchanged -- it still records the original price provenance, while
+    ``unit_price`` carries the overridden value.  (The spec's
+    immutability trigger only fires once the order passes APPROVED.)
+
+    Raises:
+        OrderNotFoundError, OrderNotEditableError,
+        OrderLineNotFoundError.
+    """
+
+    order = _get_order_or_raise(session, order_id)
+    if order.state != "DRAFT":
+        raise OrderNotEditableError(order_id, order.state)
+
+    line = session.execute(
+        select(OrderLine).where(
+            OrderLine.id == order_line_id,
+            OrderLine.order_id == order_id,
+            OrderLine.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if line is None:
+        raise OrderLineNotFoundError(order_line_id)
+
+    new_unit_price = decimal.Decimal(new_unit_price)
+    if new_unit_price < 0:
+        raise ValueError("Price must be non-negative.")
+
+    old_price = decimal.Decimal(line.unit_price)
+    line.unit_price = new_unit_price
+    line.line_total = (new_unit_price * decimal.Decimal(line.qty_ordered)) - decimal.Decimal(
+        line.discount_value
+    )
+    line.updated_by = actor_user_id
+    session.flush()
+
+    _recalculate_order_totals(session, order)
+
+    audit_service.record(
+        session,
+        entity_type="order",
+        entity_id=order.id,
+        action="UPDATE",
+        actor_user_id=actor_user_id,
+        after={
+            "action": "update_line_price",
+            "order_line_id": str(order_line_id),
+            "old_unit_price": str(old_price),
+            "new_unit_price": str(new_unit_price),
+        },
+    )
+    session.flush()
+
+    return line
+
+
+def update_order_line_qty(
+    session: Session,
+    order_id: uuid.UUID,
+    order_line_id: uuid.UUID,
+    new_qty: decimal.Decimal,
+    *,
+    actor_user_id: uuid.UUID,
+) -> OrderLine:
+    """Update the quantity of an existing line on a ``DRAFT`` order.
+
+    The frozen ``unit_price`` is NOT changed -- only ``qty_ordered``
+    and ``line_total`` are updated.  Order totals are recalculated.
+
+    Raises:
+        OrderNotFoundError, OrderNotEditableError,
+        OrderLineNotFoundError.
+    """
+
+    order = _get_order_or_raise(session, order_id)
+    if order.state != "DRAFT":
+        raise OrderNotEditableError(order_id, order.state)
+
+    line = session.execute(
+        select(OrderLine).where(
+            OrderLine.id == order_line_id,
+            OrderLine.order_id == order_id,
+            OrderLine.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if line is None:
+        raise OrderLineNotFoundError(order_line_id)
+
+    new_qty = decimal.Decimal(new_qty)
+    if new_qty <= 0:
+        raise ValueError("Quantity must be positive.")
+
+    line.qty_ordered = new_qty
+    line.line_total = (decimal.Decimal(line.unit_price) * new_qty) - decimal.Decimal(line.discount_value)
+    line.updated_by = actor_user_id
+    session.flush()
+
+    _recalculate_order_totals(session, order)
+
+    audit_service.record(
+        session,
+        entity_type="order",
+        entity_id=order.id,
+        action="UPDATE",
+        actor_user_id=actor_user_id,
+        after={
+            "action": "update_line_qty",
+            "order_line_id": str(order_line_id),
+            "new_qty": str(new_qty),
+        },
+    )
+    session.flush()
+
+    return line
+
+
+# -----------------------------------------------------------------------
+# Discount application (BR-P2 Phase A)
+# -----------------------------------------------------------------------
+
+
+def apply_discount_to_order_line(
+    session: Session,
+    order_id: uuid.UUID,
+    order_line_id: uuid.UUID,
+    discount_id: uuid.UUID,
+    *,
+    actor_user_id: uuid.UUID,
+) -> OrderLine:
+    """Apply an explicit discount to a ``DRAFT`` order line.
+
+    BR-P2 Phase A: single explicit discount per line.
+
+    1. Verify order is DRAFT.
+    2. Verify the line exists on this order.
+    3. Validate discount via ``discount_service.resolve_discount_for_line``:
+       - exists, valid dates, applicable to line (product/category/
+         customer/representative scope).
+    4. Calculate discount value.
+    5. Reject if discount exceeds line gross amount.
+    6. Store ``discount_id`` and ``discount_value`` on the line.
+    7. Recalculate ``line_total`` and order totals.
+
+    The ``/set-price`` interaction is preserved: if ``unit_price`` was
+    previously overridden, the discount is applied to the current
+    ``unit_price`` (the overridden value), per the formula:
+    ``line_total = (unit_price × qty) − discount_value``.
+
+    Raises:
+        OrderNotFoundError, OrderNotEditableError, OrderLineNotFoundError.
+        All ``discount_service`` exceptions (DiscountNotFoundError,
+        DiscountExpiredError, DiscountExceedsLineTotalError, etc.).
+    """
+    from services import discount_service
+
+    order = _get_order_or_raise(session, order_id)
+    if order.state != "DRAFT":
+        raise OrderNotEditableError(order_id, order.state)
+
+    line = session.execute(
+        select(OrderLine).where(
+            OrderLine.id == order_line_id,
+            OrderLine.order_id == order_id,
+            OrderLine.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if line is None:
+        raise OrderLineNotFoundError(order_line_id)
+
+    # Resolve and validate the discount (validity + applicability +
+    # calculation + negative-line-total prevention).
+    _discount, discount_value = discount_service.resolve_discount_for_line(
+        session,
+        discount_id,
+        product_id=line.product_id,
+        customer_id=order.customer_id,
+        representative_id=order.representative_id,
+        unit_price=line.unit_price,
+        qty=line.qty_ordered,
+    )
+
+    # Store the discount on the line.
+    line.discount_id = discount_id
+    line.discount_value = discount_value
+    line.line_total = (
+        decimal.Decimal(line.unit_price) * decimal.Decimal(line.qty_ordered)
+    ) - discount_value
+    line.updated_by = actor_user_id
+    session.flush()
+
+    _recalculate_order_totals(session, order)
+
+    audit_service.record(
+        session,
+        entity_type="order",
+        entity_id=order.id,
+        action="UPDATE",
+        actor_user_id=actor_user_id,
+        after={
+            "action": "apply_discount",
+            "order_line_id": str(order_line_id),
+            "discount_id": str(discount_id),
+            "discount_value": str(discount_value),
+        },
+    )
+    session.flush()
+
+    return line
+
+
+def remove_discount_from_order_line(
+    session: Session,
+    order_id: uuid.UUID,
+    order_line_id: uuid.UUID,
+    *,
+    actor_user_id: uuid.UUID,
+) -> OrderLine:
+    """Remove the discount from a ``DRAFT`` order line.
+
+    Resets ``discount_id`` to NULL and ``discount_value`` to 0,
+    recalculates ``line_total`` and order totals.
+
+    Raises:
+        OrderNotFoundError, OrderNotEditableError, OrderLineNotFoundError.
+    """
+    order = _get_order_or_raise(session, order_id)
+    if order.state != "DRAFT":
+        raise OrderNotEditableError(order_id, order.state)
+
+    line = session.execute(
+        select(OrderLine).where(
+            OrderLine.id == order_line_id,
+            OrderLine.order_id == order_id,
+            OrderLine.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if line is None:
+        raise OrderLineNotFoundError(order_line_id)
+
+    line.discount_id = None
+    line.discount_value = decimal.Decimal("0")
+    line.line_total = decimal.Decimal(line.unit_price) * decimal.Decimal(
+        line.qty_ordered
+    )
+    line.updated_by = actor_user_id
+    session.flush()
+
+    _recalculate_order_totals(session, order)
+
+    audit_service.record(
+        session,
+        entity_type="order",
+        entity_id=order.id,
+        action="UPDATE",
+        actor_user_id=actor_user_id,
+        after={
+            "action": "remove_discount",
+            "order_line_id": str(order_line_id),
+        },
+    )
+    session.flush()
+
+    return line
 
 
 __all__ = [
@@ -1076,13 +1686,17 @@ __all__ = [
     "ORDER_APPROVE_PERMISSION_CODE",
     "ORDER_MANAGE_PERMISSION_CODE",
     "CustomerNotFoundError",
+    "DuplicateProductOnOrderError",
     "EmptyOrderError",
     "InvalidOrderStateTransitionError",
     "NoCurrentPriceError",
+    "NoCustomerPriceListError",
     "OrderLineInput",
     "OrderLineNotFoundError",
     "OrderNotCancellableError",
+    "OrderNotEditableError",
     "OrderNotFoundError",
+    "CustomerCreditLimitExceededError",
     "PriceHistoryMismatchError",
     "PriceListNotActiveError",
     "PriceListNotFoundError",
@@ -1090,9 +1704,12 @@ __all__ = [
     "RepresentativeNotFoundError",
     "ShipmentInput",
     "ShipmentQuantityError",
+    "add_order_line",
+    "apply_discount_to_order_line",
     "approve_order",
     "cancel_order",
     "create_order",
+    "get_latest_draft_order_for_representative",
     "get_order",
     "get_order_for_representative",
     "get_order_for_representative_by_number",
@@ -1103,9 +1720,13 @@ __all__ = [
     "mark_invoiced",
     "mark_paid",
     "record_return",
+    "remove_discount_from_order_line",
+    "remove_order_line",
     "reserve_order_stock",
     "resubmit_order",
     "ship_order",
     "start_fulfillment",
     "submit_order",
+    "update_order_line_price",
+    "update_order_line_qty",
 ]

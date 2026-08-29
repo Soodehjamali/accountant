@@ -340,6 +340,228 @@ def get_order_commission(
     ).scalar_one_or_none()
 
 
+def get_commission_transaction(
+    session: Session, transaction_id: uuid.UUID
+) -> CommissionTransaction:
+    """Return a single commission transaction by ID.
+
+    Raises:
+        CommissionTransactionNotFoundError: if no matching row.
+    """
+    txn = session.get(CommissionTransaction, transaction_id)
+    if txn is None:
+        raise CommissionTransactionNotFoundError(transaction_id)
+    return txn
+
+
+def list_commission_transactions(
+    session: Session,
+    *,
+    representative_id: uuid.UUID | None = None,
+    state_event: str | None = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> Iterable[CommissionTransaction]:
+    """List commission transactions with optional filters."""
+    query = select(CommissionTransaction)
+    if representative_id is not None:
+        query = query.where(CommissionTransaction.representative_id == representative_id)
+    if state_event is not None:
+        query = query.where(CommissionTransaction.state_event == state_event)
+    query = query.order_by(CommissionTransaction.occurred_at.desc()).offset(skip).limit(limit)
+    return session.execute(query).scalars().all()
+
+
+def approve_commission(
+    session: Session,
+    transaction_id: uuid.UUID,
+    *,
+    actor_user_id: uuid.UUID,
+    note: str | None = None,
+) -> CommissionTransaction:
+    """Approve an ACCRUED commission transaction.
+
+    Creates a new APPROVED row in the append-only commission ledger
+    with the same ``signed_amount`` (positive).  The original ACCRUED
+    row is not modified.
+
+    Per SRS §10.3: "Commission status: ACCRUED -> APPROVED -> PAID."
+
+    Raises:
+        CommissionTransactionNotFoundError
+        InvalidCommissionStateError: if state_event is not ACCRUED.
+    """
+    txn = get_commission_transaction(session, transaction_id)
+
+    if txn.state_event != "ACCRUED":
+        raise InvalidCommissionStateError(txn.state_event, "APPROVED")
+
+    approved_txn = CommissionTransaction(
+        representative_id=txn.representative_id,
+        order_id=txn.order_id,
+        commission_config_id=txn.commission_config_id,
+        actor_user_id=actor_user_id,
+        sequence_no=_next_sequence_no(session, txn.representative_id),
+        signed_amount=txn.signed_amount,
+        state_event="APPROVED",
+        rate_applied=txn.rate_applied,
+        currency_id=txn.currency_id,
+    )
+    session.add(approved_txn)
+    session.flush()
+
+    audit_service.record(
+        session,
+        entity_type="commission_transaction",
+        entity_id=approved_txn.id,
+        action="CREATE",
+        actor_user_id=actor_user_id,
+        after={
+            "action": "approve_commission",
+            "original_txn_id": str(txn.id),
+            "representative_id": str(txn.representative_id),
+            "signed_amount": str(txn.signed_amount),
+            "state_event": "APPROVED",
+        },
+    )
+    session.flush()
+
+    return approved_txn
+
+
+def pay_commission(
+    session: Session,
+    transaction_id: uuid.UUID,
+    *,
+    actor_user_id: uuid.UUID,
+    note: str | None = None,
+) -> CommissionTransaction:
+    """Pay an APPROVED commission transaction.
+
+    Creates a new PAID row in the append-only commission ledger
+    with the same ``signed_amount`` (positive).  The original row
+    is not modified.
+
+    Per SRS §10.3: "Commission status: ACCRUED -> APPROVED -> PAID."
+
+    Raises:
+        CommissionTransactionNotFoundError
+        InvalidCommissionStateError: if state_event is not APPROVED.
+    """
+    txn = get_commission_transaction(session, transaction_id)
+
+    if txn.state_event != "APPROVED":
+        raise InvalidCommissionStateError(txn.state_event, "PAID")
+
+    paid_txn = CommissionTransaction(
+        representative_id=txn.representative_id,
+        order_id=txn.order_id,
+        commission_config_id=txn.commission_config_id,
+        actor_user_id=actor_user_id,
+        sequence_no=_next_sequence_no(session, txn.representative_id),
+        signed_amount=txn.signed_amount,
+        state_event="PAID",
+        rate_applied=txn.rate_applied,
+        currency_id=txn.currency_id,
+    )
+    session.add(paid_txn)
+    session.flush()
+
+    audit_service.record(
+        session,
+        entity_type="commission_transaction",
+        entity_id=paid_txn.id,
+        action="CREATE",
+        actor_user_id=actor_user_id,
+        after={
+            "action": "pay_commission",
+            "original_txn_id": str(txn.id),
+            "representative_id": str(txn.representative_id),
+            "signed_amount": str(txn.signed_amount),
+            "state_event": "PAID",
+        },
+    )
+    session.flush()
+
+    return paid_txn
+
+
+def clawback_commission(
+    session: Session,
+    transaction_id: uuid.UUID,
+    *,
+    actor_user_id: uuid.UUID,
+    note: str | None = None,
+) -> CommissionTransaction:
+    """Clawback an ACCRUED or APPROVED commission transaction.
+
+    Creates a new CLAWED_BACK row with a NEGATIVE ``signed_amount"
+    (per DB CHECK: ``state_event = 'CLAWED_BACK' implies signed_amount < 0``).
+    References the original transaction via ``reversal_of_id``.
+
+    Per SRS §6.6/BR-R3: "Commission clawback on returned Scenario-B sales."
+    Per SRS §10.3: Commission can be clawed back.
+
+    Raises:
+        CommissionTransactionNotFoundError
+        InvalidCommissionStateError: if state_event is not ACCRUED or APPROVED.
+    """
+    txn = get_commission_transaction(session, transaction_id)
+
+    if txn.state_event not in ("ACCRUED", "APPROVED"):
+        raise InvalidCommissionStateError(txn.state_event, "CLAWED_BACK")
+
+    clawback_txn = CommissionTransaction(
+        representative_id=txn.representative_id,
+        order_id=txn.order_id,
+        commission_config_id=txn.commission_config_id,
+        actor_user_id=actor_user_id,
+        sequence_no=_next_sequence_no(session, txn.representative_id),
+        signed_amount=-abs(txn.signed_amount),
+        state_event="CLAWED_BACK",
+        rate_applied=txn.rate_applied,
+        currency_id=txn.currency_id,
+        reversal_of_id=txn.id,
+    )
+    session.add(clawback_txn)
+    session.flush()
+
+    audit_service.record(
+        session,
+        entity_type="commission_transaction",
+        entity_id=clawback_txn.id,
+        action="CREATE",
+        actor_user_id=actor_user_id,
+        after={
+            "action": "clawback_commission",
+            "original_txn_id": str(txn.id),
+            "representative_id": str(txn.representative_id),
+            "signed_amount": str(-abs(txn.signed_amount)),
+            "state_event": "CLAWED_BACK",
+        },
+    )
+    session.flush()
+
+    return clawback_txn
+
+
+def get_representative_commission_balance(
+    session: Session,
+    representative_id: uuid.UUID,
+) -> decimal.Decimal:
+    """Return the net commission balance for a representative.
+
+    Computed as SUM(signed_amount) across all commission_transaction
+    rows for this representative.  This is the event-sourced balance
+    (same pattern as customer_ledger and inventory_transaction).
+    """
+    result = session.execute(
+        select(func.coalesce(func.sum(CommissionTransaction.signed_amount), 0))
+        .where(CommissionTransaction.representative_id == representative_id)
+    ).scalar_one()
+    return decimal.Decimal(result)
+
+
 __all__ = [
     "COMMISSION_MANAGE_PERMISSION_CODE",
     "CommissionAlreadyCalculatedError",
