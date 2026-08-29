@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
-from app.dependencies.rbac import require_permission
+from app.dependencies.rbac import _require_transfer_scope, require_permission
 from app.schemas.transfers import (
     TransferCreateRequest,
     TransferHistoryListResponse,
@@ -77,6 +77,37 @@ def create_transfer(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_transfer_manage),
 ) -> TransferResponse:
+    # Warehouse scope: verify the representative has authorization for at
+    # least one of the warehouses involved.  Reuse the transfer scope
+    # logic via a lightweight pre-check on warehouse assignments.
+    if current_user.representative_id is not None:
+        import datetime
+        from sqlalchemy import or_ as _or, select as _sel
+        from database.models.warehouse_assignment import WarehouseAssignment
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        has_warehouse = db.execute(
+            _sel(WarehouseAssignment.warehouse_id)
+            .where(
+                WarehouseAssignment.representative_id == current_user.representative_id,
+                WarehouseAssignment.effective_from <= now,
+                (
+                    WarehouseAssignment.effective_to.is_(None)
+                    | (WarehouseAssignment.effective_to > now)
+                ),
+                _or(
+                    WarehouseAssignment.warehouse_id == body.source_warehouse_id,
+                    WarehouseAssignment.warehouse_id == body.destination_warehouse_id,
+                ),
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        if has_warehouse is None:
+            from fastapi import HTTPException as _HTTP
+            raise _HTTP(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Transfer not found.",
+            )
     transfer = _run(
         stock_transfer_service.create_transfer,
         db,
@@ -103,18 +134,27 @@ def create_transfer(
 @router.get("", response_model=TransferListResponse, summary="List stock transfers")
 def list_transfers(
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(get_current_user),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     source_warehouse_id: uuid.UUID | None = Query(default=None),
     destination_warehouse_id: uuid.UUID | None = Query(default=None),
     state: str | None = Query(default=None),
 ) -> TransferListResponse:
+    # Server-side representative scope: representative-linked users
+    # can only see transfers involving their assigned warehouses.
+    # Admin/staff users (no representative link) see all transfers.
+    representative_id = (
+        current_user.representative_id
+        if current_user.representative_id is not None
+        else None
+    )
     transfers = stock_transfer_service.list_transfers(
         db,
         source_warehouse_id=source_warehouse_id,
         destination_warehouse_id=destination_warehouse_id,
         state=state,
+        representative_id=representative_id,
         skip=skip,
         limit=limit,
     )
@@ -125,8 +165,9 @@ def list_transfers(
 def read_transfer(
     transfer_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(get_current_user),
 ) -> TransferResponse:
+    _require_transfer_scope(transfer_id, current_user, db)
     transfer = _run(stock_transfer_service.get_transfer, db, transfer_id)
     lines = stock_transfer_service.list_transfer_lines(db, transfer.id)
     return _to_response(transfer, lines)
@@ -140,8 +181,9 @@ def read_transfer(
 def read_transfer_lines(
     transfer_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(get_current_user),
 ) -> TransferLineListResponse:
+    _require_transfer_scope(transfer_id, current_user, db)
     lines = _run(stock_transfer_service.list_transfer_lines, db, transfer_id)
     return TransferLineListResponse(items=[TransferLineResponse.model_validate(line) for line in lines])
 
@@ -154,8 +196,9 @@ def read_transfer_lines(
 def read_transfer_history(
     transfer_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(get_current_user),
 ) -> TransferHistoryListResponse:
+    _require_transfer_scope(transfer_id, current_user, db)
     history = _run(stock_transfer_service.get_transfer_history, db, transfer_id)
     return TransferHistoryListResponse(
         items=[TransferHistoryResponse.model_validate(h) for h in history]
@@ -173,6 +216,7 @@ def dispatch_transfer(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_transfer_manage),
 ) -> TransferResponse:
+    _require_transfer_scope(transfer_id, current_user, db)
     transfer = _run(
         stock_transfer_service.dispatch_transfer,
         db,
@@ -196,6 +240,7 @@ def receive_transfer(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_transfer_manage),
 ) -> TransferResponse:
+    _require_transfer_scope(transfer_id, current_user, db)
     transfer = _run(
         stock_transfer_service.receive_transfer,
         db,
@@ -219,6 +264,7 @@ def cancel_transfer(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_transfer_manage),
 ) -> TransferResponse:
+    _require_transfer_scope(transfer_id, current_user, db)
     transfer = _run(
         stock_transfer_service.cancel_transfer,
         db,

@@ -49,7 +49,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
-from app.dependencies.rbac import require_permission
+from app.dependencies.rbac import _require_customer_scope, require_permission
 from app.schemas.customer import (
     CustomerCreateRequest,
     CustomerListResponse,
@@ -130,6 +130,10 @@ def update_customer(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_customer_manage),
 ) -> CustomerResponse:
+    # Customer scope: verify representative is assigned to this customer
+    # BEFORE allowing any mutation.
+    _require_customer_scope(customer_id, current_user, db)
+
     try:
         customer = customer_service.update_customer(
             db,
@@ -159,6 +163,10 @@ def deactivate_customer(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_customer_manage),
 ) -> CustomerResponse:
+    # Customer scope: verify representative is assigned to this customer
+    # BEFORE allowing deactivation.
+    _require_customer_scope(customer_id, current_user, db)
+
     try:
         customer = customer_service.deactivate_customer(
             db, customer_id, updated_by=current_user.id

@@ -105,7 +105,7 @@ ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "RESERVED": frozenset({"FULFILLING", "CANCELLED"}),
     "BACKORDERED": frozenset({"PENDING_APPROVAL", "CANCELLED"}),
     "FULFILLING": frozenset({"SHIPPED", "PARTIALLY_FULFILLED", "CANCELLED"}),
-    "PARTIALLY_FULFILLED": frozenset({"SHIPPED", "RETURNED"}),
+    "PARTIALLY_FULFILLED": frozenset({"SHIPPED", "RETURNED", "CANCELLED"}),
     "SHIPPED": frozenset({"INVOICED", "RETURNED"}),
     "INVOICED": frozenset({"PAID"}),
     "PAID": frozenset({"COMPLETED"}),
@@ -117,7 +117,7 @@ ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
 #: States from which ``cancel_order`` is allowed -- "any state before
 #: SHIPPED" per the compiled agreement both source docs share.
 _CANCELLABLE_STATES = frozenset(
-    {"DRAFT", "PENDING_APPROVAL", "APPROVED", "RESERVED", "BACKORDERED", "FULFILLING"}
+    {"DRAFT", "PENDING_APPROVAL", "APPROVED", "RESERVED", "BACKORDERED", "FULFILLING", "PARTIALLY_FULFILLED"}
 )
 
 
@@ -425,6 +425,38 @@ def get_order_for_representative(
     return order
 
 
+def get_order_for_representative_by_number(
+    session: Session,
+    order_number: str,
+    representative_id: uuid.UUID,
+) -> Order:
+    """Return an order only if it belongs to the given representative,
+    looked up by ``order_number`` (not UUID).
+
+    Single authorization-aware query: ``order_number`` + ``representative_id``
+    in one WHERE clause to prevent IDOR and existence leakage.
+
+    Per ADR-007 §3: this function enforces cross-representative access
+    prohibition.  If the order belongs to a different representative,
+    it is treated as non-existent (same as ``get_order_for_representative``
+    which raises ``OrderAccessDeniedError``).
+
+    Raises:
+        OrderNotFoundError: no order with this number exists, or it
+          belongs to a different representative.
+    """
+    order = session.execute(
+        select(Order).where(
+            Order.order_number == order_number,
+            Order.representative_id == representative_id,
+            Order.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if order is None:
+        raise OrderNotFoundError(uuid.uuid4())  # UUID is synthetic here
+    return order
+
+
 def list_order_lines(session: Session, order_id: uuid.UUID) -> Iterable[OrderLine]:
     """Raises: OrderNotFoundError."""
 
@@ -550,6 +582,67 @@ def _active_reserved_quantity(
     return decimal.Decimal(session.execute(stmt).scalar_one())
 
 
+def _lock_inventory_for_balance(
+    session: Session,
+    *,
+    product_id: uuid.UUID,
+    warehouse_id: uuid.UUID,
+    lot_id: uuid.UUID | None,
+) -> None:
+    """Acquire row-level locks on all inventory transactions AND active
+    reservations that compose the balance for a given (product, warehouse, lot).
+
+    Uses ``SELECT ... FOR UPDATE`` on both tables to prevent concurrent
+    transactions from reading stale data while the caller checks
+    availability and creates a reservation. This closes the TOCTOU race
+    in ``reserve_order_stock()``: without this lock, two concurrent
+    transactions can both read the same available balance and both create
+    reservations, over-reserving stock.
+
+    The lock is held until the calling transaction commits or rolls back.
+    Rows are locked in ``sequence_no`` order to minimize deadlock risk
+    when multiple product-warehouse pairs are locked.
+
+    This function does NOT return the rows -- its sole purpose is to
+    acquire the locks.
+    """
+    from database.models.inventory_transaction import InventoryTransaction
+    from database.models.stock_reservation import StockReservation
+
+    # 1. Lock inventory transaction rows.
+    stmt = (
+        select(InventoryTransaction.id)
+        .where(
+            InventoryTransaction.warehouse_id == warehouse_id,
+            InventoryTransaction.product_id == product_id,
+        )
+        .with_for_update()
+        .order_by(InventoryTransaction.sequence_no)
+    )
+    if lot_id is not None:
+        stmt = stmt.where(InventoryTransaction.lot_id == lot_id)
+    else:
+        stmt = stmt.where(InventoryTransaction.lot_id.is_(None))
+    session.execute(stmt)
+
+    # 2. Acquire a PostgreSQL advisory lock keyed on
+    #    (product_id, warehouse_id, lot_id).  This blocks concurrent
+    #    transactions from reading the same reservation state, even when
+    #    no StockReservation rows exist yet (the TOCTOU edge case).
+    import hashlib as _hl
+    import struct as _struct
+    lock_key_raw = f"reserve:{product_id}:{warehouse_id}:{lot_id or 'null'}"
+    # Use first 8 bytes of SHA-256, reinterpret as signed 64-bit int.
+    h = _hl.sha256(lock_key_raw.encode()).digest()[:8]
+    lock_key = _struct.unpack_from(">q", h)[0]  # signed int64
+    session.execute(
+        __import__("sqlalchemy").text(
+            "SELECT pg_advisory_xact_lock(:key)"
+        ),
+        {"key": lock_key},
+    )
+
+
 def reserve_order_stock(session: Session, order_id: uuid.UUID, *, actor_user_id: uuid.UUID) -> Order:
     """``APPROVED -> RESERVED`` if every line's warehouse has enough
     unreserved stock; ``APPROVED -> BACKORDERED`` otherwise (see module
@@ -561,6 +654,14 @@ def reserve_order_stock(session: Session, order_id: uuid.UUID, *, actor_user_id:
     ``stock_reservation.py``'s per-(warehouse,product,lot) invariant,
     since a half-reserved order has no clean "which half" answer without
     a rule this codebase's docs don't state.
+
+    Concurrency safety: the inventory transaction rows that compose the
+    available balance are locked via ``SELECT ... FOR UPDATE`` before the
+    availability check. This prevents two concurrent transactions from
+    both reading the same available balance and both creating
+    reservations (the TOCTOU race). Lines are sorted by
+    ``(product_id, warehouse_id, lot_id)`` to ensure consistent lock
+    ordering across concurrent transactions, minimizing deadlock risk.
 
     Raises:
         OrderNotFoundError, InvalidOrderStateTransitionError.
@@ -574,6 +675,34 @@ def reserve_order_stock(session: Session, order_id: uuid.UUID, *, actor_user_id:
     lines = session.execute(
         select(OrderLine).where(OrderLine.order_id == order_id)
     ).scalars().all()
+
+    # Sort lines by (product_id, warehouse_id, lot_id) to ensure
+    # consistent lock ordering across concurrent transactions.
+    lines = sorted(
+        lines,
+        key=lambda l: (
+            l.product_id,
+            l.fulfillment_warehouse_id,
+            l.lot_id or uuid.UUID(int=0),
+        ),
+    )
+
+    # Lock inventory transaction rows for every product/warehouse/lot
+    # combination on this order BEFORE checking availability. This
+    # prevents the TOCTOU race where two concurrent transactions both
+    # read the same available balance.
+    seen: set[tuple] = set()
+    for line in lines:
+        key = (line.product_id, line.fulfillment_warehouse_id, line.lot_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        _lock_inventory_for_balance(
+            session,
+            product_id=line.product_id,
+            warehouse_id=line.fulfillment_warehouse_id,
+            lot_id=line.lot_id,
+        )
 
     shortfall = False
     for line in lines:
@@ -644,7 +773,25 @@ def resubmit_order(session: Session, order_id: uuid.UUID, *, actor_user_id: uuid
 
 
 def cancel_order(session: Session, order_id: uuid.UUID, *, actor_user_id: uuid.UUID, note: str | None = None) -> Order:
-    """Cancel from any state before SHIPPED, releasing any ACTIVE reservations.
+    """Cancel from any state before SHIPPED, releasing any ACTIVE reservations
+    and reversing any inventory already deducted by prior shipments.
+
+    For every order line with ``qty_shipped > 0``, the corresponding
+    un-reversed ``SALE_OUT`` inventory transaction is reversed via
+    ``inventory_service.reverse_transaction()`` (compensating ledger
+    entry — the original SALE_OUT remains immutable per the append-only
+    ledger design).  This ensures that cancelling a partially-shipped
+    order correctly restores physical stock.
+
+    DIRECT orders never post SALE_OUT transactions (per ``order.py``'s
+    documented rule), so the reversal query naturally returns nothing
+    for them.
+
+    Idempotency: if ``cancel_order`` is called twice, the second call
+    finds no un-reversed SALE_OUT transactions (``is_reversed`` flag)
+    and no ACTIVE reservations (already RELEASED), so it proceeds to
+    the state transition which is rejected because the order is already
+    ``CANCELLED``.
 
     Raises:
         OrderNotFoundError.
@@ -656,6 +803,7 @@ def cancel_order(session: Session, order_id: uuid.UUID, *, actor_user_id: uuid.U
     if order.state not in _CANCELLABLE_STATES:
         raise OrderNotCancellableError(order.state)
 
+    # Release any ACTIVE reservations.
     active_reservations = session.execute(
         select(StockReservation).where(
             StockReservation.order_id == order_id, StockReservation.state == "ACTIVE"
@@ -665,6 +813,32 @@ def cancel_order(session: Session, order_id: uuid.UUID, *, actor_user_id: uuid.U
         reservation.state = "RELEASED"
         reservation.updated_by = actor_user_id
     session.flush()
+
+    # Reverse inventory already deducted by prior shipments.
+    # For every line with qty_shipped > 0, find the un-reversed SALE_OUT
+    # transaction and create a compensating REVERSAL entry.
+    from database.models.inventory_transaction import InventoryTransaction
+
+    shipped_lines = session.execute(
+        select(OrderLine).where(
+            OrderLine.order_id == order_id,
+            OrderLine.qty_shipped > 0,
+        )
+    ).scalars().all()
+    for line in shipped_lines:
+        sale_out_txns = session.execute(
+            select(InventoryTransaction).where(
+                InventoryTransaction.reference_type == "order_line",
+                InventoryTransaction.reference_id == line.id,
+                InventoryTransaction.is_reversed == False,  # noqa: E712
+            )
+        ).scalars().all()
+        for txn in sale_out_txns:
+            inventory_service.reverse_transaction(
+                session,
+                txn.id,
+                actor_user_id=actor_user_id,
+            )
 
     return _transition(session, order, "CANCELLED", actor_user_id=actor_user_id, note=note)
 
@@ -845,6 +1019,8 @@ __all__ = [
     "cancel_order",
     "create_order",
     "get_order",
+    "get_order_for_representative",
+    "get_order_for_representative_by_number",
     "get_order_history",
     "list_order_lines",
     "list_orders",

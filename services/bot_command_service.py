@@ -424,6 +424,9 @@ def _handle_builtin(
             "/order <id> — Show order details",
             "/inventory — Check stock levels",
             "/customers — List your customers",
+            "/transfers — List your transfers",
+            "/transfer <transfer_number> — Show transfer details",
+            "/transfer-history <transfer_number> — Show transfer history",
             "",
             "Write commands (require BOT_WRITE):",
             "/create-order <customer> <product> <qty> [mode] — Create a new order",
@@ -431,6 +434,13 @@ def _handle_builtin(
             "/return <order> <product> <qty> <reason> [text] — Request a product return",
             "/dispatch <transfer_number> — Dispatch a stock transfer",
             "/confirm <transfer_number> — Confirm receipt of a stock transfer",
+            "/cancel-transfer <transfer_number> — Cancel a draft transfer",
+            "/submit <order_number> — Submit a draft order for approval",
+            "/cancel-order <order_number> — Cancel an order",
+            "/backorder-resubmit <order_number> — Resubmit a backordered order",
+            "/start-fulfillment <order_number> — Start fulfillment for a reserved order",
+            "/ship <order_number> <sku> <qty> — Record a shipment",
+            "/order-history <order_number> — View order status history",
             "",
             "Type /help at any time to see this list.",
         ]
@@ -747,6 +757,121 @@ def handle_customers(session: Session, user: AppUser, rep: Representative, args:
     return "\n".join(lines)
 
 
+@_register_command("transfers")
+def handle_transfers(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """List transfers visible to the representative.
+
+    Shows both outbound (source warehouse = rep's) and inbound
+    (destination warehouse = rep's) transfers.
+    Uses ``transfers_cmd.list_visible_transfers()`` which enforces
+    warehouse scope at the service layer.
+    """
+    limit = 10
+    transfers = list_visible_transfers(session, representative_id=rep.id, limit=limit)
+
+    if not transfers:
+        return "No transfers found."
+
+    lines = ["Transfers:"]
+    for t in transfers:
+        direction_tag = "OUT" if t["direction"] == "OUTBOUND" else "IN"
+        lines.append(
+            f"  {t['transfer_number']} | {direction_tag} | "
+            f"{t['source_code']} -> {t['dest_code']} | {t['state']}"
+        )
+    if len(transfers) == limit:
+        lines.append(f"\n(Showing last {limit} transfers)")
+    return "\n".join(lines)
+
+
+@_register_command("transfer")
+def handle_transfer(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Show details for a specific transfer by transfer number.
+
+    Uses ``transfers_cmd.get_visible_transfer()`` which enforces
+    warehouse scope at the service layer in a single authorization-aware
+    query (prevents IDOR).
+    """
+    transfer_number = args.strip()
+    if not transfer_number:
+        return "Usage: /transfer <transfer_number>"
+
+    detail = get_visible_transfer(
+        session, representative_id=rep.id, transfer_number=transfer_number,
+    )
+
+    if detail is None:
+        return f"Transfer '{transfer_number}' not found."
+
+    direction_tag = "OUTBOUND" if detail["direction"] == "OUTBOUND" else "INBOUND"
+    lines = [
+        f"Transfer: {detail['transfer_number']}",
+        f"Direction: {direction_tag}",
+        f"Status: {detail['state']}",
+        f"Source: {detail['source_code']}",
+        f"Destination: {detail['dest_code']}",
+    ]
+
+    if detail["requested_at"]:
+        lines.append(f"Created: {detail['requested_at'].strftime('%Y-%m-%d %H:%M')}")
+    if detail["dispatched_at"]:
+        lines.append(f"Dispatched: {detail['dispatched_at'].strftime('%Y-%m-%d %H:%M')}")
+    if detail["received_at"]:
+        lines.append(f"Received: {detail['received_at'].strftime('%Y-%m-%d %H:%M')}")
+
+    if detail["lines"]:
+        lines.append("")
+        lines.append("Items:")
+        for i, tl in enumerate(detail["lines"], 1):
+            lines.append(f"  {i}. {tl['product']} | {tl['qty_requested']} | dispatched: {tl['qty_dispatched']} | received: {tl['qty_received']}")
+
+    return "\n".join(lines)
+
+
+@_register_command("transfer-history")
+def handle_transfer_history(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Show the state-change history for a specific transfer.
+
+    Uses ``transfers_cmd.get_visible_transfer_history()`` which enforces
+    warehouse scope at the service layer in a single authorization-aware
+    query.
+    """
+    transfer_number = args.strip()
+    if not transfer_number:
+        return "Usage: /transfer-history <transfer_number>"
+
+    result = get_visible_transfer_history(
+        session, representative_id=rep.id, transfer_number=transfer_number,
+    )
+
+    if result is None:
+        return f"Transfer '{transfer_number}' not found."
+
+    direction_tag = "OUTBOUND" if result["direction"] == "OUTBOUND" else "INBOUND"
+    lines = [
+        f"Transfer History: {result['transfer_number']}",
+        f"Direction: {direction_tag}",
+        f"Current Status: {result['state']}",
+        "",
+    ]
+
+    history = result["history"]
+    if not history:
+        lines.append("No history records found.")
+    else:
+        for i, h in enumerate(history, 1):
+            lines.append(f"{i}. {h['from_state']} -> {h['to_state']}")
+            actor_str = h['actor']
+            date_str = h['event_at'].strftime('%Y-%m-%d %H:%M') if h['event_at'] else '???'
+            lines.append(f"   Actor: {actor_str}")
+            lines.append(f"   Date: {date_str}")
+            if h['note']:
+                lines.append(f"   Note: {h['note']}")
+            lines.append("")
+
+    return "\n".join(lines).rstrip()
+
+
 # ---------------------------------------------------------------------------
 # Write command handlers (v2) — Tier 3 with approval
 # ---------------------------------------------------------------------------
@@ -770,6 +895,32 @@ from services.bot_commands.confirm_cmd import (
 from services.bot_commands.dispatch_cmd import (
     validate_and_build_payload as _validate_dispatch,
     execute_dispatch as _execute_dispatch,
+)
+from services.bot_commands.transfers_cmd import list_visible_transfers, get_visible_transfer, get_visible_transfer_history
+from services.bot_commands.cancel_transfer_cmd import (
+    validate_and_build_payload as _validate_cancel_transfer,
+    execute_cancel_transfer as _execute_cancel_transfer,
+)
+from services.bot_commands.submit_cmd import (
+    validate_and_build_payload as _validate_submit,
+    execute_submit as _execute_submit,
+)
+from services.bot_commands.cancel_order_cmd import (
+    validate_and_build_payload as _validate_cancel_order,
+    execute_cancel_order as _execute_cancel_order,
+)
+from services.bot_commands.order_history_cmd import get_order_history_display
+from services.bot_commands.backorder_resubmit_cmd import (
+    validate_and_build_payload as _validate_backorder_resubmit,
+    execute_backorder_resubmit as _execute_backorder_resubmit,
+)
+from services.bot_commands.start_fulfillment_cmd import (
+    validate_and_build_payload as _validate_start_fulfillment,
+    execute_start_fulfillment as _execute_start_fulfillment,
+)
+from services.bot_commands.ship_cmd import (
+    validate_and_build_payload as _validate_ship,
+    execute_ship as _execute_ship,
 )
 
 
@@ -880,6 +1031,133 @@ def handle_dispatch(session: Session, user: AppUser, rep: Representative, args: 
         return payload
     # Tier 2: execute directly, no approval.
     return _execute_dispatch(session, payload, actor_user_id=user.id)
+
+
+@_register_command(
+    "cancel-transfer",
+    required_permission=BOT_WRITE_PERMISSION,
+    approval_required=False,
+)
+def handle_cancel_transfer(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Validate and execute /cancel-transfer.
+
+    Syntax: /cancel-transfer <transfer_number>
+
+    Tier 2 command: BOT_WRITE required, no approval.
+    Source warehouse scope enforced. Only DRAFT transfers can be cancelled.
+    """
+    payload = _validate_cancel_transfer(session, rep=rep, user=user, args=args)
+    if isinstance(payload, str):
+        return payload
+    return _execute_cancel_transfer(session, payload, actor_user_id=user.id)
+
+
+@_register_command(
+    "submit",
+    required_permission=BOT_WRITE_PERMISSION,
+    approval_required=False,
+)
+def handle_submit(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Validate and execute /submit (order DRAFT → PENDING_APPROVAL).
+
+    Syntax: /submit <order_number>
+
+    Tier 2 command: BOT_WRITE required, no approval.
+    Executes directly via canonical order_service.submit_order().
+    """
+    payload = _validate_submit(session, rep=rep, user=user, args=args)
+    if isinstance(payload, str):
+        return payload
+    # Tier 2: execute directly, no approval.
+    return _execute_submit(session, payload, actor_user_id=user.id)
+
+
+@_register_command(
+    "cancel-order",
+    required_permission=BOT_WRITE_PERMISSION,
+    approval_required=False,
+)
+def handle_cancel_order(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Validate and execute /cancel-order.
+
+    Syntax: /cancel-order <order_number> [reason]
+
+    Tier 2 command: BOT_WRITE required, no approval.
+    Executes directly via canonical order_service.cancel_order().
+    """
+    payload = _validate_cancel_order(session, rep=rep, user=user, args=args)
+    if isinstance(payload, str):
+        return payload
+    return _execute_cancel_order(session, payload, actor_user_id=user.id)
+
+
+@_register_command(
+    "backorder-resubmit",
+    required_permission=BOT_WRITE_PERMISSION,
+    approval_required=False,
+)
+def handle_backorder_resubmit(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Validate and execute /backorder-resubmit.
+
+    Syntax: /backorder-resubmit <order_number>
+
+    Tier 2 command: BOT_WRITE required, no approval.
+    Executes directly via canonical order_service.resubmit_order().
+    """
+    payload = _validate_backorder_resubmit(session, rep=rep, user=user, args=args)
+    if isinstance(payload, str):
+        return payload
+    return _execute_backorder_resubmit(session, payload, actor_user_id=user.id)
+
+
+@_register_command(
+    "start-fulfillment",
+    required_permission=BOT_WRITE_PERMISSION,
+    approval_required=False,
+)
+def handle_start_fulfillment(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Validate and execute /start-fulfillment.
+
+    Syntax: /start-fulfillment <order_number>
+
+    Tier 2 command: BOT_WRITE required, no approval.
+    Executes directly via canonical order_service.start_fulfillment().
+    """
+    payload = _validate_start_fulfillment(session, rep=rep, user=user, args=args)
+    if isinstance(payload, str):
+        return payload
+    return _execute_start_fulfillment(session, payload, actor_user_id=user.id)
+
+
+@_register_command(
+    "ship",
+    required_permission=BOT_WRITE_PERMISSION,
+    approval_required=False,
+)
+def handle_ship(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Validate and execute /ship.
+
+    Syntax: /ship <order_number> <product_sku> <quantity>
+
+    Tier 2 command: BOT_WRITE required, no approval.
+    Executes directly via canonical order_service.ship_order().
+    """
+    payload = _validate_ship(session, rep=rep, user=user, args=args)
+    if isinstance(payload, str):
+        return payload
+    return _execute_ship(session, payload, actor_user_id=user.id)
+
+
+@_register_command("order-history", required_permission=BOT_QUERY_PERMISSION)
+def handle_order_history(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """Show the state-transition history for a specific order.
+
+    Syntax: /order-history <order_number>
+
+    Tier 1 command: BOT_QUERY required, read-only.
+    Uses the existing order_status_history via order_history_cmd.
+    """
+    return get_order_history_display(session, rep=rep, user=user, args=args)
 
 
 # Register the executors for deferred execution after approval.

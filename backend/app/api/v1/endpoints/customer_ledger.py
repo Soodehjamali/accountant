@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
-from app.dependencies.rbac import require_permission
+from app.dependencies.rbac import _require_customer_scope, require_permission
 from app.schemas.customer_ledger import (
     CustomerBalanceResponse,
     CustomerLedgerEntryListResponse,
@@ -62,11 +62,9 @@ def list_customer_ledger(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
 ) -> CustomerLedgerEntryListResponse:
-    # Verify customer exists -- return 404, not a silent empty list.
-    try:
-        customer_service.get_customer(db, customer_id)
-    except customer_service.CustomerNotFoundError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    # Customer scope: verify representative owns this customer BEFORE
+    # returning any ledger data.
+    _require_customer_scope(customer_id, _current_user, db)
     items = customer_ledger_service.list_entries(
         db,
         customer_id,
@@ -89,11 +87,9 @@ def get_customer_balance(
     db: Session = Depends(get_db),
     _current_user: AppUser = Depends(_require_customer_ledger_view),
 ) -> CustomerBalanceResponse:
-    # Verify customer exists -- return 404, not a silent zero.
-    try:
-        customer_service.get_customer(db, customer_id)
-    except customer_service.CustomerNotFoundError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    # Customer scope: verify representative owns this customer BEFORE
+    # returning any financial balance data.
+    _require_customer_scope(customer_id, _current_user, db)
     balance = customer_ledger_service.get_balance(db, customer_id)
     return CustomerBalanceResponse(
         customer_id=customer_id,
@@ -111,6 +107,10 @@ def reconcile_customer_ledger(
     db: Session = Depends(get_db),
     _current_user: AppUser = Depends(_require_customer_ledger_manage),
 ) -> CustomerLedgerReconcileResponse:
+    # Customer scope: verify representative owns this customer BEFORE
+    # performing any financial reconciliation.
+    _require_customer_scope(customer_id, _current_user, db)
+
     try:
         ledger = customer_ledger_service.reconcile_customer_ledger(db, customer_id)
     except customer_ledger_service.CustomerLedgerNotFoundError as exc:

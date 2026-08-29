@@ -180,6 +180,28 @@ def _get_invoice_or_raise(session: Session, invoice_id: uuid.UUID) -> Invoice:
     return invoice
 
 
+def _get_invoice_for_update(session: Session, invoice_id: uuid.UUID) -> Invoice:
+    """Load an invoice with a row-level lock (``SELECT ... FOR UPDATE``).
+
+    Used by ``record_payment`` to prevent the TOCTOU race where two
+    concurrent payment transactions read the same stale ``amount_paid``
+    and both pass the balance check.  The row lock serializes concurrent
+    payments on the same invoice: the second transaction blocks until
+    the first commits, then reads the updated balance.
+
+    Raises:
+        InvoiceNotFoundError: invoice not found or soft-deleted.
+    """
+    invoice = session.execute(
+        select(Invoice)
+        .where(Invoice.id == invoice_id, Invoice.deleted_at.is_(None))
+        .with_for_update()
+    ).scalar_one_or_none()
+    if invoice is None:
+        raise InvoiceNotFoundError(invoice_id)
+    return invoice
+
+
 def _generate_invoice_number() -> str:
     """A simple, collision-safe business key: date-stamped + random suffix."""
     today = datetime.date.today().strftime("%Y%m%d")
@@ -352,15 +374,32 @@ def list_invoices(
     *,
     customer_id: uuid.UUID | None = None,
     state: str | None = None,
+    representative_id: uuid.UUID | None = None,
     skip: int = 0,
     limit: int = 50,
 ) -> Iterable[Invoice]:
-    """List non-deleted invoices, optionally filtered."""
+    """List non-deleted invoices, optionally filtered.
+
+    ``representative_id``: when set, only returns invoices linked (via
+    ``InvoiceOrder → Order``) to at least one order belonging to the
+    given representative.  This is the list-scope filtering counterpart
+    of the single-invoice ``_require_invoice_scope`` check used by the
+    GET-by-id endpoint.
+    """
     query = select(Invoice).where(Invoice.deleted_at.is_(None))
     if customer_id is not None:
         query = query.where(Invoice.customer_id == customer_id)
     if state is not None:
         query = query.where(Invoice.state == state)
+    if representative_id is not None:
+        # Subquery: invoices linked to at least one order for this representative.
+        scoped_invoice_ids = (
+            select(InvoiceOrder.invoice_id)
+            .join(Order, InvoiceOrder.order_id == Order.id)
+            .where(Order.representative_id == representative_id)
+            .distinct()
+        )
+        query = query.where(Invoice.id.in_(scoped_invoice_ids))
     query = query.order_by(Invoice.created_at.desc()).offset(skip).limit(limit)
     return session.execute(query).scalars().all()
 
@@ -503,7 +542,7 @@ def record_payment(
     Raises:
         InvoiceNotFoundError, PaymentExceedsBalanceError.
     """
-    invoice = _get_invoice_or_raise(session, invoice_id)
+    invoice = _get_invoice_for_update(session, invoice_id)
     if invoice.state not in ("ISSUED", "PARTIALLY_PAID"):
         raise InvalidInvoiceStateTransitionError(invoice.state, "PARTIALLY_PAID")
 

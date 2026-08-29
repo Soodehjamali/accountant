@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
-from app.dependencies.rbac import require_permission
+from app.dependencies.rbac import _require_customer_scope, _require_invoice_scope, _require_payment_scope, require_permission
 from app.schemas.payments import (
     PaymentAllocationListResponse,
     PaymentAllocationResponse,
@@ -41,12 +41,19 @@ _ERROR_STATUS_MAP: tuple[tuple[type[Exception], int], ...] = (
     (payment_service.InvoiceNotPayableError, status.HTTP_409_CONFLICT),
 )
 
+from sqlalchemy.orm.exc import StaleDataError  # noqa: E402
+
 
 def _run(func, /, *args, **kwargs):
     """Call a payment_service function, translating its documented
     exceptions into the matching HTTPException via ``_ERROR_STATUS_MAP``."""
     try:
         return func(*args, **kwargs)
+    except StaleDataError:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Invoice was modified concurrently. Please retry.",
+        )
     except Exception as exc:
         for exc_type, http_status in _ERROR_STATUS_MAP:
             if isinstance(exc, exc_type):
@@ -74,6 +81,10 @@ def create_payment(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_payment_manage),
 ) -> PaymentResponse:
+    # Customer scope: verify the referenced customer is currently assigned
+    # to the caller's representative (or that the caller is admin/staff).
+    # Must happen before payment creation to prevent side effects.
+    _require_customer_scope(body.customer_id, current_user, db)
     payment = _run(
         payment_service.record_payment,
         db,
@@ -101,8 +112,11 @@ def create_payment(
 def read_payment(
     payment_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(get_current_user),
 ) -> PaymentResponse:
+    # Payment scope: verify the payment's customer is assigned to the
+    # caller's representative.
+    _require_payment_scope(payment_id, current_user, db)
     payment = _run(payment_service.get_payment, db, payment_id)
     allocations = payment_service.list_allocations_for_payment(db, payment.id)
     return _to_response(payment, allocations)
@@ -116,8 +130,10 @@ def read_payment(
 def read_invoice_payments(
     invoice_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(get_current_user),
 ) -> PaymentListResponse:
+    # Invoice scope: verify the invoice belongs to the caller's representative.
+    _require_invoice_scope(invoice_id, current_user, db)
     payments = payment_service.list_payments_for_invoice(db, invoice_id)
     return PaymentListResponse(items=[_to_response(p) for p in payments])
 

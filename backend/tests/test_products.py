@@ -4,6 +4,10 @@ Skipped automatically if ``DATABASE_URL`` is not configured in the test
 environment (same convention as ``test_auth.py``/``test_db_health.py``) --
 these exercise the real ``services.product_service`` against a real
 database, not a mock.
+
+Updated: ``POST /products`` now requires ``PRODUCT_MANAGE`` permission.
+The ``auth_headers`` fixture grants this permission via a fresh role,
+matching the pattern in ``test_customers.py``.
 """
 
 from __future__ import annotations
@@ -15,39 +19,60 @@ import pytest
 from fastapi.testclient import TestClient
 
 from database.session import get_session_factory
-from services import auth_service, bootstrap_service
+from services import auth_service, bootstrap_service, rbac_service
 
 requires_database = pytest.mark.skipif(
     not os.environ.get("DATABASE_URL"),
     reason="DATABASE_URL is not set; skipping live DB product tests",
 )
 
+PRODUCT_MANAGE = "PRODUCT_MANAGE"
+
 
 @pytest.fixture()
 def auth_headers() -> dict[str, str]:
-    """Create a fresh, ``ACTIVE`` ``AppUser``, log in, and return auth headers.
+    """Create a fresh ``ACTIVE`` ``AppUser`` with ``PRODUCT_MANAGE``,
+    log in, and return auth headers.
 
-    Every product endpoint requires an authenticated caller, so tests need
-    a real bearer token -- obtained here the same way
-    ``test_auth.py``'s ``seeded_user`` fixture creates its user, plus an
-    extra login round-trip through the real ``/auth/login`` endpoint logic
-    (via ``security.create_access_token`` directly would also work, but
-    going through ``auth_service.authenticate_user`` keeps this fixture
-    honest about what a real client would present).
+    ``POST /products`` now requires ``PRODUCT_MANAGE`` permission, so
+    every test that creates products needs this fixture.
     """
 
     session = get_session_factory()()
     try:
+        bootstrap_service.ensure_rbac_bootstrap(session)
         system_user = bootstrap_service.ensure_system_user(session)
         suffix = uuid.uuid4().hex[:8]
         username = f"test_products_{suffix}"
         password = "correct-horse-battery-staple"
-        auth_service.create_user(
+        new_user = auth_service.create_user(
             session,
             username=username,
             email=f"{username}@example.invalid",
             password=password,
             created_by=system_user.id,
+        )
+
+        role_code = f"PRODUCT_MANAGER_{suffix}"
+        rbac_service.create_role(
+            session, code=role_code, name="Product Manager (test)", created_by=system_user.id
+        )
+        try:
+            rbac_service.create_permission(
+                session,
+                code=PRODUCT_MANAGE,
+                name="Manage products",
+                resource="product",
+                action="manage",
+                created_by=system_user.id,
+            )
+        except rbac_service.DuplicatePermissionCodeError:
+            pass
+        rbac_service.grant_permission_to_role(
+            session, role_code=role_code, permission_code=PRODUCT_MANAGE
+        )
+        rbac_service.assign_role(
+            session, user_id=new_user.id, role_code=role_code, assigned_by=system_user.id
         )
         session.commit()
     finally:

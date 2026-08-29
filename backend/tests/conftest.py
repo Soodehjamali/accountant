@@ -12,10 +12,15 @@ import sys
 from pathlib import Path
 
 import pytest
+from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = BACKEND_DIR.parent
+
+# Load .env from the repository root so DATABASE_URL (and other secrets)
+# are available to database-dependent tests.
+load_dotenv(REPO_ROOT / ".env")
 
 for path in (str(REPO_ROOT), str(BACKEND_DIR)):
     if path not in sys.path:

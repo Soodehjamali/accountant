@@ -343,10 +343,24 @@ def list_transfers(
     source_warehouse_id: uuid.UUID | None = None,
     destination_warehouse_id: uuid.UUID | None = None,
     state: str | None = None,
+    representative_id: uuid.UUID | None = None,
     skip: int = 0,
     limit: int = 50,
 ) -> Iterable[StockTransfer]:
-    """List non-deleted stock transfers, optionally filtered."""
+    """List non-deleted stock transfers, optionally filtered.
+
+    ``representative_id``: when set, only returns transfers where at
+    least one of the warehouses (source OR destination) is actively
+    assigned to the given representative via ``WarehouseAssignment``.
+    This is the list-scope filtering counterpart of the single-transfer
+    ``_require_transfer_scope`` check used by the GET-by-id endpoint.
+    """
+    import datetime as _dt
+
+    from sqlalchemy import or_ as _or
+
+    from database.models.warehouse_assignment import WarehouseAssignment
+
     query = select(StockTransfer).where(StockTransfer.deleted_at.is_(None))
     if source_warehouse_id is not None:
         query = query.where(StockTransfer.source_warehouse_id == source_warehouse_id)
@@ -354,6 +368,28 @@ def list_transfers(
         query = query.where(StockTransfer.destination_warehouse_id == destination_warehouse_id)
     if state is not None:
         query = query.where(StockTransfer.state == state)
+    if representative_id is not None:
+        # Subquery: warehouses actively assigned to this representative.
+        now = _dt.datetime.now(_dt.timezone.utc)
+        assigned_warehouse_ids = (
+            select(WarehouseAssignment.warehouse_id)
+            .where(
+                WarehouseAssignment.representative_id == representative_id,
+                WarehouseAssignment.effective_from <= now,
+                (
+                    WarehouseAssignment.effective_to.is_(None)
+                    | (WarehouseAssignment.effective_to > now)
+                ),
+            )
+            .distinct()
+        )
+        # Transfer is visible if source OR destination warehouse is assigned.
+        query = query.where(
+            _or(
+                StockTransfer.source_warehouse_id.in_(assigned_warehouse_ids),
+                StockTransfer.destination_warehouse_id.in_(assigned_warehouse_ids),
+            )
+        )
     query = query.order_by(StockTransfer.requested_at.desc()).offset(skip).limit(limit)
     return session.execute(query).scalars().all()
 

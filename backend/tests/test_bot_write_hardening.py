@@ -899,7 +899,7 @@ class TestAuditHistoryRecords:
             history = session.execute(
                 select(ApprovalHistory).where(
                     ApprovalHistory.approval_request_id == request.id
-                )
+                ).order_by(ApprovalHistory.created_at)
             ).scalars().all()
             assert len(history) == 2
             assert history[1].to_status == "REJECTED"

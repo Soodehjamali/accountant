@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
-from app.dependencies.rbac import require_permission
+from app.dependencies.rbac import _require_order_scope, require_permission
 from app.schemas.commissions import (
     CommissionCalculateRequest,
     CommissionConfigCreateRequest,
@@ -36,6 +36,7 @@ _require_commission_manage = require_permission(
 #: Map service-layer exceptions to the HTTP status they should surface.
 _ERROR_STATUS_MAP: tuple[tuple[type[Exception], int], ...] = (
     (commission_service.CommissionConfigNotFoundError, status.HTTP_404_NOT_FOUND),
+    (commission_service.CommissionAlreadyCalculatedError, status.HTTP_409_CONFLICT),
     (commission_service.NoCommissionConfigFoundError, status.HTTP_404_NOT_FOUND),
     (commission_service.OrderNotCompletedError, status.HTTP_409_CONFLICT),
 )
@@ -107,6 +108,12 @@ def calculate_commission(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_commission_manage),
 ) -> CommissionTransactionResponse:
+    # Order scope: verify the referenced order belongs to the caller's
+    # representative (or that the caller is admin/staff).  Uses the
+    # existing _require_order_scope helper which raises 404 for
+    # out-of-scope or non-existent orders, preventing existence leakage.
+    # Must happen before commission service to prevent side effects.
+    _require_order_scope(order_id, current_user, db)
     txn = _run(
         commission_service.calculate_commission_for_order,
         db,

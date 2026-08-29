@@ -6,11 +6,14 @@ project's layering rule (``services/__init__.py``'s docstring): business
 rules live in ``services/``, never duplicated here. Mirrors the pattern
 already established by ``app/api/v1/endpoints/auth.py``.
 
-All three endpoints require an authenticated caller (``get_current_user``).
-There is no RBAC/permission system wired up yet (see
-``services/auth_service.py``'s own scope note on this), so today "any
-logged-in user" is the only authorization boundary available -- a future
-RBAC milestone will narrow ``create_product`` to specific roles.
+Mutating endpoints (``POST /products``) are gated behind the
+``PRODUCT_MANAGE`` permission (via ``require_permission``, mirroring how
+``endpoints/customers.py`` gates behind ``CUSTOMER_MANAGE``); reads
+require only an authenticated caller, matching the convention every other
+domain follows for read endpoints.
+
+Products are master/catalog data (global, not representative-scoped), so
+no representative scope enforcement is applied.
 """
 
 from __future__ import annotations
@@ -20,11 +23,15 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
+from app.dependencies.rbac import require_permission
 from app.schemas.product import ProductCreateRequest, ProductListResponse, ProductResponse
 from database.models.app_user import AppUser
 from services import product_service
 
 router = APIRouter(prefix="/products", tags=["products"])
+
+PRODUCT_MANAGE_PERMISSION_CODE = "PRODUCT_MANAGE"
+_require_product_manage = require_permission(PRODUCT_MANAGE_PERMISSION_CODE)
 
 
 @router.post(
@@ -36,7 +43,7 @@ router = APIRouter(prefix="/products", tags=["products"])
 def create_product(
     body: ProductCreateRequest,
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(_require_product_manage),
 ) -> ProductResponse:
     """Create a new, ``ACTIVE`` product.
 
@@ -54,7 +61,7 @@ def create_product(
             description=body.description,
             base_uom_id=body.base_uom_id,
             category_id=body.category_id,
-            created_by=_current_user.id,
+            created_by=current_user.id,
         )
     except product_service.DuplicateSkuError as exc:
         raise HTTPException(

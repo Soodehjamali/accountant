@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
-from app.dependencies.rbac import require_permission
+from app.dependencies.rbac import _require_credit_note_scope, _require_invoice_scope, require_permission
 from app.schemas.credit_notes import (
     CreditNoteCreateRequest,
     CreditNoteLineResponse,
@@ -74,6 +74,10 @@ def create_credit_note(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_credit_note_manage),
 ) -> CreditNoteResponse:
+    # Invoice scope: verify the referenced invoice belongs to the caller's
+    # representative (or that the caller is admin/staff).  Must happen
+    # before credit note creation to prevent side effects.
+    _require_invoice_scope(body.invoice_id, current_user, db)
     credit_note = _run(
         credit_note_service.create_credit_note,
         db,
@@ -99,8 +103,11 @@ def create_credit_note(
 def read_credit_note(
     credit_note_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(get_current_user),
 ) -> CreditNoteResponse:
+    # Credit note scope: verify the credit note's linked invoice belongs
+    # to the caller's representative.
+    _require_credit_note_scope(credit_note_id, current_user, db)
     credit_note = _run(credit_note_service.get_credit_note, db, credit_note_id)
     lines = credit_note_service.list_credit_note_lines(db, credit_note.id)
     return _to_response(credit_note, lines)
@@ -117,6 +124,7 @@ def issue_credit_note(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_credit_note_manage),
 ) -> CreditNoteResponse:
+    _require_credit_note_scope(credit_note_id, current_user, db)
     credit_note = _run(
         credit_note_service.issue_credit_note,
         db,
@@ -140,6 +148,7 @@ def apply_credit_note(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_credit_note_manage),
 ) -> CreditNoteResponse:
+    _require_credit_note_scope(credit_note_id, current_user, db)
     # Validate state BEFORE calling the service, so we get a 409
     # (not 501) when the credit note isn't in ISSUED state.
     cn = _run(credit_note_service.get_credit_note, db, credit_note_id)
@@ -185,6 +194,7 @@ def void_credit_note(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_credit_note_manage),
 ) -> CreditNoteResponse:
+    _require_credit_note_scope(credit_note_id, current_user, db)
     credit_note = _run(
         credit_note_service.void_credit_note,
         db,

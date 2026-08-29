@@ -35,9 +35,11 @@ from app.api.v1.endpoints import (
     orders,
     payments,
     products,
+    representatives,
     rbac,
     reports,
     transfers,
+    warehouses,
 )
 
 api_router = APIRouter()
@@ -55,6 +57,8 @@ api_router.include_router(transfers.router)
 api_router.include_router(payments.router)
 api_router.include_router(commissions.router)
 api_router.include_router(credit_notes.router)
+api_router.include_router(representatives.router)
+api_router.include_router(warehouses.router)
 api_router.include_router(kpi_snapshot.router)
 api_router.include_router(reports.router)
 

@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
+from app.dependencies.rbac import _require_warehouse_scope
 from app.schemas.inventory import (
     BalanceResponse,
     PostTransactionRequest,
@@ -56,6 +57,10 @@ def post_transaction(
     current ledger state, the same reasoning ``products.py`` uses for a
     duplicate SKU.
     """
+
+    # Warehouse scope: verify the representative has authorization for
+    # the target warehouse before posting any ledger transaction.
+    _require_warehouse_scope(body.warehouse_id, current_user, db)
 
     try:
         transaction = inventory_service.post_transaction(
@@ -107,6 +112,22 @@ def reverse_transaction(
     reversal itself would drive the balance negative.
     """
 
+    # Warehouse scope: load the transaction to determine its warehouse,
+    # then verify the representative has authorization for that warehouse
+    # BEFORE invoking the reverse service.
+    from sqlalchemy import select as _sel
+    from database.models.inventory_transaction import InventoryTransaction as _IT
+
+    _txn = db.execute(
+        _sel(_IT).where(_IT.id == transaction_id)
+    ).scalar_one_or_none()
+    if _txn is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transaction not found.",
+        )
+    _require_warehouse_scope(_txn.warehouse_id, current_user, db)
+
     try:
         reversal = inventory_service.reverse_transaction(
             db,
@@ -144,6 +165,10 @@ def get_balance(
     always calculated from immutable InventoryTransaction") -- never a
     cached column.
     """
+
+    # Warehouse scope: verify the representative has authorization for
+    # the queried warehouse before reading balances.
+    _require_warehouse_scope(warehouse_id, _current_user, db)
 
     balance = inventory_service.get_balance(
         db, warehouse_id=warehouse_id, product_id=product_id, lot_id=lot_id

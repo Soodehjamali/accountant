@@ -1,24 +1,14 @@
 """Sales Order endpoints: ``/api/v1/orders``.
 
-REWRITTEN and now wired in. The previous version of this module was left
-deliberately unwired (see ``services/order_service.py``'s and
-``09_Decisions.md`` ADR-004's own history) pending a written, approved
-Order state-transition graph -- that graph now exists (ADR-004, accepted)
-and ``services/order_service.py`` implements it, so this module wraps
-that service the same way ``endpoints/customers.py`` wraps
-``customer_service`` / ``endpoints/rbac.py`` wraps ``rbac_service``:
-thin endpoints, all business logic in the service layer.
-
 Every mutating endpoint is gated behind ``ORDER_MANAGE`` via
 ``require_permission``, except the approval step itself, which is gated
-behind the separate ``ORDER_APPROVE`` permission (see
-``services/order_service.py``'s module docstring for why approval is
-split out). Reads require only an authenticated caller, matching the
-"authenticated only for now" convention every other domain endpoint in
-this codebase documents. Neither permission is auto-seeded beyond
-``ADMIN`` (see ``services/bootstrap_service.py``'s
-``_ADMIN_DEFAULT_PERMISSIONS``) -- an RBAC admin must grant them to any
-other role via the existing ``/api/v1/rbac`` endpoints.
+behind the separate ``ORDER_APPROVE`` permission.
+
+Representative scope:
+All order-by-id endpoints (read and write) enforce representative scope
+via ``require_order_scope``.  Representative-linked users can only
+access orders belonging to their representative.  Admin/staff users with
+no representative link can access any order.
 """
 
 from __future__ import annotations
@@ -30,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
-from app.dependencies.rbac import require_permission
+from app.dependencies.rbac import require_order_scope, require_permission
 from app.schemas.orders import (
     OrderCreateRequest,
     OrderHistoryResponse,
@@ -43,6 +33,7 @@ from app.schemas.orders import (
     ShipOrderRequest,
 )
 from database.models.app_user import AppUser
+from database.models.order import Order
 from services import order_service
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -51,8 +42,7 @@ _require_order_manage = require_permission(order_service.ORDER_MANAGE_PERMISSION
 _require_order_approve = require_permission(order_service.ORDER_APPROVE_PERMISSION_CODE)
 
 #: Every exception order_service's transition functions can raise, mapped
-#: to the HTTP status it should surface as. A single table instead of a
-#: repeated try/except ladder per endpoint -- see _run() below.
+#: to the HTTP status it should surface as.
 _ERROR_STATUS_MAP: tuple[tuple[type[Exception], int], ...] = (
     (order_service.OrderNotFoundError, status.HTTP_404_NOT_FOUND),
     (order_service.OrderNotCancellableError, status.HTTP_409_CONFLICT),
@@ -63,7 +53,7 @@ _ERROR_STATUS_MAP: tuple[tuple[type[Exception], int], ...] = (
 
 
 def _run(func, /, *args, **kwargs):
-    """Call a order_service function, translating its documented
+    """Call an order_service function, translating its documented
     exceptions into the matching HTTPException via ``_ERROR_STATUS_MAP``."""
 
     try:
@@ -95,6 +85,10 @@ def _line_input_from_request(line) -> order_service.OrderLineInput:
     )
 
 
+# -----------------------------------------------------------------------
+# Create
+# -----------------------------------------------------------------------
+
 @router.post(
     "", response_model=OrderResponse, status_code=status.HTTP_201_CREATED, summary="Create a draft order"
 )
@@ -103,6 +97,17 @@ def create_order(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_order_manage),
 ) -> OrderResponse:
+    # Scope: representative-linked users may only create orders for
+    # their own representative.  Admin/staff users (no representative
+    # link) may create orders for any representative.
+    if (
+        current_user.representative_id is not None
+        and body.representative_id != current_user.representative_id
+    ):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail="Cannot create orders for a different representative.",
+        )
     try:
         order = order_service.create_order(
             db,
@@ -131,16 +136,26 @@ def create_order(
     return _to_response(order, lines)
 
 
+# -----------------------------------------------------------------------
+# Read
+# -----------------------------------------------------------------------
+
 @router.get("", response_model=OrderListResponse, summary="List orders")
 def list_orders(
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(get_current_user),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     customer_id: uuid.UUID | None = Query(default=None),
     representative_id: uuid.UUID | None = Query(default=None),
     state: str | None = Query(default=None),
 ) -> OrderListResponse:
+    # Server-side representative scope: representative-linked users
+    # can only see their own orders, regardless of any client-supplied
+    # representative_id parameter.  Admin/staff users (no representative
+    # link) retain the existing optional-filter behavior.
+    if current_user.representative_id is not None:
+        representative_id = current_user.representative_id
     orders = order_service.list_orders(
         db,
         customer_id=customer_id,
@@ -154,22 +169,19 @@ def list_orders(
 
 @router.get("/{order_id}", response_model=OrderResponse, summary="Get an order and its lines")
 def read_order(
-    order_id: uuid.UUID,
+    order: Order = Depends(require_order_scope),
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
 ) -> OrderResponse:
-    order = _run(order_service.get_order, db, order_id)
-    lines = order_service.list_order_lines(db, order_id)
+    lines = order_service.list_order_lines(db, order.id)
     return _to_response(order, lines)
 
 
 @router.get("/{order_id}/lines", response_model=OrderLineListResponse, summary="List an order's lines")
 def read_order_lines(
-    order_id: uuid.UUID,
+    order: Order = Depends(require_order_scope),
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
 ) -> OrderLineListResponse:
-    lines = _run(order_service.list_order_lines, db, order_id)
+    lines = order_service.list_order_lines(db, order.id)
     return OrderLineListResponse(items=[OrderLineResponse.model_validate(line) for line in lines])
 
 
@@ -179,22 +191,25 @@ def read_order_lines(
     summary="Get an order's state-transition history",
 )
 def read_order_history(
-    order_id: uuid.UUID,
+    order: Order = Depends(require_order_scope),
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
 ) -> OrderHistoryResponse:
-    history = _run(order_service.get_order_history, db, order_id)
+    history = order_service.get_order_history(db, order.id)
     return OrderHistoryResponse(items=[OrderStatusHistoryResponse.model_validate(h) for h in history])
 
 
+# -----------------------------------------------------------------------
+# State transitions (all require ORDER_MANAGE + representative scope)
+# -----------------------------------------------------------------------
+
 @router.post("/{order_id}/submit", response_model=OrderResponse, summary="DRAFT -> PENDING_APPROVAL")
 def submit_order(
-    order_id: uuid.UUID,
     body: OrderTransitionRequest,
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_order_manage),
+    order: Order = Depends(require_order_scope),
 ) -> OrderResponse:
-    order = _run(order_service.submit_order, db, order_id, actor_user_id=current_user.id, note=body.note)
+    order = _run(order_service.submit_order, db, order.id, actor_user_id=current_user.id, note=body.note)
     db.commit()
     db.refresh(order)
     return _to_response(order)
@@ -202,12 +217,12 @@ def submit_order(
 
 @router.post("/{order_id}/approve", response_model=OrderResponse, summary="PENDING_APPROVAL -> APPROVED")
 def approve_order(
-    order_id: uuid.UUID,
     body: OrderTransitionRequest,
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_order_approve),
+    order: Order = Depends(require_order_scope),
 ) -> OrderResponse:
-    order = _run(order_service.approve_order, db, order_id, actor_user_id=current_user.id, note=body.note)
+    order = _run(order_service.approve_order, db, order.id, actor_user_id=current_user.id, note=body.note)
     db.commit()
     db.refresh(order)
     return _to_response(order)
@@ -219,11 +234,11 @@ def approve_order(
     summary="APPROVED -> RESERVED (or BACKORDERED if stock is insufficient)",
 )
 def reserve_order(
-    order_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_order_manage),
+    order: Order = Depends(require_order_scope),
 ) -> OrderResponse:
-    order = _run(order_service.reserve_order_stock, db, order_id, actor_user_id=current_user.id)
+    order = _run(order_service.reserve_order_stock, db, order.id, actor_user_id=current_user.id)
     db.commit()
     db.refresh(order)
     return _to_response(order)
@@ -231,12 +246,12 @@ def reserve_order(
 
 @router.post("/{order_id}/resubmit", response_model=OrderResponse, summary="BACKORDERED -> PENDING_APPROVAL")
 def resubmit_order(
-    order_id: uuid.UUID,
     body: OrderTransitionRequest,
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_order_manage),
+    order: Order = Depends(require_order_scope),
 ) -> OrderResponse:
-    order = _run(order_service.resubmit_order, db, order_id, actor_user_id=current_user.id, note=body.note)
+    order = _run(order_service.resubmit_order, db, order.id, actor_user_id=current_user.id, note=body.note)
     db.commit()
     db.refresh(order)
     return _to_response(order)
@@ -244,12 +259,12 @@ def resubmit_order(
 
 @router.post("/{order_id}/cancel", response_model=OrderResponse, summary="-> CANCELLED (any state before SHIPPED)")
 def cancel_order(
-    order_id: uuid.UUID,
     body: OrderTransitionRequest,
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_order_manage),
+    order: Order = Depends(require_order_scope),
 ) -> OrderResponse:
-    order = _run(order_service.cancel_order, db, order_id, actor_user_id=current_user.id, note=body.note)
+    order = _run(order_service.cancel_order, db, order.id, actor_user_id=current_user.id, note=body.note)
     db.commit()
     db.refresh(order)
     return _to_response(order)
@@ -257,11 +272,11 @@ def cancel_order(
 
 @router.post("/{order_id}/start-fulfillment", response_model=OrderResponse, summary="RESERVED -> FULFILLING")
 def start_fulfillment(
-    order_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_order_manage),
+    order: Order = Depends(require_order_scope),
 ) -> OrderResponse:
-    order = _run(order_service.start_fulfillment, db, order_id, actor_user_id=current_user.id)
+    order = _run(order_service.start_fulfillment, db, order.id, actor_user_id=current_user.id)
     db.commit()
     db.refresh(order)
     return _to_response(order)
@@ -273,17 +288,17 @@ def start_fulfillment(
     summary="Record a shipment -> SHIPPED (or PARTIALLY_FULFILLED)",
 )
 def ship_order(
-    order_id: uuid.UUID,
     body: ShipOrderRequest,
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_order_manage),
+    order: Order = Depends(require_order_scope),
 ) -> OrderResponse:
     shipments = [
         order_service.ShipmentInput(order_line_id=line.order_line_id, quantity=line.quantity)
         for line in body.lines
     ]
     order = _run(
-        order_service.ship_order, db, order_id, shipments=shipments, actor_user_id=current_user.id
+        order_service.ship_order, db, order.id, shipments=shipments, actor_user_id=current_user.id
     )
     db.commit()
     db.refresh(order)
@@ -292,12 +307,12 @@ def ship_order(
 
 @router.post("/{order_id}/return", response_model=OrderResponse, summary="SHIPPED/PARTIALLY_FULFILLED -> RETURNED")
 def record_return(
-    order_id: uuid.UUID,
     body: OrderTransitionRequest,
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_order_manage),
+    order: Order = Depends(require_order_scope),
 ) -> OrderResponse:
-    order = _run(order_service.record_return, db, order_id, actor_user_id=current_user.id, note=body.note)
+    order = _run(order_service.record_return, db, order.id, actor_user_id=current_user.id, note=body.note)
     db.commit()
     db.refresh(order)
     return _to_response(order)
@@ -305,12 +320,12 @@ def record_return(
 
 @router.post("/{order_id}/invoice", response_model=OrderResponse, summary="SHIPPED -> INVOICED")
 def mark_invoiced(
-    order_id: uuid.UUID,
     body: OrderTransitionRequest,
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_order_manage),
+    order: Order = Depends(require_order_scope),
 ) -> OrderResponse:
-    order = _run(order_service.mark_invoiced, db, order_id, actor_user_id=current_user.id, note=body.note)
+    order = _run(order_service.mark_invoiced, db, order.id, actor_user_id=current_user.id, note=body.note)
     db.commit()
     db.refresh(order)
     return _to_response(order)
@@ -318,12 +333,12 @@ def mark_invoiced(
 
 @router.post("/{order_id}/pay", response_model=OrderResponse, summary="INVOICED -> PAID")
 def mark_paid(
-    order_id: uuid.UUID,
     body: OrderTransitionRequest,
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_order_manage),
+    order: Order = Depends(require_order_scope),
 ) -> OrderResponse:
-    order = _run(order_service.mark_paid, db, order_id, actor_user_id=current_user.id, note=body.note)
+    order = _run(order_service.mark_paid, db, order.id, actor_user_id=current_user.id, note=body.note)
     db.commit()
     db.refresh(order)
     return _to_response(order)
@@ -331,12 +346,12 @@ def mark_paid(
 
 @router.post("/{order_id}/complete", response_model=OrderResponse, summary="PAID -> COMPLETED")
 def mark_completed(
-    order_id: uuid.UUID,
     body: OrderTransitionRequest,
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_order_manage),
+    order: Order = Depends(require_order_scope),
 ) -> OrderResponse:
-    order = _run(order_service.mark_completed, db, order_id, actor_user_id=current_user.id, note=body.note)
+    order = _run(order_service.mark_completed, db, order.id, actor_user_id=current_user.id, note=body.note)
     db.commit()
     db.refresh(order)
     return _to_response(order)

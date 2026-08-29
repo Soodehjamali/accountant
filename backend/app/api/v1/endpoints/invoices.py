@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
-from app.dependencies.rbac import require_permission
+from app.dependencies.rbac import _require_invoice_scope, _require_order_scope, require_permission
 from app.schemas.invoices import (
     InvoiceCreateFromOrderRequest,
     InvoiceHistoryListResponse,
@@ -47,12 +47,19 @@ _ERROR_STATUS_MAP: tuple[tuple[type[Exception], int], ...] = (
     (invoice_service.VoidOnlyFromDraftError, status.HTTP_409_CONFLICT),
 )
 
+from sqlalchemy.orm.exc import StaleDataError  # noqa: E402
+
 
 def _run(func, /, *args, **kwargs):
     """Call an invoice_service function, translating its documented
     exceptions into the matching HTTPException via ``_ERROR_STATUS_MAP``."""
     try:
         return func(*args, **kwargs)
+    except StaleDataError:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Invoice was modified concurrently. Please retry.",
+        )
     except Exception as exc:
         for exc_type, http_status in _ERROR_STATUS_MAP:
             if isinstance(exc, exc_type):
@@ -78,6 +85,11 @@ def create_from_order(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_invoice_manage),
 ) -> InvoiceResponse:
+    # Order scope: verify the referenced order belongs to the caller's
+    # representative (or that the caller is admin/staff).  Uses the
+    # existing _require_order_scope helper which raises 404 for
+    # out-of-scope or non-existent orders, preventing existence leakage.
+    _require_order_scope(body.order_id, current_user, db)
     invoice = _run(
         invoice_service.create_invoice_from_order,
         db,
@@ -95,14 +107,23 @@ def create_from_order(
 @router.get("", response_model=InvoiceListResponse, summary="List invoices")
 def list_invoices(
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(get_current_user),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     customer_id: uuid.UUID | None = Query(default=None),
     state: str | None = Query(default=None),
 ) -> InvoiceListResponse:
+    # Server-side representative scope: representative-linked users
+    # can only see invoices linked to their own orders.  Admin/staff
+    # users (no representative link) see all invoices.
+    representative_id = (
+        current_user.representative_id
+        if current_user.representative_id is not None
+        else None
+    )
     invoices = invoice_service.list_invoices(
-        db, customer_id=customer_id, state=state, skip=skip, limit=limit
+        db, customer_id=customer_id, state=state,
+        representative_id=representative_id, skip=skip, limit=limit,
     )
     return InvoiceListResponse(items=[_to_response(inv) for inv in invoices])
 
@@ -111,8 +132,11 @@ def list_invoices(
 def read_invoice(
     invoice_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(get_current_user),
 ) -> InvoiceResponse:
+    # Invoice scope: verify the invoice is linked to an order belonging
+    # to the caller's representative (or that the caller is admin/staff).
+    _require_invoice_scope(invoice_id, current_user, db)
     invoice = _run(invoice_service.get_invoice, db, invoice_id)
     lines = invoice_service.list_invoice_lines(db, invoice_id)
     return _to_response(invoice, lines)
@@ -126,8 +150,9 @@ def read_invoice(
 def read_invoice_lines(
     invoice_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(get_current_user),
 ) -> InvoiceLineListResponse:
+    _require_invoice_scope(invoice_id, current_user, db)
     lines = _run(invoice_service.list_invoice_lines, db, invoice_id)
     return InvoiceLineListResponse(items=[InvoiceLineResponse.model_validate(line) for line in lines])
 
@@ -140,8 +165,9 @@ def read_invoice_lines(
 def read_invoice_history(
     invoice_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(get_current_user),
 ) -> InvoiceHistoryListResponse:
+    _require_invoice_scope(invoice_id, current_user, db)
     history = _run(invoice_service.get_invoice_history, db, invoice_id)
     return InvoiceHistoryListResponse(
         items=[InvoiceHistoryResponse.model_validate(h) for h in history]
@@ -159,6 +185,7 @@ def issue_invoice(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_invoice_manage),
 ) -> InvoiceResponse:
+    _require_invoice_scope(invoice_id, current_user, db)
     invoice = _run(
         invoice_service.issue_invoice,
         db,
@@ -183,6 +210,7 @@ def record_payment(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_invoice_manage),
 ) -> InvoiceResponse:
+    _require_invoice_scope(invoice_id, current_user, db)
     invoice = _run(
         invoice_service.record_payment,
         db,
@@ -207,6 +235,7 @@ def void_invoice(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(_require_invoice_manage),
 ) -> InvoiceResponse:
+    _require_invoice_scope(invoice_id, current_user, db)
     invoice = _run(
         invoice_service.void_invoice,
         db,

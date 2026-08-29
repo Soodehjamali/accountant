@@ -57,6 +57,16 @@ class OrderNotCompletedError(ValueError):
         self.state = state
 
 
+class CommissionAlreadyCalculatedError(ValueError):
+    """Raised when commission has already been calculated for an order."""
+
+    def __init__(self, order_id: uuid.UUID) -> None:
+        super().__init__(
+            f"Commission has already been calculated for order '{order_id}'."
+        )
+        self.order_id = order_id
+
+
 class NoCommissionConfigFoundError(LookupError):
     """Raised when no commission_config matches the given order parameters."""
 
@@ -260,6 +270,7 @@ def calculate_commission_for_order(
 
     Raises:
         OrderNotCompletedError: order is not in COMPLETED state.
+        CommissionAlreadyCalculatedError: commission already exists for this order.
         NoCommissionConfigFoundError: no matching commission config.
     """
     order = session.execute(
@@ -271,6 +282,11 @@ def calculate_commission_for_order(
 
     if order.state != "COMPLETED":
         raise OrderNotCompletedError(order_id, order.state)
+
+    # Idempotency: reject if commission already calculated for this order.
+    existing = get_order_commission(session, order_id)
+    if existing is not None:
+        raise CommissionAlreadyCalculatedError(order_id)
 
     config = resolve_commission_rate(
         session,
@@ -326,6 +342,7 @@ def get_order_commission(
 
 __all__ = [
     "COMMISSION_MANAGE_PERMISSION_CODE",
+    "CommissionAlreadyCalculatedError",
     "CommissionConfigNotFoundError",
     "NoCommissionConfigFoundError",
     "OrderNotCompletedError",

@@ -96,6 +96,26 @@ def _get_invoice_or_raise(session: Session, invoice_id: uuid.UUID) -> Invoice:
     return invoice
 
 
+def _get_invoice_for_update(session: Session, invoice_id: uuid.UUID) -> Invoice:
+    """Load an invoice with a row-level lock (``SELECT ... FOR UPDATE``).
+
+    Prevents the TOCTOU race where two concurrent payment transactions
+    read the same stale ``balance_due`` and both pass the allocation
+    check.  The row lock serializes concurrent payments on the same
+    invoice.
+
+    Raises:
+        InvoiceNotFoundError: invoice not found.
+    """
+    invoice = session.execute(
+        select(Invoice).where(Invoice.id == invoice_id).with_for_update()
+    ).scalar_one_or_none()
+    if invoice is None:
+        from services.invoice_service import InvoiceNotFoundError as Exc
+        raise Exc(invoice_id)
+    return invoice
+
+
 def record_payment(
     session: Session,
     *,
@@ -155,11 +175,14 @@ def record_payment(
         raise PaymentExceedsTotalAllocationsError(total_allocated, amount)
 
     # Validate allocations before writing anything.
+    # Lock each invoice row with SELECT ... FOR UPDATE to prevent the
+    # TOCTOU race where two concurrent payment transactions read the same
+    # stale balance_due and both pass the allocation check.
     invoices: list[tuple[Invoice, decimal.Decimal]] = []
     for invoice_id, alloc_amount in allocations:
         if alloc_amount <= 0:
             raise ValueError(f"Allocation amount for invoice '{invoice_id}' must be positive.")
-        invoice = _get_invoice_or_raise(session, invoice_id)
+        invoice = _get_invoice_for_update(session, invoice_id)
         if invoice.state not in ("ISSUED", "PARTIALLY_PAID"):
             raise InvoiceNotPayableError(invoice_id, invoice.state)
         if alloc_amount > invoice.balance_due:
