@@ -201,6 +201,7 @@ def order_fixtures() -> dict[str, str]:
             "warehouse_id": str(warehouse.id),
             "product_id": str(product.id),
             "price_history_id": str(price_history.id),
+            "price_list_id": str(price_list.id),
             "representative_id": str(representative.id),
             "customer_id": str(customer.id),
         }
@@ -213,6 +214,7 @@ def _order_payload(fx: dict[str, str], qty: str = "5") -> dict:
         "customer_id": fx["customer_id"],
         "representative_id": fx["representative_id"],
         "currency_id": fx["currency_id"],
+        "price_list_id": fx["price_list_id"],
         "order_type": "LOCAL",
         "fulfillment_mode": "REP_LOCAL",
         "sales_channel": "OFFICE",

@@ -75,6 +75,7 @@ from database.models.order import Order
 from database.models.order_line import OrderLine
 from database.models.order_status_history import OrderStatusHistory
 from database.models.price_history import PriceHistory
+from database.models.price_list import PriceList
 from database.models.product import Product
 from database.models.representative import Representative
 from database.models.stock_reservation import StockReservation
@@ -173,6 +174,37 @@ class PriceHistoryMismatchError(ValueError):
         self.product_id = product_id
 
 
+class PriceListNotFoundError(LookupError):
+    """Raised when a referenced ``price_list_id`` has no matching row."""
+
+    def __init__(self, price_list_id: uuid.UUID) -> None:
+        super().__init__(f"No price list with id '{price_list_id}' exists.")
+        self.price_list_id = price_list_id
+
+
+class PriceListNotActiveError(ValueError):
+    """Raised when the order's price list is inactive."""
+
+    def __init__(self, price_list_id: uuid.UUID) -> None:
+        super().__init__(
+            f"Price list '{price_list_id}' is inactive. "
+            "Cannot create orders with an inactive price list."
+        )
+        self.price_list_id = price_list_id
+
+
+class NoCurrentPriceError(LookupError):
+    """Raised when no currently valid price exists for a product in the price list."""
+
+    def __init__(self, product_id: uuid.UUID, price_list_id: uuid.UUID) -> None:
+        super().__init__(
+            f"No currently valid price for product '{product_id}' "
+            f"in price list '{price_list_id}'."
+        )
+        self.product_id = product_id
+        self.price_list_id = price_list_id
+
+
 class EmptyOrderError(ValueError):
     """Raised when ``create_order`` is called with zero lines."""
 
@@ -245,14 +277,19 @@ def _generate_order_number() -> str:
 
 
 class OrderLineInput:
-    """Plain input bundle for one line of ``create_order``. Not an ORM model."""
+    """Plain input bundle for one line of ``create_order``. Not an ORM model.
+
+    ``price_history_id`` is optional.  When provided, it is used as an
+    explicit price source.  When omitted, the service auto-resolves
+    the current price from the order's price list.
+    """
 
     def __init__(
         self,
         *,
         product_id: uuid.UUID,
         fulfillment_warehouse_id: uuid.UUID,
-        price_history_id: uuid.UUID,
+        price_history_id: uuid.UUID | None = None,
         qty_ordered: decimal.Decimal,
         fulfillment_mode: str,
         lot_id: uuid.UUID | None = None,
@@ -275,6 +312,7 @@ def create_order(
     customer_id: uuid.UUID,
     representative_id: uuid.UUID,
     currency_id: uuid.UUID,
+    price_list_id: uuid.UUID,
     order_type: str,
     fulfillment_mode: str,
     sales_channel: str,
@@ -287,6 +325,13 @@ def create_order(
     transition (there is no "from" state for a brand-new row), so no
     ``order_status_history`` row is written here -- see module docstring.
 
+    Pricing resolution:
+        Each line's unit price is resolved from the order's ``price_list_id``
+        using ``price_list_service.get_current_price()``.  If a line already
+        provides an explicit ``price_history_id``, that entry is used instead
+        (the caller resolved pricing externally).  Once resolved, the
+        ``price_history_id`` and ``unit_price`` are frozen on the order line.
+
     Raises:
         CustomerNotFoundError: no active customer with this id.
         RepresentativeNotFoundError: no representative with this id.
@@ -294,6 +339,9 @@ def create_order(
         ProductNotFoundError: a line references an unknown product.
         PriceHistoryMismatchError: a line's ``price_history_id`` doesn't
           resolve, or belongs to a different product than the line's own.
+        PriceListNotFoundError: the order's ``price_list_id`` doesn't exist.
+        PriceListNotActiveError: the order's price list is inactive.
+        NoCurrentPriceError: no currently valid price for a product.
     """
 
     lines = list(lines)
@@ -310,6 +358,15 @@ def create_order(
     if representative is None or representative.deleted_at is not None:
         raise RepresentativeNotFoundError(representative_id)
 
+    # Validate the price list exists and is active.
+    price_list = session.execute(
+        select(PriceList).where(PriceList.id == price_list_id)
+    ).scalar_one_or_none()
+    if price_list is None:
+        raise PriceListNotFoundError(price_list_id)
+    if not price_list.is_active:
+        raise PriceListNotActiveError(price_list_id)
+
     order_lines: list[OrderLine] = []
     subtotal = decimal.Decimal("0")
     discount_total = decimal.Decimal("0")
@@ -321,14 +378,28 @@ def create_order(
         if product is None:
             raise ProductNotFoundError(line_in.product_id)
 
-        price_history = session.execute(
-            select(PriceHistory).where(
-                PriceHistory.id == line_in.price_history_id,
-                PriceHistory.product_id == line_in.product_id,
+        # Resolve the price for this line.
+        # If an explicit price_history_id was provided, use it directly.
+        # Otherwise, auto-resolve from the order's price list.
+        if line_in.price_history_id is not None:
+            price_history = session.execute(
+                select(PriceHistory).where(
+                    PriceHistory.id == line_in.price_history_id,
+                    PriceHistory.product_id == line_in.product_id,
+                )
+            ).scalar_one_or_none()
+            if price_history is None:
+                raise PriceHistoryMismatchError(line_in.price_history_id, line_in.product_id)
+        else:
+            from services import price_list_service
+
+            price_history = price_list_service.get_current_price(
+                session,
+                product_id=line_in.product_id,
+                price_list_id=price_list_id,
             )
-        ).scalar_one_or_none()
-        if price_history is None:
-            raise PriceHistoryMismatchError(line_in.price_history_id, line_in.product_id)
+            if price_history is None:
+                raise NoCurrentPriceError(line_in.product_id, price_list_id)
 
         unit_price = decimal.Decimal(price_history.unit_price)
         line_total = (unit_price * line_in.qty_ordered) - line_in.discount_value
@@ -342,7 +413,7 @@ def create_order(
                 unit_price=unit_price,
                 discount_value=line_in.discount_value,
                 discount_id=line_in.discount_id,
-                price_history_id=line_in.price_history_id,
+                price_history_id=price_history.id,
                 line_total=line_total,
                 fulfillment_mode=line_in.fulfillment_mode,
                 created_by=created_by,
@@ -363,6 +434,7 @@ def create_order(
         fulfillment_mode=fulfillment_mode,
         state="DRAFT",
         currency_id=currency_id,
+        price_list_id=price_list_id,
         subtotal=subtotal,
         discount_total=discount_total,
         tax_total=decimal.Decimal("0"),
@@ -1006,11 +1078,14 @@ __all__ = [
     "CustomerNotFoundError",
     "EmptyOrderError",
     "InvalidOrderStateTransitionError",
+    "NoCurrentPriceError",
     "OrderLineInput",
     "OrderLineNotFoundError",
     "OrderNotCancellableError",
     "OrderNotFoundError",
     "PriceHistoryMismatchError",
+    "PriceListNotActiveError",
+    "PriceListNotFoundError",
     "ProductNotFoundError",
     "RepresentativeNotFoundError",
     "ShipmentInput",

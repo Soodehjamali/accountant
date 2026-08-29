@@ -117,11 +117,14 @@ def _create_shipped_order(session, system_user, rep, customer, currency, warehou
     """Create a fully shipped order for the given representative."""
     from services import order_service
 
+    price_list = session.get(PriceList, price_history.price_list_id)
+
     order = order_service.create_order(
         session,
         customer_id=customer.id,
         representative_id=rep.id,
         currency_id=currency.id,
+        price_list_id=price_list.id,
         order_type="LOCAL",
         fulfillment_mode="REP_LOCAL",
         sales_channel="OFFICE",

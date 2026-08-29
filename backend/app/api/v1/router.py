@@ -34,6 +34,7 @@ from app.api.v1.endpoints import (
     kpi_snapshot,
     orders,
     payments,
+    price_lists,
     products,
     representatives,
     rbac,
@@ -59,6 +60,7 @@ api_router.include_router(commissions.router)
 api_router.include_router(credit_notes.router)
 api_router.include_router(representatives.router)
 api_router.include_router(warehouses.router)
+api_router.include_router(price_lists.router)
 api_router.include_router(kpi_snapshot.router)
 api_router.include_router(reports.router)
 

@@ -102,7 +102,9 @@ def validate_and_build_payload(
         return "No warehouse assigned to you. Cannot create order."
     warehouse = warehouses[0]
 
-    # 5. Resolve price for this product.
+    # 5. Resolve price for this product via its price list.
+    from services import price_list_service
+
     price_entry = session.execute(
         sa_select(PriceHistory).where(
             PriceHistory.product_id == product.id,
@@ -127,6 +129,7 @@ def validate_and_build_payload(
         "warehouse_id": str(warehouse.id),
         "warehouse_code": warehouse.code,
         "price_history_id": str(price_entry.id),
+        "price_list_id": str(price_entry.price_list_id),
         "currency_id": str(customer.currency_id),
         "representative_id": str(rep.id),
         "sales_channel": "BOT_TELEGRAM",
@@ -157,6 +160,7 @@ def execute_create_order(
     fulfillment_mode = payload["fulfillment_mode"]
     warehouse_id = uuid.UUID(payload["warehouse_id"])
     price_history_id = uuid.UUID(payload["price_history_id"])
+    price_list_id = uuid.UUID(payload["price_list_id"])
     currency_id = uuid.UUID(payload["currency_id"])
     representative_id = uuid.UUID(payload["representative_id"])
     sales_channel = payload["sales_channel"]
@@ -168,6 +172,7 @@ def execute_create_order(
         customer_id=customer_id,
         representative_id=representative_id,
         currency_id=currency_id,
+        price_list_id=price_list_id,
         order_type=order_type,
         fulfillment_mode=fulfillment_mode,
         sales_channel=sales_channel,

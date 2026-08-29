@@ -366,6 +366,21 @@ class Order(Base, UniversalAuditColumns):
         nullable=True,
     )
 
+    # --------------------------------------------------------- price_list_id
+    # NOT NULL FK to price_list — determines which price list is used
+    # to resolve product prices for this order's lines. Set at order
+    # creation time and immutable thereafter (the order's pricing
+    # provenance). Every order must reference a price list so that
+    # order lines can resolve their unit prices deterministically.
+    price_list_id: Mapped[uuid.UUID] = mapped_column(
+        _SAUuid(as_uuid=True),
+        ForeignKey(
+            "price_list.id",
+            name=fk_index_name("order", "price_list_id", "price_list"),
+        ),
+        nullable=False,
+    )
+
     # -------------------------------------------------------------- deleted_at
     # See module docstring's "Soft-delete tension" section: 07_DATABASE_
     # SPEC.md (primary authority for this table) supports soft delete;
@@ -425,6 +440,10 @@ class Order(Base, UniversalAuditColumns):
         Index(
             idx_index_name("order", "state"),
             "state",
+        ),
+        Index(
+            idx_index_name("order", "price_list_id"),
+            "price_list_id",
         ),
         # Composite indexes -- named dashboard/queue query patterns.
         Index(

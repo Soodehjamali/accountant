@@ -331,6 +331,7 @@ def _create_shipped_order(
         customer_id=customer.id,
         representative_id=rep.id,
         currency_id=currency.id,
+        price_list_id=price_list.id,
         order_type="LOCAL",
         fulfillment_mode="REP_LOCAL",
         sales_channel="OFFICE",
@@ -670,7 +671,8 @@ class TestReturnValidation:
 
             order = create_order(
                 session, customer_id=customer.id, representative_id=rep.id,
-                currency_id=currency.id, order_type="LOCAL",
+                currency_id=currency.id, price_list_id=price_list.id,
+                order_type="LOCAL",
                 fulfillment_mode="REP_LOCAL", sales_channel="OFFICE",
                 lines=[OrderLineInput(
                     product_id=product.id, fulfillment_warehouse_id=warehouse.id,

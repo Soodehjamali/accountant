@@ -258,6 +258,7 @@ def _create_draft_order(session, su, rep, product, *, qty=10):
         customer_id=customer.id,
         representative_id=rep.id,
         currency_id=currency.id,
+        price_list_id=price_list.id,
         order_type="LOCAL",
         fulfillment_mode="REP_LOCAL",
         sales_channel="OFFICE",

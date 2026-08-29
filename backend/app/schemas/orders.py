@@ -48,14 +48,15 @@ class OrderState(str, Enum):
 class OrderLineCreateRequest(BaseModel):
     """One line of ``POST /orders``'s request body.
 
-    ``price_history_id`` must already exist and belong to ``product_id``
-    -- this endpoint does not resolve pricing itself, see
-    ``services/order_service.py``'s module docstring's scope note.
+    ``price_history_id`` is optional.  When provided, it is used as an
+    explicit price source (the caller resolves pricing).  When omitted,
+    the service auto-resolves the current price from the order's
+    price list via ``price_list_service.get_current_price()``.
     """
 
     product_id: uuid.UUID
     fulfillment_warehouse_id: uuid.UUID
-    price_history_id: uuid.UUID
+    price_history_id: uuid.UUID | None = None
     qty_ordered: decimal.Decimal = Field(gt=0)
     fulfillment_mode: FulfillmentMode
     lot_id: uuid.UUID | None = None
@@ -70,6 +71,7 @@ class OrderCreateRequest(BaseModel):
                 "customer_id": "00000000-0000-0000-0000-000000000000",
                 "representative_id": "00000000-0000-0000-0000-000000000000",
                 "currency_id": "00000000-0000-0000-0000-000000000000",
+                "price_list_id": "00000000-0000-0000-0000-000000000000",
                 "order_type": "LOCAL",
                 "fulfillment_mode": "REP_LOCAL",
                 "sales_channel": "OFFICE",
@@ -77,7 +79,6 @@ class OrderCreateRequest(BaseModel):
                     {
                         "product_id": "00000000-0000-0000-0000-000000000000",
                         "fulfillment_warehouse_id": "00000000-0000-0000-0000-000000000000",
-                        "price_history_id": "00000000-0000-0000-0000-000000000000",
                         "qty_ordered": "10",
                         "fulfillment_mode": "REP_LOCAL",
                     }
@@ -89,6 +90,7 @@ class OrderCreateRequest(BaseModel):
     customer_id: uuid.UUID
     representative_id: uuid.UUID
     currency_id: uuid.UUID
+    price_list_id: uuid.UUID
     order_type: OrderType
     fulfillment_mode: FulfillmentMode
     sales_channel: str = Field(min_length=1, max_length=24)
@@ -147,6 +149,7 @@ class OrderResponse(BaseModel):
     fulfillment_mode: FulfillmentMode
     state: OrderState
     currency_id: uuid.UUID
+    price_list_id: uuid.UUID
     subtotal: decimal.Decimal
     discount_total: decimal.Decimal
     tax_total: decimal.Decimal

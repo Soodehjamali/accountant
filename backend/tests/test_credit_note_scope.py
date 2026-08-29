@@ -120,11 +120,14 @@ def _create_issued_invoice(session, system_user, rep, customer, currency, wareho
     """Create a fully shipped + issued invoice for the given representative."""
     from services import invoice_service, order_service
 
+    price_list = session.get(PriceList, price_history.price_list_id)
+
     order = order_service.create_order(
         session,
         customer_id=customer.id,
         representative_id=rep.id,
         currency_id=currency.id,
+        price_list_id=price_list.id,
         order_type="LOCAL",
         fulfillment_mode="REP_LOCAL",
         sales_channel="OFFICE",

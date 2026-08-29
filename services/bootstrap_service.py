@@ -222,6 +222,7 @@ _ADMIN_DEFAULT_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
     ("PRODUCT_MANAGE", "Manage products", "product", "manage"),
     ("REPRESENTATIVE_MANAGE", "Manage representatives", "representative", "manage"),
     ("WAREHOUSE_MANAGE", "Manage warehouses", "warehouse", "manage"),
+    ("PRICE_LIST_MANAGE", "Manage price lists", "price_list", "manage"),
     ("REPORT_MANAGE", "Manage reports", "report", "manage"),
     ("BOT_MANAGE", "Manage bot bindings and sessions", "bot", "manage"),
     ("BOT_QUERY", "Query data via bot", "bot", "query"),

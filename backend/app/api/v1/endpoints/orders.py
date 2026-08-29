@@ -85,6 +85,14 @@ def _line_input_from_request(line) -> order_service.OrderLineInput:
     )
 
 
+# --- Error types added by pricing integration ---
+_PRICE_ERROR_MAP: tuple[tuple[type[Exception], int], ...] = (
+    (order_service.PriceListNotFoundError, status.HTTP_400_BAD_REQUEST),
+    (order_service.PriceListNotActiveError, status.HTTP_409_CONFLICT),
+    (order_service.NoCurrentPriceError, status.HTTP_422_UNPROCESSABLE_ENTITY),
+)
+
+
 # -----------------------------------------------------------------------
 # Create
 # -----------------------------------------------------------------------
@@ -114,6 +122,7 @@ def create_order(
             customer_id=body.customer_id,
             representative_id=body.representative_id,
             currency_id=body.currency_id,
+            price_list_id=body.price_list_id,
             order_type=body.order_type.value,
             fulfillment_mode=body.fulfillment_mode.value,
             sales_channel=body.sales_channel,
@@ -126,10 +135,17 @@ def create_order(
         order_service.CustomerNotFoundError,
         order_service.RepresentativeNotFoundError,
         order_service.ProductNotFoundError,
+        order_service.PriceListNotFoundError,
     ) as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except (order_service.EmptyOrderError, order_service.PriceHistoryMismatchError) as exc:
+    except (
+        order_service.EmptyOrderError,
+        order_service.PriceHistoryMismatchError,
+        order_service.NoCurrentPriceError,
+    ) as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except order_service.PriceListNotActiveError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     db.commit()
     db.refresh(order)
     lines = order_service.list_order_lines(db, order.id)

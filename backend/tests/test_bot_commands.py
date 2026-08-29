@@ -193,6 +193,9 @@ def _create_order_for_rep(session, system_user, rep, customer, currency, warehou
     """Create a DRAFT order for the given representative."""
     from services.order_service import create_order, OrderLineInput
     from services import inventory_service
+    from database.models.price_list import PriceList
+
+    price_list = session.get(PriceList, price_history.price_list_id)
 
     inventory_service.post_transaction(
         session,
@@ -211,6 +214,7 @@ def _create_order_for_rep(session, system_user, rep, customer, currency, warehou
         customer_id=customer.id,
         representative_id=rep.id,
         currency_id=currency.id,
+        price_list_id=price_list.id,
         order_type="LOCAL",
         fulfillment_mode="REP_LOCAL",
         sales_channel="OFFICE",
