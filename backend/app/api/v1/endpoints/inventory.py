@@ -1,5 +1,6 @@
-"""Inventory ledger endpoints: ``POST /inventory/transactions``,
-``GET /inventory/balance``, ``POST /inventory/transactions/{id}/reverse``.
+"""Inventory ledger endpoints: ``GET /inventory/transactions``,
+``POST /inventory/transactions``, ``GET /inventory/balance``,
+``POST /inventory/transactions/{id}/reverse``.
 
 Thin HTTP wrappers around ``services.inventory_service`` -- per this
 project's layering rule, every invariant (sign-matching, no-negative-stock,
@@ -9,32 +10,75 @@ router is the only caller of it from the API surface, and must stay that
 way (no endpoint here or elsewhere should construct
 ``InventoryTransaction`` rows directly).
 
-All endpoints require an authenticated caller. As with
-``app/api/v1/endpoints/products.py``, there is no RBAC/permission system
-yet -- narrowing "who may post ledger entries" to specific roles is a
-later task once RBAC is wired up.
+Mutation endpoints (POST transactions, POST reverse) require the
+``INVENTORY_MANAGE`` permission via ``require_permission``.  Read
+endpoints (GET transactions, GET balance) require only an authenticated
+caller with warehouse scope.
 """
 
 from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
-from app.dependencies.rbac import _require_warehouse_scope
+from app.dependencies.rbac import _require_warehouse_scope, require_permission
 from app.schemas.inventory import (
     BalanceResponse,
     PostTransactionRequest,
     ReverseTransactionRequest,
+    TransactionListResponse,
     TransactionResponse,
 )
 from database.models.app_user import AppUser
+from database.models.inventory_transaction import InventoryTransaction
 from services import inventory_service
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
+
+INVENTORY_MANAGE_PERMISSION_CODE = "INVENTORY_MANAGE"
+_require_inventory_manage = require_permission(INVENTORY_MANAGE_PERMISSION_CODE)
+
+
+@router.get(
+    "/transactions",
+    response_model=TransactionListResponse,
+    summary="List inventory ledger transactions",
+)
+def list_transactions(
+    warehouse_id: uuid.UUID,
+    product_id: uuid.UUID | None = Query(default=None),
+    lot_id: uuid.UUID | None = Query(default=None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _current_user: AppUser = Depends(get_current_user),
+) -> TransactionListResponse:
+    """Return raw ledger rows for a warehouse, optionally filtered by
+    product and/or lot.  Ordered by ``sequence_no`` DESC (newest first).
+
+    Read access only -- no ``INVENTORY_MANAGE`` required, matching
+    ``GET /inventory/balance``'s own convention.
+    """
+    _require_warehouse_scope(warehouse_id, _current_user, db)
+
+    query = select(InventoryTransaction).where(
+        InventoryTransaction.warehouse_id == warehouse_id
+    )
+    if product_id is not None:
+        query = query.where(InventoryTransaction.product_id == product_id)
+    if lot_id is not None:
+        query = query.where(InventoryTransaction.lot_id == lot_id)
+    query = query.order_by(InventoryTransaction.sequence_no.desc())
+    query = query.offset(skip).limit(limit)
+    rows = db.execute(query).scalars().all()
+    return TransactionListResponse(
+        items=[TransactionResponse.model_validate(r) for r in rows]
+    )
 
 
 @router.post(
@@ -46,7 +90,7 @@ router = APIRouter(prefix="/inventory", tags=["inventory"])
 def post_transaction(
     body: PostTransactionRequest,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(_require_inventory_manage),
 ) -> TransactionResponse:
     """Append one immutable row to the inventory ledger.
 
@@ -103,7 +147,7 @@ def reverse_transaction(
     transaction_id: uuid.UUID,
     body: ReverseTransactionRequest,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(_require_inventory_manage),
 ) -> TransactionResponse:
     """Post a new REVERSAL row exactly negating ``transaction_id``.
 

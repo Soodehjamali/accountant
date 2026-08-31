@@ -258,6 +258,52 @@ class TestOrderInvoiceIntegration:
         finally:
             session.close()
 
+    def test_list_invoices_filter_by_order_id(self, client: TestClient):
+        """GET /invoices?order_id={id} returns exactly the invoice
+        linked to that order via the invoice_order (J1) junction."""
+        fx = _setup()
+        headers = _make_admin_user(uuid.uuid4().hex[:8])
+
+        # Create invoice from the order (POST /orders/{id}/invoice returns
+        # the OrderResponse, not the invoice — so look up the invoice ID
+        # via the junction table).
+        resp = client.post(
+            f"/api/v1/orders/{fx['order_id']}/invoice",
+            json={},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+
+        session = get_session_factory()()
+        try:
+            link = session.execute(
+                select(InvoiceOrder).where(
+                    InvoiceOrder.order_id == uuid.UUID(fx["order_id"])
+                )
+            ).scalar_one_or_none()
+            assert link is not None
+            invoice_id = str(link.invoice_id)
+        finally:
+            session.close()
+
+        # List with order_id filter — should return exactly one invoice
+        resp = client.get(
+            f"/api/v1/invoices?order_id={fx['order_id']}",
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        assert len(items) == 1
+        assert items[0]["id"] == invoice_id
+
+        # List with a non-existent order_id — should return empty
+        resp = client.get(
+            "/api/v1/invoices?order_id=00000000-0000-0000-0000-000000000000",
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert len(resp.json()["items"]) == 0
+
     def test_customer_ledger_entry_posted(self, client: TestClient):
         fx = _setup()
         headers = _make_admin_user(uuid.uuid4().hex[:8])
@@ -342,6 +388,90 @@ class TestOrderPaymentIntegration:
             assert invoice.balance_due == decimal.Decimal("0")
         finally:
             session.close()
+
+    def test_partial_payment_leaves_order_invoiced(self, client: TestClient):
+        """Partial payment records the payment but leaves order INVOICED.
+
+        The endpoint must NOT unconditionally transition the order to PAID
+        after recording a payment.  If the payment amount is less than the
+        invoice's balance_due, the order stays INVOICED and the caller
+        receives a 409 with the remaining balance.
+        """
+        fx = _setup()
+        headers = _make_admin_user(uuid.uuid4().hex[:8])
+
+        # Create invoice
+        self._create_invoice_first(client, fx, headers)
+
+        grand_total = decimal.Decimal(fx["grand_total"])
+        partial_amount = grand_total // 2  # pay half
+
+        # Partial payment
+        resp = client.post(
+            f"/api/v1/orders/{fx['order_id']}/pay",
+            json={"amount": str(partial_amount), "method": "CASH"},
+            headers=headers,
+        )
+        assert resp.status_code == 409, resp.text
+        assert "recorded" in resp.json()["detail"].lower()
+        assert "remaining" in resp.json()["detail"].lower()
+        assert "not marked PAID" in resp.json()["detail"]
+
+        # Verify the order is still INVOICED (not PAID)
+        resp_order = client.get(
+            f"/api/v1/orders/{fx['order_id']}",
+            headers=headers,
+        )
+        assert resp_order.status_code == 200
+        assert resp_order.json()["state"] == "INVOICED"
+        assert resp_order.json()["paid_at"] is None
+
+        # Verify the invoice's balance_due is updated but > 0
+        session = get_session_factory()()
+        try:
+            link = session.execute(
+                select(InvoiceOrder).where(
+                    InvoiceOrder.order_id == uuid.UUID(fx["order_id"])
+                )
+            ).scalar_one_or_none()
+            invoice = session.get(Invoice, link.invoice_id)
+            assert invoice.amount_paid == partial_amount
+            assert invoice.balance_due == grand_total - partial_amount
+            assert invoice.balance_due > 0
+            # Invoice should be PARTIALLY_PAID, not PAID
+            assert invoice.state == "PARTIALLY_PAID"
+        finally:
+            session.close()
+
+    def test_full_payment_after_partial_transitions_to_paid(self, client: TestClient):
+        """After a partial payment, a second payment covering the
+        remaining balance transitions the order to PAID."""
+        fx = _setup()
+        headers = _make_admin_user(uuid.uuid4().hex[:8])
+
+        self._create_invoice_first(client, fx, headers)
+
+        grand_total = decimal.Decimal(fx["grand_total"])
+        partial_amount = grand_total // 2
+        remaining = grand_total - partial_amount
+
+        # First partial payment (409)
+        resp1 = client.post(
+            f"/api/v1/orders/{fx['order_id']}/pay",
+            json={"amount": str(partial_amount), "method": "CASH"},
+            headers=headers,
+        )
+        assert resp1.status_code == 409
+
+        # Second payment covers the rest (200)
+        resp2 = client.post(
+            f"/api/v1/orders/{fx['order_id']}/pay",
+            json={"amount": str(remaining), "method": "BANK_TRANSFER"},
+            headers=headers,
+        )
+        assert resp2.status_code == 200, resp2.text
+        assert resp2.json()["state"] == "PAID"
+        assert resp2.json()["paid_at"] is not None
 
     def test_payment_ledger_entry_posted(self, client: TestClient):
         fx = _setup()

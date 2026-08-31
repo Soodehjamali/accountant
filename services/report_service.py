@@ -425,6 +425,38 @@ def get_report_definition(
     return _get_report_definition_or_raise(session, report_definition_id)
 
 
+def list_report_definitions(
+    session: Session,
+    *,
+    owner_user_id: uuid.UUID | None = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> list[ReportDefinition]:
+    """Return non-soft-deleted report definitions, ordered by created_at DESC.
+
+    Optionally filtered by ``owner_user_id``.  Paginated via
+    ``skip`` / ``limit``.
+    """
+    query = (
+        select(ReportDefinition)
+        .where(ReportDefinition.deleted_at.is_(None))
+        .order_by(ReportDefinition.created_at.desc())
+    )
+    if owner_user_id is not None:
+        query = query.where(ReportDefinition.owner_user_id == owner_user_id)
+    query = query.offset(skip).limit(limit)
+    return list(session.execute(query).scalars().all())
+
+
+def list_report_types(session: Session) -> list[ReportTypeRef]:
+    """Return all seeded report types from the reference catalog."""
+    return list(
+        session.execute(
+            select(ReportTypeRef).order_by(ReportTypeRef.code)
+        ).scalars().all()
+    )
+
+
 def run_report(
     session: Session,
     *,
@@ -565,5 +597,7 @@ __all__ = [
     "get_report_definition",
     "get_report_run",
     "get_report_snapshot",
+    "list_report_definitions",
+    "list_report_types",
     "run_report",
 ]

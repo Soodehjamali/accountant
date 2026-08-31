@@ -56,10 +56,21 @@ def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
 @router.get("/me", response_model=CurrentUserResponse, summary="Get the current user")
 def read_current_user(
     current_user: AppUser = Depends(get_current_user),
-) -> AppUser:
-    """Return the profile of whoever the Bearer token identifies."""
+) -> CurrentUserResponse:
+    """Return the profile of whoever the Bearer token identifies.
 
-    return current_user
+    The ``portal`` field is derived server-side from whether the user is
+    linked to a ``Representative``, giving the frontend exactly the
+    routing hint it needs without leaking the raw linkage.
+    """
+
+    return CurrentUserResponse(
+        id=current_user.id,
+        username=current_user.username,
+        email=current_user.email,
+        status=current_user.status,
+        portal="representative" if current_user.representative_id else "office",
+    )
 
 
 __all__ = ["router"]

@@ -1,0 +1,13 @@
+{
+  "title": "Representative Dashboard",
+  "commissionBalance": "Commission Balance",
+  "activeOrders": "Active Orders",
+  "quickActions": "Quick Actions",
+  "recentOrders": "Recent Orders",
+  "orderNumber": "Order #",
+  "state": "State",
+  "grandTotal": "Grand Total",
+  "ordered": "Ordered",
+  "noOrdersYet": "No orders yet.",
+  "loading": "Loading…"
+}

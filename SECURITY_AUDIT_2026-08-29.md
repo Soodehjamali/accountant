@@ -78,15 +78,15 @@
 | POST | `/transfers/{id}/receive` | Yes | TRANSFER_MANAGE | transfer_scope | ✅ Via dependency | |
 | POST | `/transfers/{id}/cancel` | Yes | TRANSFER_MANAGE | transfer_scope | ✅ Via dependency | |
 | POST | `/customers` | Yes | CUSTOMER_MANAGE | None (global) | N/A | Master data |
-| GET | `/customers` | Yes | None | **NONE** | N/A | **FINDING: M-01** |
-| GET | `/customers/{id}` | Yes | None | **NONE** | N/A | **FINDING: M-02** |
+| GET | `/customers` | Yes | None | Server-side rep filter | ✅ Query-level | Fixed: M-01 |
+| GET | `/customers/{id}` | Yes | None | customer_scope | ✅ Via helper call | Fixed: M-02 |
 | PATCH | `/customers/{id}` | Yes | CUSTOMER_MANAGE | customer_scope | ✅ Before mutation | |
 | POST | `/customers/{id}/deactivate` | Yes | CUSTOMER_MANAGE | customer_scope | ✅ Before mutation | |
 | GET | `/customers/{id}/ledger` | Yes | CUSTOMER_LEDGER_VIEW | customer_scope | ✅ Before data return | |
 | GET | `/customers/{id}/balance` | Yes | CUSTOMER_LEDGER_VIEW | customer_scope | ✅ Before data return | |
 | POST | `/customers/{id}/ledger/reconcile` | Yes | CUSTOMER_LEDGER_MANAGE | customer_scope | ✅ Before mutation | |
-| POST | `/inventory/transactions` | Yes | **NONE** | warehouse_scope | ✅ Before mutation | **FINDING: M-03** |
-| POST | `/inventory/transactions/{id}/reverse` | Yes | **NONE** | warehouse_scope | ✅ Before mutation | **FINDING: M-03** |
+| POST | `/inventory/transactions` | Yes | INVENTORY_MANAGE | warehouse_scope | ✅ Before mutation | Fixed: M-03 |
+| POST | `/inventory/transactions/{id}/reverse` | Yes | INVENTORY_MANAGE | warehouse_scope | ✅ Before mutation | Fixed: M-03 |
 | GET | `/inventory/balance` | Yes | None | warehouse_scope | ✅ Before data return | |
 | POST | `/products` | Yes | PRODUCT_MANAGE | None (global) | N/A | Master data |
 | GET | `/products` | Yes | None | None (global) | N/A | Master data |
@@ -118,38 +118,20 @@
 
 ## Phase 3: IDOR / BOLA Findings
 
-### FINDING M-01: Customer List Endpoint — No Representative Scope Filtering
+### FINDING M-01: Customer List Endpoint — No Representative Scope Filtering (RESOLVED)
 - **Endpoint**: `GET /api/v1/customers`
-- **Vulnerability**: Any authenticated user can list ALL customers regardless of their representative assignment
-- **Attack scenario**: Representative A calls `GET /api/v1/customers` — sees all customers including those belonging only to Representative B
-- **Affected role**: Representative-linked users
-- **Affected data**: Customer names, codes, tax numbers, credit limits, billing addresses
-- **Business impact**: HIGH — cross-representative customer data leakage; competitor intelligence
-- **Root cause**: `list_customers()` endpoint does not pass `representative_id` to the service query. The service function has no representative filtering at all.
-- **Recommended fix**: Add server-side representative scope filtering to `list_customers` similar to how `list_orders`, `list_invoices`, and `list_transfers` do it. For representative-linked users, only return customers that have an active `CustomerRepAssignment` to their representative.
-- **Test required**: Yes — representative-linked user must not see other reps' customers
+- **Resolution**: Added `representative_id` parameter to `customer_service.list_customers()` with an active `CustomerRepAssignment` subquery filter (matching the pattern used by `list_invoices` and `list_transfers`). Endpoint now passes `current_user.representative_id` for representative-linked users; admin/staff users see all customers.
+- **Regression test**: `test_customer_scope.py::TestCustomerReadScope::test_representative_only_sees_own_customers_in_list` and `test_admin_sees_all_customers_in_list`
 
-### FINDING M-02: Customer Get Endpoint — No Representative Scope Check
+### FINDING M-02: Customer Get Endpoint — No Representative Scope Check (RESOLVED)
 - **Endpoint**: `GET /api/v1/customers/{customer_id}`
-- **Vulnerability**: Any authenticated user can read any customer by ID, even customers they are not assigned to
-- **Attack scenario**: Representative A calls `GET /api/v1/customers/{representative_b_customer_id}` — sees full customer details
-- **Affected role**: Representative-linked users
-- **Affected data**: Full customer profile (name, code, currency, tax number, credit limit, billing address)
-- **Business impact**: HIGH — cross-representative customer data exposure
-- **Root cause**: `read_customer()` endpoint uses only `get_current_user` without calling `_require_customer_scope`. The scope check exists for `PATCH` and `POST /deactivate` but not for `GET`.
-- **Recommended fix**: Add `_require_customer_scope` call before returning customer data in `read_customer()`. Note: this should raise 404 for out-of-scope customers (not 403) to prevent existence leakage.
-- **Test required**: Yes — representative must get 404 for other reps' customers
+- **Resolution**: Added `_require_customer_scope()` call in `read_customer()` before returning any data, matching the pattern used by `PATCH /customers/{id}` and `POST /customers/{id}/deactivate`. Out-of-scope access returns 404 (not 403) to prevent existence leakage, consistent with `order_scope`/`invoice_scope`/`transfer_scope`.
+- **Regression test**: `test_customer_scope.py::TestCustomerReadScope::test_representative_cannot_read_other_rep_customer` and `test_representative_can_read_own_customer`
 
-### FINDING M-03: Inventory Endpoints — No Permission Required for Financial Mutations
+### FINDING M-03: Inventory Endpoints — No Permission Required for Financial Mutations (RESOLVED)
 - **Endpoint**: `POST /api/v1/inventory/transactions`, `POST /api/v1/inventory/transactions/{id}/reverse`
-- **Vulnerability**: Any authenticated user with warehouse scope can post inventory transactions and reverse them — no `INVENTORY_MANAGE` or similar permission is required
-- **Attack scenario**: A user with only `ORDER_MANAGE` permission who happens to have warehouse access can manipulate inventory quantities, post fake receipts, or reverse legitimate transactions
-- **Affected role**: Any authenticated user with warehouse assignment
-- **Affected data**: Inventory quantities (financial implications via unit_cost × signed_quantity)
-- **Business impact**: HIGH — uncontrolled inventory manipulation; financial statement integrity risk
-- **Root cause**: `inventory.py` endpoints only depend on `get_current_user` + `_require_warehouse_scope` but do not require a specific permission. The inventory endpoints are the only mutating endpoints in the system without an explicit permission gate.
-- **Recommended fix**: Create `INVENTORY_MANAGE` permission and gate mutating inventory endpoints behind it. Keep `GET /inventory/balance` open to any authenticated user with warehouse scope.
-- **Test required**: Yes — user without INVENTORY_MANAGE must get 403
+- **Resolution**: Created `INVENTORY_MANAGE` permission, added to `bootstrap_service._ADMIN_DEFAULT_PERMISSIONS` (matching the convention every prior permission-gated milestone has followed). Both mutation endpoints now depend on `require_permission("INVENTORY_MANAGE")` in addition to the existing `_require_warehouse_scope` check. `GET /inventory/balance` remains open to any authenticated caller with warehouse scope, unchanged.
+- **Regression test**: `test_inventory_permission.py::TestInventoryMutationPermissionGate` — 5 tests covering 403 without permission, 201 with permission, and GET /balance remaining open.
 
 ---
 
@@ -255,10 +237,9 @@ All POST/PATCH request schemas use explicit field declarations (Pydantic `BaseMo
 
 ## Phase 8: API Enumeration / Information Leakage Findings
 
-### FINDING M-13: Customer Endpoints — Existence Leakage
+### FINDING M-13: Customer Endpoints — Existence Leakage (RESOLVED with M-02)
 - **Endpoint**: `GET /api/v1/customers/{customer_id}` (Finding M-02)
-- **Vulnerability**: Returns 404 with descriptive error message "Customer not found" for both non-existent and out-of-scope customers. However, for the `read_customer` endpoint, there is NO scope check at all, so all customers are visible.
-- **Classification**: INFORMATIONAL — once M-02 is fixed, the 404 behavior should also be unified.
+- **Resolution**: M-02 fix uses `_require_customer_scope` which returns a uniform 404 for both non-existent and out-of-scope customers, preventing existence leakage. Both cases produce the same "Customer not found" response.
 
 ### FINDING M-14: Audit Log — Global Visibility Without Scope
 - **Endpoint**: `GET /api/v1/audit-log`, `GET /api/v1/audit-log/{id}`
@@ -278,12 +259,14 @@ All POST/PATCH request schemas use explicit field declarations (Pydantic `BaseMo
 ### CRITICAL
 None
 
-### HIGH
-| ID | Description | Endpoint | Fix Required |
-|----|-------------|----------|--------------|
-| M-01 | Customer list — no representative scope filtering | `GET /customers` | Add server-side rep filter |
-| M-02 | Customer get — no representative scope check | `GET /customers/{id}` | Add `_require_customer_scope` |
-| M-03 | Inventory mutations — no permission gate | `POST /inventory/transactions`, `POST /inventory/transactions/{id}/reverse` | Add `INVENTORY_MANAGE` permission |
+### HIGH (all resolved 2026-08-30)
+| ID | Description | Endpoint | Status |
+|----|-------------|----------|--------|
+| M-01 | Customer list — no representative scope filtering | `GET /customers` | ✅ RESOLVED — server-side rep filter added |
+| M-02 | Customer get — no representative scope check | `GET /customers/{id}` | ✅ RESOLVED — `_require_customer_scope` added |
+| M-03 | Inventory mutations — no permission gate | `POST /inventory/transactions`, `POST /inventory/transactions/{id}/reverse` | ✅ RESOLVED — `INVENTORY_MANAGE` permission added |
+| M-15 | Commission balance — no representative scope check | `GET /representatives/{id}/commission-balance` | ✅ RESOLVED — scope check + 403/404 added |
+| M-16 | Commission transaction list — no representative scope | `GET /commission-transactions` | ✅ RESOLVED — server-side scope enforcement added |
 
 ### MEDIUM
 | ID | Description | Endpoint | Fix Required |
@@ -292,7 +275,7 @@ None
 | M-09 | Commission calculation — no deduplication | `POST /orders/{id}/commission` | Add uniqueness check |
 | M-12 | Invoice payment — no concurrency protection | `POST /invoices/{id}/pay` | Add row-level lock on invoice |
 
-### LOW
+### LOW (still open — not addressed in this pass)
 | ID | Description | Endpoint | Fix Required |
 |----|-------------|----------|--------------|
 | M-05 | Invoice create — customer scope not verified | `POST /invoices/from-order` | Optional: add customer scope check |
@@ -301,8 +284,8 @@ None
 ### INFORMATIONAL
 | ID | Description | Endpoint | Fix Required |
 |----|-------------|----------|--------------|
-| M-13 | Customer 404 — existence leakage (pending M-02 fix) | `GET /customers/{id}` | Will be fixed with M-02 |
-| M-14 | Audit log — no representative scope filtering | `GET /audit-log` | Optional: add rep filter |
+| M-13 | Customer 404 — existence leakage | `GET /customers/{id}` | ✅ RESOLVED with M-02 |
+| M-14 | Audit log — no representative scope filtering | `GET /audit-log` | Still open — optional: add rep filter |
 
 ### FALSE POSITIVE
 | ID | Description | Reason |
@@ -314,11 +297,30 @@ None
 
 ---
 
+## Phase 10: Commission Balance Scope Fix (2026-08-30)
+
+### FINDING M-15: Commission Balance Endpoint — No Representative Scope Check (RESOLVED)
+- **Endpoint**: `GET /api/v1/representatives/{id}/commission-balance`
+- **Vulnerability**: Any authenticated user could query any representative's commission balance by ID — no scope restriction.
+- **Resolution**: Added representative scope check: representative-linked users can only query their own balance (403 for cross-rep); admin/staff users (no representative link) may query any. Representative existence is verified (404 if nonexistent).
+- **Regression test**: `test_commission_balance_scope.py` — 5 tests covering admin access, rep own balance, cross-rep 403, nonexistent 404, unauthenticated 401.
+
+### FINDING M-16: Commission Transaction List — No Representative Scope Enforcement (RESOLVED)
+- **Endpoint**: `GET /api/v1/commission-transactions`
+- **Vulnerability**: When called without a `representative_id` filter, returned every representative's commission transactions to any authenticated caller — including representative-linked users. A rep could see other reps' commission data.
+- **Resolution**: Added server-side scope enforcement matching the `POST /orders` pattern: representative-linked users can only see their own transactions. If they explicitly supply a different `representative_id` query parameter, the endpoint rejects with 403 (not silently overridden) to prevent silent scope bypass. Admin/staff users (no representative link) retain the existing optional-filter behavior.
+- **Frontend verification**: `RepCommissionPage` already calls `GET /commission-transactions` without `representative_id` — before this fix it was returning all reps' transactions (the bug); after this fix the backend forces it to the caller's rep ID server-side. No frontend changes needed.
+- **Regression test**: `test_commission_transaction_list_scope.py` — 6 tests covering rep sees only own (omitted filter), rep gets 403 for other rep's ID, rep supplying own ID works, admin sees all, admin can filter, unauthenticated rejected.
+
+---
+
 ## Phase 9: Recommended Remediation Order
 
-### Priority 1 (Security — immediate)
-1. **M-01 + M-02**: Add representative scope to customer list and get endpoints
-2. **M-03**: Add `INVENTORY_MANAGE` permission to inventory mutation endpoints
+### Priority 1 (Security — immediate) — RESOLVED 2026-08-30
+1. **M-01 + M-02**: ✅ Add representative scope to customer list and get endpoints
+2. **M-03**: ✅ Add `INVENTORY_MANAGE` permission to inventory mutation endpoints
+3. **M-15**: ✅ Add representative scope to commission balance endpoint
+4. **M-16**: ✅ Add representative scope to commission transaction list endpoint
 
 ### Priority 2 (Financial Integrity)
 3. **M-08**: Add idempotency to invoice payment recording

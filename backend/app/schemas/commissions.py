@@ -57,6 +57,7 @@ class CommissionTransactionResponse(BaseModel):
     order_id: uuid.UUID | None
     commission_config_id: uuid.UUID
     actor_user_id: uuid.UUID
+    reversal_of_id: uuid.UUID | None = None
     sequence_no: int
     signed_amount: decimal.Decimal
     state_event: str
@@ -71,11 +72,37 @@ class CommissionCalculateRequest(BaseModel):
     pass
 
 
+class CommissionApproveRequest(BaseModel):
+    """Body for ``POST /commission-transactions/{id}/approve``."""
+
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class CommissionPayRequest(BaseModel):
+    """Body for ``POST /commission-transactions/{id}/pay``."""
+
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class CommissionClawbackRequest(BaseModel):
+    """Body for ``POST /commission-transactions/{id}/clawback``."""
+
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class CommissionTransactionListResponse(BaseModel):
+    items: list[CommissionTransactionResponse]
+
+
 __all__ = [
+    "CommissionApproveRequest",
     "CommissionCalculateRequest",
+    "CommissionClawbackRequest",
     "CommissionConfigCreateRequest",
     "CommissionConfigListResponse",
     "CommissionConfigResponse",
     "CommissionOrderType",
+    "CommissionPayRequest",
+    "CommissionTransactionListResponse",
     "CommissionTransactionResponse",
 ]

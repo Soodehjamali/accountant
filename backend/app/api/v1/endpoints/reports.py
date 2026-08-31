@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.dependencies.auth import get_current_user
@@ -23,10 +23,13 @@ from app.dependencies.db import get_db
 from app.dependencies.rbac import require_permission
 from app.schemas.reports import (
     ReportDefinitionCreateRequest,
+    ReportDefinitionListResponse,
     ReportDefinitionResponse,
     ReportRunResponse,
     ReportRunWithSnapshotResponse,
     ReportSnapshotResponse,
+    ReportTypeListResponse,
+    ReportTypeResponse,
 )
 from database.models.app_user import AppUser
 from services import report_service
@@ -35,6 +38,46 @@ router = APIRouter(tags=["reports"])
 
 REPORT_MANAGE_PERMISSION_CODE = "REPORT_MANAGE"
 _require_report_manage = require_permission(REPORT_MANAGE_PERMISSION_CODE)
+
+
+@router.get(
+    "/report-types",
+    response_model=ReportTypeListResponse,
+    summary="List available report types",
+)
+def list_report_types(
+    db: Session = Depends(get_db),
+    _current_user: AppUser = Depends(get_current_user),
+) -> ReportTypeListResponse:
+    """Return the seeded report type catalog.
+
+    Read-only, no REPORT_MANAGE required — same convention as
+    GET /movement-types and GET /reason-codes.
+    """
+    types = report_service.list_report_types(db)
+    return ReportTypeListResponse(
+        items=[ReportTypeResponse.model_validate(t) for t in types]
+    )
+
+
+@router.get(
+    "/report-definitions",
+    response_model=ReportDefinitionListResponse,
+    summary="List report definitions",
+)
+def list_report_definitions(
+    db: Session = Depends(get_db),
+    _current_user: AppUser = Depends(_require_report_manage),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+) -> ReportDefinitionListResponse:
+    """Return non-deleted report definitions, newest first."""
+    definitions = report_service.list_report_definitions(
+        db, skip=skip, limit=limit,
+    )
+    return ReportDefinitionListResponse(
+        items=[ReportDefinitionResponse.model_validate(d) for d in definitions]
+    )
 
 
 @router.post(

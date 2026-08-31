@@ -1,0 +1,26 @@
+appId: com.enterprise.erp-desktop
+productName: Enterprise ERP
+copyright: Copyright © 2026
+
+directories:
+  output: dist
+
+files:
+  - dist/**/*
+  - src/settings.html
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: src/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Enterprise ERP
+
+# Code signing is out of scope for Phase 1 (see ADR-012).

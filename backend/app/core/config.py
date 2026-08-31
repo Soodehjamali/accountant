@@ -53,10 +53,9 @@ class Settings(BaseSettings):
     #: Prefix every versioned route is mounted under (requirement #9).
     api_v1_prefix: str = "/api/v1"
 
-    #: CORS origins allowed to call this API. Empty by default (no
-    #: frontend exists yet in this milestone) -- intentionally
-    #: conservative; widen when the frontend milestone begins.
-    cors_origins: list[str] = []
+    #: CORS origins allowed to call this API. Includes the Vite dev server
+    #: origin for frontend development; widen further for production deployment.
+    cors_origins: list[str] = ["http://localhost:5173"]
 
     #: HMAC signing key for access tokens (``security.create_access_token``
     #: / ``security.decode_access_token``). Defaults to an obviously-fake

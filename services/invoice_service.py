@@ -375,6 +375,7 @@ def list_invoices(
     customer_id: uuid.UUID | None = None,
     state: str | None = None,
     representative_id: uuid.UUID | None = None,
+    order_id: uuid.UUID | None = None,
     skip: int = 0,
     limit: int = 50,
 ) -> Iterable[Invoice]:
@@ -385,6 +386,11 @@ def list_invoices(
     given representative.  This is the list-scope filtering counterpart
     of the single-invoice ``_require_invoice_scope`` check used by the
     GET-by-id endpoint.
+
+    ``order_id``: when set, only returns invoices linked (via
+    ``InvoiceOrder`` J1 junction) to the specified order.  Since one
+    order maps to at most one invoice per the invoice_order model, this
+    typically returns 0 or 1 rows.
     """
     query = select(Invoice).where(Invoice.deleted_at.is_(None))
     if customer_id is not None:
@@ -400,6 +406,14 @@ def list_invoices(
             .distinct()
         )
         query = query.where(Invoice.id.in_(scoped_invoice_ids))
+    if order_id is not None:
+        # Subquery: invoices linked to the specified order via J1.
+        order_invoice_ids = (
+            select(InvoiceOrder.invoice_id)
+            .where(InvoiceOrder.order_id == order_id)
+            .distinct()
+        )
+        query = query.where(Invoice.id.in_(order_invoice_ids))
     query = query.order_by(Invoice.created_at.desc()).offset(skip).limit(limit)
     return session.execute(query).scalars().all()
 

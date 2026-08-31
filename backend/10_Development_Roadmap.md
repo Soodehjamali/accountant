@@ -940,3 +940,953 @@ backend/tests/test_invoice_immutability_triggers.py covers:
 - Invoice lines: still blocked when parent is VOID (not DRAFT)
 - Migration verification: alembic version, trigger existence, function existence
 All 31 tests pass against real PostgreSQL.
+
+-----------------
+
+Task 3/4 (update) -- Security Hardening: Priority-1 IDOR/Authorization Fixes
+
+Done (2026-08-30) -- Resolved HIGH-severity findings M-01, M-02, M-03 from
+SECURITY_AUDIT_2026-08-29.md.  These are authorization gaps, not schema or
+workflow changes -- no ADR required, following existing patterns already
+used elsewhere in the codebase.
+
+* **M-01 (GET /customers)**: Added server-side representative-scope
+  filtering to `customer_service.list_customers()` via an active
+  `CustomerRepAssignment` subquery, matching the pattern used by
+  `list_invoices` and `list_transfers`.  The endpoint now passes
+  `current_user.representative_id` for representative-linked users;
+  admin/staff users see all customers.
+
+* **M-02 (GET /customers/{id})**: Added `_require_customer_scope()` call
+  in `read_customer()` before returning any data, matching the pattern
+  used by PATCH and POST /deactivate.  Out-of-scope access returns 404
+  (not 403) to prevent existence leakage, consistent with order_scope/
+  invoice_scope/transfer_scope.
+
+* **M-03 (inventory mutations)**: Created `INVENTORY_MANAGE` permission,
+  added to `bootstrap_service._ADMIN_DEFAULT_PERMISSIONS` (same convention
+  every prior permission-gated milestone has followed).  Both
+  POST /inventory/transactions and POST /inventory/transactions/{id}/reverse
+  now depend on `require_permission("INVENTORY_MANAGE")` in addition to
+  the existing `_require_warehouse_scope` check.  GET /inventory/balance
+  remains open to any authenticated caller with warehouse scope.
+
+Regression tests added:
+* `test_customer_scope.py::TestCustomerReadScope` -- 7 tests covering
+  M-01 (list scope) and M-02 (read scope)
+* `test_inventory_permission.py::TestInventoryMutationPermissionGate`
+  -- 5 tests covering M-03 (permission gate)
+
+Documentation updated:
+* SECURITY_AUDIT_2026-08-29.md: M-01/M-02/M-03 marked RESOLVED;
+  endpoint matrix updated; LOW/INFORMATIONAL findings (M-05, M-14)
+  flagged as still open.
+
+-----------------
+
+Task 5 -- Frontend
+
+Done (2026-08-30) -- ADR-010 ratified (see ADR-010-Frontend-Technology-Stack.md
+and 09_Decisions.md). Foundation scaffold delivered.
+
+* **ADR-010 (Frontend Technology Stack):** Ratifies SRS §14.2 recommendation.
+  React 19 + TypeScript 5 + Vite 6 + React Router v7. TanStack Query v5
+  for server state; React Context for auth/UI state. API client auto-generated
+  from backend OpenAPI schema via `openapi-typescript` + `openapi-fetch`.
+  shadcn/ui + Tailwind CSS 4 for UI. Single codebase, role-routed
+  (/office/* for admin, /rep/* for representatives).
+
+* **Foundation scaffold (this milestone):**
+  - Vite + React + TypeScript project under `frontend/`
+  - Tailwind CSS 4 + shadcn/ui wired in (Button, Input, Card, etc.)
+  - Generated API client/types from backend OpenAPI schema
+  - Login page calling POST /auth/login, JWT stored in localStorage
+  - Authenticated fetch wrapper (Authorization header injection)
+  - Auth context with permission-gated nav (calls GET /rbac/me/permissions)
+  - Minimal authenticated shell (layout + sidebar + conditional nav items)
+  - Vitest + React Testing Library setup with login smoke test
+  - Backend CORS widened for frontend dev server (localhost:5173)
+
+* **API type reconciliation (2026-08-30):** Ran `pnpm run api:gen`
+  against the live backend OpenAPI schema and diffed the generated types
+  against the hand-written `src/api/types.d.ts`. Three discrepancies found:
+
+  1. **`CustomerCreateRequest.credit_limit_amount`:** Hand-written typed
+     as `string` only; backend Pydantic `decimal.Decimal` serializes as
+     `anyOf: [number, string]`. Generated type is correct.
+  2. **`MyPermissionsResponse` field name:** Hand-written used `permissions`
+     (from an older schema version); backend uses `permission_codes`.
+     Generated type is correct.
+  3. **`CurrentUserResponse.portal` (fixed 2026-08-30):** The backend schema
+     originally excluded `representative_id`, and the frontend extended the
+     generated type locally as a stopgap -- but /office vs /rep role-routing
+     was silently non-functional since the Foundation milestone because the
+     stopgap field was never populated at runtime. Fixed by adding a narrow
+     derived field `portal: "office" | "representative"` to the backend's
+     `CurrentUserResponse` schema, computed server-side from whether
+     `AppUser.representative_id` is set. This gives the frontend exactly
+     what it needs for routing without leaking the raw linkage. The local
+     stopgap type extension in AuthContext.tsx was removed.
+
+  Product types (Create, Response, List) match field-for-field. Frontend
+  switched to `openapi-fetch` + auto-generated types (per ADR-010) to
+  prevent future drift. Hand-written types and manual `apiFetch<T>()`
+  wrapper deleted. Note: `openapi-typescript` marks defaulted fields as
+  required in TS (e.g. `credit_limit_amount: number | string` without `?`),
+  while the backend schema marks them optional. This is a TypeScript
+  ergonomics trade-off, not a schema bug.
+
+* **Explicitly out of scope for this milestone:** any business-domain
+  screens (Product, Customer, Order, Invoice, Transfer, Payment,
+  Commission, Credit Note, Reports, Dashboard), the representative
+  portal's distinct views, and any bot-related UI.
+
+* **Planned future milestones (domain-by-domain delivery order):**
+  - Foundation (auth + shell + generated API client) -- DONE
+  - Catalog / Customer
+  - Order -- DONE (Phase A + B)
+  - Finance (Invoice / Payment / Credit Note)
+  - Inventory / Transfer
+  - Reporting / KPI Dashboard -- DONE
+  - Representative Portal
+
+-----------------
+
+Task 5 (update) -- Frontend: Order Domain (Phase A + B)
+
+Done (2026-08-30) -- Full order frontend delivered in two sub-passes.
+
+**Phase A -- Read + Create + Line editing (DRAFT only):**
+
+* `OrderListPage` (`/office/orders`): Paginated table with state filter,
+  showing order number, customer, representative, type, state (color-coded
+  badge), grand total, and ordered date. "New Order" button gated behind
+  ORDER_MANAGE permission.
+
+* `OrderDetailPage` (`/office/orders/:id`): Header fields (customer, rep,
+  type, fulfillment mode, sales channel, totals, timestamps), line items
+  table with inline editing (qty + price) for DRAFT orders only, and a
+  plain-rendered status history panel (actor, from/to state, timestamp,
+  note) from GET /orders/{id}/history. Line editing controls are hidden
+  entirely for non-DRAFT orders (not just disabled). Add-line form for
+  DRAFT orders.
+
+* `OrderCreatePage` (`/office/orders/new`): Form with header fields
+  (customer, representative, currency, order type, fulfillment mode, sales
+  channel) and repeatable line-item rows (product, warehouse, qty). Client-
+  side required-field validation only; API errors (NoCurrentPriceError,
+  CustomerCreditLimitExceededError, etc.) surfaced verbatim as form-level
+  messages. Gated behind ORDER_MANAGE permission.
+
+* `RepOrderListPage` (`/rep/orders`): Read-only wrapper reusing
+  OrderListPage for representative portal. Backend enforces representative
+  scope server-side. Detail view (`/rep/orders/:id`) also available.
+
+**Phase B -- State transitions:**
+
+* `OrderTransitionActions` component: Given an order's current state,
+  renders only the legal next action buttons per ADR-004's accepted graph.
+  The ALLOWED_TRANSITIONS lookup table is the single source of truth,
+  derived from services/order_service.py's canonical backend graph. Each
+  button is gated behind the relevant permission (ORDER_APPROVE for
+  /approve, ORDER_MANAGE for everything else -- confirmed against orders.py's
+  _require_order_manage and _require_order_approve dependencies).
+
+* Cancel and Return actions show a confirmation dialog with an optional
+  reason/note field (irreversible, audit-logged transitions).
+
+* **Ship** has a dedicated `ShipDialog` (not a generic confirm button)
+  because `POST /{id}/ship` requires `ShipOrderRequest` with a line-by-line
+  `{lines: [{order_line_id, quantity}]}` body, not a generic
+  `OrderTransitionRequest`. The dialog lists unshipped lines (where
+  `qty_ordered > qty_shipped`) with editable quantity inputs defaulting to
+  the remaining unshipped qty. Requires at least one line with quantity > 0.
+  The response's `state` (SHIPPED or PARTIALLY_FULFILLED) determines the
+  resulting order state — the frontend does not assume SHIPPED.
+
+* **Mark Paid** has a dedicated `PayDialog` because `POST /{id}/pay`
+  requires `OrderPaymentRequest` with `amount`, `method`, `reference`,
+  `note` — not a generic `OrderTransitionRequest`. The dialog collects all
+  four fields (amount pre-filled with `grand_total`, method defaults to
+  CASH). Surfaces 422 errors (e.g. amount < balance_due) as inline error.
+
+* mark-invoiced and mark-completed remain simple one-click buttons (they
+  use generic `OrderTransitionRequest`). Invoice/Payment detail screens
+  are explicitly out of scope (separate future milestone).
+
+**API hooks:** `useOrders.ts` -- TanStack Query hooks for list/read/create,
+  line editing (add/remove/update-qty/update-price), and all 11 state
+  transitions. Ship and Pay have dedicated hooks (`useShipOrder`,
+  `useMarkPaid`) with correct request body types, separate from the
+  generic `useOrderTransition` factory used by the other 9 transitions.
+
+**Routes:** App.tsx updated with order routes under /office and /rep.
+  AppShell.tsx nav updated (Orders link now functional, not placeholder).
+
+**Tests:** `orders.test.tsx` -- 27 tests:
+  - ALLOWED_TRANSITIONS: covers all 13 states, verifies exact allowed-action
+    sets for each, verifies all targets are valid states, cancel reachable
+    from all pre-SHIPPED states, return reachable from SHIPPED and
+    PARTIALLY_FULFILLED only, terminal states verified.
+  - OrderListPage: renders heading and filter, shows empty state.
+  - OrderDetailPage: renders order header, lines, and history.
+  - OrderCreatePage: renders form fields and line item entry.
+  - ShipDialog: shows unshipped lines with editable quantities, submits
+    expected `{order_line_id, quantity}` payload, surfaces 422 error.
+  - PayDialog: shows amount/method/reference/note fields, submits expected
+    `{amount, method, reference, note}` payload, surfaces 422 error.
+
+TypeScript: compiles with zero errors. All 27 frontend tests pass.
+
+-----------------
+
+Task 3/4 (update) -- Financial Correctness: mark_paid partial-payment guard
+
+Date: 2026-08-30
+
+Done -- Fixed a financial-correctness bug in ``POST /orders/{id}/pay``
+(mark_paid endpoint).  Previously, the endpoint unconditionally called
+``order_service.mark_paid()`` after ``payment_service.record_payment()``,
+even when the payment amount was less than the invoice's ``balance_due``.
+This let an order be marked PAID while the linked invoice still had an
+outstanding balance.
+
+Root cause: ``payment_service.record_payment()`` only rejects amounts that
+*exceed* ``balance_due`` (overpayment).  It happily accepts partial
+payments.  The endpoint relied on the payment service to enforce full
+payment, but the payment service's contract is intentionally broader
+(representing legitimate partial payments elsewhere in the AR domain).
+
+Fix (in the endpoint, not by weakening record_payment's contract):
+After ``record_payment`` returns, re-check the invoice's ``balance_due``
+via ``db.refresh(invoice)``.  Only call ``order_service.mark_paid()`` if
+``balance_due == 0``.  If ``balance_due > 0``, return 409 Conflict with
+a clear message ("Payment of {amount} recorded, but invoice still has a
+balance of {balance_due} remaining -- order was not marked PAID.").  The
+payment itself is committed (not rolled back); only the order transition
+is withheld.
+
+Frontend: ``PayDialog`` now distinguishes 409 partial-payment warnings
+(amber banner: "Payment recorded, but order not yet fully paid") from
+422 validation errors (red inline error).  After a 409, the dialog stays
+open with a "Close" button so the user can see the remaining balance.
+
+Regression tests added:
+* ``test_partial_payment_leaves_order_invoiced`` -- partial payment returns
+  409, order stays INVOICED (not PAID), invoice state is PARTIALLY_PAID
+  with ``balance_due > 0``.
+* ``test_full_payment_after_partial_transitions_to_paid`` -- second payment
+  covering the remaining balance returns 200 and transitions order to PAID.
+
+All 8 order-invoice integration tests pass.  All 27 frontend tests pass.
+TypeScript compiles with zero errors.
+
+-----------------
+
+Task 5 (update) -- Frontend: Invoice + Payment Domain
+
+Done (2026-08-30) -- Invoice and Payment frontend delivered.
+
+**InvoiceListPage** (``/office/invoices``): Paginated table with state
+filter (DRAFT, ISSUED, PARTIALLY_PAID, PAID, CLOSED_CORRECTED, VOID),
+showing invoice number, customer, state (color-coded badge), grand total,
+balance due (highlighted amber when > 0), and due date.
+
+**InvoiceDetailPage** (``/office/invoices/:id``): Header fields (customer,
+currency, subtotal, tax, grand total, amount paid, balance due,
+issued/due/closed timestamps), line items table, payment history section
+(linking to PaymentDetailPage), and plain-rendered status history panel.
+Action buttons gated behind INVOICE_MANAGE:
+  - Issue (DRAFT -> ISSUED): confirm dialog with optional note.
+  - Void (DRAFT -> VOID): confirm dialog with optional note, DRAFT-only.
+  - Record Payment (ISSUED/PARTIALLY_PAID): dialog collecting amount
+    (pre-filled with balance_due, capped client-side), method (dropdown:
+    CASH/BANK_TRANSFER/CHEQUE/CARD/MOBILE_WALLET), reference (optional).
+    Submits to ``POST /payments`` (allocations-based, the complete
+    audit-correct path), NOT ``POST /invoices/{id}/pay``.
+
+**PaymentDetailPage** (``/office/payments/:id``): Payment header (amount,
+method, reference, customer, currency, unallocated amount, timestamps)
+and allocations table (each allocation links back to the invoice).
+
+**Explicitly unwired**: ``POST /invoices/{id}/pay`` (invoice_service's own
+``record_payment``).  This endpoint is documented in its own docstring as
+"a simplification pending the payment_allocation (J2) ledger" -- it updates
+cache columns only and creates no real Payment record or customer-ledger
+entry.  ``POST /payments`` (payment_service.record_payment) is the
+complete, audit-correct path and is the only payment UI wired in this
+milestone.  A future contributor should NOT "helpfully" wire the simpler
+endpoint.
+
+**API hooks**: ``useInvoices.ts`` (list/read/history/payments/issue/void)
+and ``usePayments.ts`` (read/create with allocations).
+
+**Routes**: App.tsx updated with invoice routes (list, detail) and payment
+route (detail) under /office.  AppShell.tsx nav updated (Invoices link
+now functional).  OrderDetailPage links to invoices list when order is
+INVOICED/PAID/COMPLETED.
+
+**Tests**: ``invoices.test.tsx`` -- 6 tests:
+  - InvoiceListPage: renders heading and filter, shows empty state.
+  - InvoiceDetailPage: renders header/lines/history, payment history
+    section, Record Payment button for ISSUED invoices.
+  - PaymentDetailPage: renders payment details and allocations.
+
+TypeScript: compiles with zero errors.  All 33 frontend tests pass
+(27 order + 6 invoice).
+
+-----------------
+
+Task 3/4 (update) -- GET /invoices?order_id={id} filter + OrderDetailPage invoice link
+
+Date: 2026-08-30
+
+Done -- Added an optional ``order_id`` query parameter to ``GET /invoices``
+that filters via the ``invoice_order`` (J1) junction table.  This is the
+same join already used internally in ``POST /orders/{id}/pay``'s handler,
+now exposed as a proper filter rather than an inline query.
+
+Backend:
+* ``services/invoice_service.list_invoices()``: new ``order_id`` parameter.
+  When set, filters invoices via a subquery on ``InvoiceOrder`` (J1),
+  returning only invoices linked to the specified order.  Since one order
+  maps to at most one invoice per the invoice_order model, this typically
+  returns 0 or 1 rows.
+* ``app/api/v1/endpoints/invoices.py``: new ``order_id: uuid.UUID | None``
+  query parameter on ``GET /invoices``, passed through to the service.
+* ``tests/test_order_invoice_integration.py``: new test
+  ``test_list_invoices_filter_by_order_id`` -- creates an invoice from an
+  order, calls ``GET /invoices?order_id={id}``, verifies exactly one
+  invoice returned with the correct ID; also verifies a non-existent
+  order_id returns empty.
+
+Frontend:
+* ``useInvoices`` hook: new ``order_id`` parameter, passed through to the
+  API query.
+* ``OrderDetailPage``: new ``InvoiceLink`` component that uses
+  ``useInvoices({ order_id })`` to resolve the invoice for the current
+  order and links directly to ``/office/invoices/{invoice_id}`` (not the
+  unfiltered list).  Only renders when an invoice is found (0 or 1 results;
+  the common case since one order maps to at most one invoice).
+* ``orders.test.tsx``: new test asserting DRAFT orders do NOT show the
+  invoice link.
+
+All 9 backend order-invoice integration tests pass.  All 34 frontend
+tests pass.  TypeScript compiles with zero errors.
+
+-----------------
+
+Task 3/4 (update) -- Backend prerequisite: GET /credit-notes + GET /reason-codes
+
+Date: 2026-08-30
+
+Done -- Two backend additions needed as prerequisites for the Credit Note
+frontend milestone.
+
+1. **GET /credit-notes** with optional ``invoice_id`` and ``customer_id``
+   query parameters.  ``credit_note_service.list_credit_notes()`` added
+   following the same shape as ``invoice_service.list_invoices()``.  The
+   endpoint returns ``CreditNoteListResponse``.  Added to the
+   ``credit_notes.py`` router (before the existing POST create endpoint).
+   Test: creating two credit notes against different invoices, then
+   ``GET /credit-notes?invoice_id={x}`` returns only the one linked to x.
+
+2. **GET /reason-codes** with optional ``scope`` query parameter
+   (ADJUSTMENT | VARIANCE | RETURN | DAMAGE per reason_code_ref's own
+   CHECK constraint).  New read-only endpoint at
+   ``/api/v1/reason-codes``, any authenticated user.  Returns
+   ``id/code/label`` for active reason codes.  Needed for both the
+   Credit Note milestone (reason_code_id on creation) and the upcoming
+   Inventory milestone (stock_adjustment/physical_count also reference it)
+   -- built once, generically.
+
+Tests: 3 reason code tests (returns seeded codes, scope filter,
+unauthenticated 401), 2 credit note list tests (invoice_id filter,
+nonexistent invoice returns empty).
+
+-----------------
+
+Task 5 (update) -- Frontend: Credit Note Domain
+
+Done (2026-08-30) -- Credit Note frontend delivered.
+
+**Credit Notes section on InvoiceDetailPage**: Lists credit notes linked
+to the invoice via ``GET /credit-notes?invoice_id={id}``.  Shows credit
+note number (linking to detail), state badge, total amount, issued date.
+"New Credit Note" button visible when invoice is ISSUED/PARTIALLY_PAID/PAID,
+gated behind CREDIT_NOTE_MANAGE permission.
+
+**CreditNoteCreatePage** (``/office/credit-notes/new?invoice_id={id}``):
+Form with reason code dropdown (populated from ``GET /reason-codes?scope=RETURN``),
+repeatable line-item entry (optionally linked to an invoice line via a
+picker sourced from the parent invoice's lines, or left unlinked with
+free-text description + qty + unit_price), note field.  Submits to
+``POST /credit-notes``.
+
+**CreditNoteDetailPage** (``/office/credit-notes/:id``): Header fields
+(invoice link, customer, total amount, reason code, timestamps), line
+items table.  Action buttons gated behind CREDIT_NOTE_MANAGE:
+  - Issue (DRAFT -> ISSUED): confirm dialog with optional note.
+  - Void (DRAFT -> VOID): destructive confirm dialog with optional note.
+  - Apply (ISSUED -> APPLIED): destructive confirm dialog explaining
+    "this will close the original invoice as corrected".
+
+**API hooks**: ``useCreditNotes.ts`` (list/read/create/issue/apply/void)
+and ``useReasonCodes.ts`` (list with scope filter).
+
+**Routes**: App.tsx updated with credit note routes (create, detail)
+under /office, reached from InvoiceDetailPage.
+
+**Tests**: ``credit-notes.test.tsx`` -- 4 tests:
+  - CreditNoteDetailPage: renders header/lines/invoice link, shows
+    Issue + Void buttons for DRAFT.
+  - CreditNoteCreatePage: renders form with reason code dropdown and
+    line items.
+  - InvoiceDetailPage: renders credit notes section with linked credit
+    note and New Credit Note button.
+
+TypeScript: compiles with zero errors.  All 38 frontend tests pass
+(26 order + 6 invoice + 4 credit note + 2 app).
+
+-----------------
+
+Task 3/4 (update) -- Reason Code Seed Data Gap Fix
+
+Done (2026-08-30) -- Fixed a seed-data gap that made the Credit Note
+creation form unusable in a real deployment.
+
+**Problem**: ``services/bootstrap_service.py`` only seeded a single
+ADJUSTMENT-scoped reason code ("PRICING_ERROR").  The frontend's
+``CreditNoteCreatePage`` queries ``GET /reason-codes?scope=RETURN``
+for its reason code dropdown, which returned an empty list -- the
+dropdown had no options and the form was unusable.
+
+**Root cause**: No RETURN-scoped reason codes existed in the bootstrap
+seed data.  The existing ``ensure_default_reason_code()`` function only
+created one ADJUSTMENT-scoped code.  The scope filter on the endpoint
+was correct; the seed data was incomplete.
+
+**Fix**:
+
+1. Added ``_REASON_CODES`` data tuple and ``ensure_reason_codes()``
+   function to ``bootstrap_service.py``, seeding codes for all four
+   scopes:
+   - **ADJUSTMENT**: ``PRICING_ERROR`` (unchanged -- pricing errors are
+     inventory price corrections, not customer-return reasons)
+   - **RETURN**: ``DAMAGED_GOODS``, ``WRONG_ITEM_SHIPPED``,
+     ``QUALITY_ISSUE`` (credit note / customer return reasons)
+   - **VARIANCE**: ``COUNT_VARIANCE`` (physical count discrepancies,
+     needed by upcoming Inventory milestone)
+   - **DAMAGE**: ``DAMAGED_IN_TRANSIT`` (damaged goods, needed by
+     upcoming Inventory milestone)
+
+2. ``ensure_default_reason_code()`` retained as backward-compatible
+   wrapper -- now calls ``ensure_reason_codes()`` first to seed all
+   codes, then returns the PRICING_ERROR code for callers that depend
+   on it.
+
+3. Regression tests added to ``backend/tests/test_reason_codes.py``:
+   - ``test_return_scope_has_seeded_codes``: asserts scope=RETURN
+     returns non-empty with expected codes (DAMAGED_GOODS,
+     WRONG_ITEM_SHIPPED)
+   - ``test_variance_scope_has_seeded_code``: asserts scope=VARIANCE
+     returns non-empty with COUNT_VARIANCE
+   - ``test_damage_scope_has_seeded_code``: asserts scope=DAMAGE
+     returns non-empty with DAMAGED_IN_TRANSIT
+   - ``test_all_scopes_have_seeded_codes``: catches future regressions
+     where any scope loses its last seeded code
+
+All four tests query against bootstrap seed data (not test-local
+ad-hoc reason codes) -- this is the class of test that should have
+caught the original gap.
+
+**Scope note**: ``PRICING_ERROR`` remains ADJUSTMENT-scoped, not
+RETURN-scoped.  Pricing errors are inventory price corrections
+(stock_adjustment with reason_code_ref), not customer-return reasons
+(credit_note / customer_return with reason_code_ref).  The RETURN
+codes below cover the reasons a credit note is issued against an invoice.
+
+-----------------
+
+Task 3/4 (update) -- Security Hardening: Commission Balance Scope Fix
+
+Date: 2026-08-30
+
+Done -- Resolved M-15 from SECURITY_AUDIT_2026-08-29.md.  The endpoint
+GET /representatives/{id}/commission-balance had no representative scope
+check (only Depends(get_current_user)), allowing any authenticated user
+to query any representative's commission balance by ID.
+
+* **Scope check added**: For representative-linked users, the endpoint
+  now verifies `representative_id == current_user.representative_id`,
+  returning 403 for cross-representative access.  Admin/staff users
+  (no representative link) may query any representative.
+* **Existence check**: A pre-check verifies the requested
+  representative_id exists in the `representative` table, returning 404
+  for genuinely nonexistent IDs (distinguishing from the 403 cross-rep case).
+* **Regression tests**: `test_commission_balance_scope.py` -- 5 tests
+  covering admin access, rep own balance, cross-rep 403, nonexistent 404,
+  and unauthenticated 401.
+* **Documentation updated**: SECURITY_AUDIT_2026-08-29.md updated with
+  M-15 RESOLVED.
+
+-----------------
+
+Task 3/4 + Task 5 (update) -- Inventory Ledger + Stock Transfer Frontend
+
+Date: 2026-08-30
+
+Done -- Backend prerequisites + full frontend milestone for Inventory
+Ledger and Stock Transfer.
+
+**Backend prerequisites (3 additions):**
+
+1. **Security fix M-03 finally closed**: The INVENTORY_MANAGE permission
+   gate on POST /inventory/transactions and POST /inventory/transactions/{id}/reverse
+   was already implemented in a prior pass (permission created, endpoints
+   gated, regression tests in test_inventory_permission.py).  This milestone
+   updated the stale module docstring in inventory.py that still said
+   "there is no RBAC/permission system yet" -- it does now, everywhere else.
+
+2. **GET /inventory/transactions**: New paginated endpoint with required
+   ``warehouse_id`` and optional ``product_id``/``lot_id`` filters,
+   returning raw ledger rows ordered newest-first (``sequence_no DESC``).
+   Gated behind warehouse scope read access only (no INVENTORY_MANAGE
+   needed).  Added to ``app/schemas/inventory.py`` as
+   ``TransactionListResponse``.  Tests added to test_inventory.py.
+
+3. **GET /movement-types**: New read-only endpoint returning the seeded
+   ``movement_type_ref`` catalog (code, label, sign) for any authenticated
+   user.  Same pattern as GET /reason-codes.  New endpoint file
+   ``app/api/v1/endpoints/movement_types.py``, wired into router.py.
+   Tests added to test_inventory.py.
+
+**Frontend -- Part A: Stock Transfer** (no blockers, built first):
+
+* ``TransferListPage``: GET /transfers, table (transfer number, source/
+   destination warehouse, state badge, line count, date), filter by state,
+   pagination.  "New Transfer" button gated behind TRANSFER_MANAGE.
+* ``TransferDetailPage``: GET /transfers/{id} + lines + history.  Header
+   with source/destination warehouses, state badge, timestamps.  Lines
+   table.  State-history panel.  Transition action buttons.
+* ``TransferCreatePage``: POST /transfers -- source/destination warehouse
+   pickers (from GET /warehouses), repeatable line rows (product picker
+   from GET /products, qty_requested, unit_cost), note field.  Gated
+   behind TRANSFER_MANAGE.
+* ``TransferTransitionActions``: State-based action buttons per the 6-state
+   graph (DRAFT->PENDING->APPROVED->DISPATCHED->RECEIVED, with CANCELLED
+   from DRAFT/PENDING).  All transitions require TRANSFER_MANAGE (verified
+   against transfers.py).  Cancel has confirmation dialog.
+
+**Frontend -- Part B: Inventory Ledger** (built on backend additions above):
+
+* Warehouse + Product selectors at the top of the page.
+* Balance lookup widget: shows live-computed number from
+   GET /inventory/balance with UI copy making clear it is always computed
+   from the ledger, never cached.
+* Ledger table: GET /inventory/transactions?warehouse_id=...&product_id=...
+   showing movement type, signed quantity (green for positive, red for
+   negative), unit cost, reference, reversed indicator, date.
+* Post Transaction form: movement type dropdown from GET /movement-types
+   (showing each type's sign), signed quantity input with client-side sign
+   validation as UX convenience, unit cost.  Gated behind INVENTORY_MANAGE.
+   Surfaces backend 422/409 errors as inline messages.
+* Reverse action: inline reverse button on each unreversed ledger row,
+   confirmation with optional reason code dropdown from
+   GET /reason-codes?scope=ADJUSTMENT.  Gated behind INVENTORY_MANAGE.
+   Surfaces 409 (already reversed / would go negative) as inline errors.
+
+**API hooks**: useTransfers.ts (list/read/create/history/transitions),
+useInventory.ts (list transactions/balance/post/reverse/movement types),
+useWarehouses.ts (list for picker dropdowns).
+
+**Routes**: App.tsx updated -- /office/inventory renders InventoryLedgerPage,
+/office/transfers renders TransferListPage, /office/transfers/new renders
+TransferCreatePage, /office/transfers/:id renders TransferDetailPage.
+
+**Tests**: Vitest + RTL for TransferListPage (renders table, state filter,
+new transfer button), TransferDetailPage (renders header, lines, history),
+TransferCreatePage (renders form with warehouse pickers and lines),
+ALLOWED_TRANSITIONS lookup table (unit test verifying 6-state graph),
+InventoryLedgerPage (renders heading, selectors, explains live computation,
+no post form without selection).  12 transfer tests + 4 inventory tests.
+TypeScript compiles with zero errors.  All 54 frontend tests pass.
+
+Backend tests: 13 inventory tests (8 original + 5 new for list-transactions
+and movement-types), 7 reason code tests, 11 credit note tests, 3 transfer
+tests -- all 34 pass.
+
+-----------------
+
+Task 5 (update) -- Frontend: Reporting + KPI Dashboard
+
+Date: 2026-08-30
+
+Done -- Full frontend for the Reporting and KPI Snapshot domains.
+Backend prerequisites: two missing list endpoints added.
+
+**Backend additions:**
+
+1. **GET /report-types** (new): Returns the seeded report type reference
+   catalog (R10). Read-only, no permission required -- same convention as
+   GET /movement-types and GET /reason-codes.
+
+2. **GET /report-definitions** (new): Paginated list of non-deleted report
+   definitions, ordered by created_at DESC. Gated behind REPORT_MANAGE.
+
+3. ``services/report_service.py`` gained ``list_report_definitions()`` and
+   ``list_report_types()``. ``backend/app/schemas/reports.py`` gained
+   ``ReportTypeResponse``, ``ReportTypeListResponse``,
+   ``ReportDefinitionListResponse``.
+
+**GLOBAL_KPI_KEYS confirmation:** The frozenset in
+``services/kpi_snapshot_service.py`` contains exactly three keys:
+``{``TOTAL_STOCK_VALUE``, ``AR_BALANCE``, ``COMMISSION_PAYABLE``}``.
+The frontend dashboard shows all three -- no keys are missing.
+
+**Frontend pages:**
+
+* ``ReportListPage`` (``/office/reports``): Paginated table of report
+   definitions with name, type, format, status, created date. "New Report
+   Definition" create form (name, type picker, output format). "Run Now"
+   button per definition (synchronous execution), with link to result.
+   Gated behind REPORT_MANAGE.
+
+* ``ReportRunDetailPage`` (``/office/reports/runs/:id``): Run metadata
+   (status badge, report type, name, row count, timestamps) plus snapshot
+   data rendered as a dynamic table. Shows "No snapshot data available"
+   for COMPLETE runs with no snapshot, and FAILED runs show the FAILED
+   badge without a data section.
+
+* ``KpiDashboardPage`` (``/office/kpi``): Three KPI cards (Total Stock
+   Value, Accounts Receivable, Commission Payable) showing latest captured
+   value with "Last captured" timestamp. Click a card to expand a history
+   panel with period granularity selector (Daily/Weekly/Monthly) and
+   trend table. "Capture KPIs" button triggers on-demand GLOBAL-scope
+   capture. Gated behind KPI_SNAPSHOT_VIEW.
+
+**Post-login redirect:** Office users now land on ``/office/kpi``
+(KPI Dashboard) instead of the placeholder Office Dashboard, since the
+KPI dashboard shows actual business data.
+
+**API hooks:** useReports.ts (list types, list definitions, create,
+run, get run), useKpi.ts (latest, history, capture).
+
+**Routes:** App.tsx updated -- /office/reports renders ReportListPage,
+/office/reports/runs/:id renders ReportRunDetailPage,
+/office/kpi renders KpiDashboardPage. AppShell.tsx gained "KPI Dashboard"
+nav item (KPI_SNAPSHOT_VIEW permission).
+
+**Tests:** 18 new frontend tests (9 reports + 9 KPI):
+- reports.test.tsx: ReportListPage heading, table renders definitions,
+  create form opens/submits expected body, Run Now buttons.
+  ReportRunDetailPage: snapshot table rendering, loading state, error
+  state, FAILED run (no snapshot section).
+- kpi.test.tsx: heading/description, all 3 cards rendered, latest values
+  displayed, "No data" for empty cards, history panel opens/closes on
+  click, history rows rendered, Capture KPIs button, per-key history
+  fetch.
+
+TypeScript compiles with zero errors.  All 72 frontend tests pass
+(8 test files: 2 app + 4 orders + 6 invoices + 4 credit-notes +
+4 inventory + 12 transfers + 9 reports + 9 KPI).
+
+Backend tests: 16 report tests pass (11 original + 5 new: list_report_types,
+list_report_types_requires_auth, list_report_definitions,
+list_report_definitions_pagination, list_report_definitions_requires_permission).
+
+**API type reconciliation:** Ran `openapi-typescript` against the live backend
+OpenAPI schema. The generated `ReportTypeResponse` (`{id, code}`) and
+`ReportDefinitionResponse` (`{id, report_type_id, owner_user_id, name,
+parameters, schedule_cron, output_format, is_active, created_by,
+updated_by, created_at, updated_at}`) match what `useReports.ts` and
+`ReportListPage.tsx` assumed — no manual type edits needed.
+
+-----------------
+
+Task 5 (update) -- Frontend: Representative Portal (/rep/*)
+
+Date: 2026-08-30
+
+Done -- Full Representative Portal delivered, replacing the single-page
+RepOrderListPage stopgap. Per 02_SRS.md persona A4: reps receive stock,
+sell to customers, view their own inventory, place orders, and view their
+own commissions.
+
+**Backend prerequisite -- GET /warehouses/my (new):**
+Added a `GET /warehouses/my` endpoint to `warehouses.py` that returns
+warehouses actively assigned to the current representative via
+`resolve_representative_warehouses()`. Admin/staff users see all
+warehouses (same as GET /warehouses). This was needed because the
+frontend's RepInventoryPage requires knowing which warehouses belong
+to the logged-in representative, and no prior endpoint exposed this.
+
+**Layout:** The existing `AppShell` already supports both office and rep
+nav (REP_NAV_ITEMS with Dashboard, My Customers, My Orders, My Inventory).
+Added "My Commission" nav item. No separate RepShell component was
+needed -- the AppShell's generic structure handles both portals.
+
+**Pages delivered:**
+
+1. **RepDashboardPage** (`/rep`, `/rep/dashboard`): Compact summary with:
+   - Commission balance card (GET /representatives/{id}/commission-balance,
+     now scope-fixed per M-15)
+   - Active orders count (computed from GET /orders, server-side scoped)
+   - Quick action buttons (New Order, View Customers)
+   - Recent orders mini-table (last 5 orders)
+
+2. **Orders** (`/rep/orders`, `/rep/orders/new`, `/rep/orders/:id`):
+   - `RepOrderListPage`: Promoted from stopgap wrapper to full list view
+     with rep-specific routing (links point to /rep/orders/* not /office/orders/*).
+     "New Order" button gated behind ORDER_MANAGE permission (same as office).
+   - `RepOrderCreatePage`: Order creation with rep-specific navigation
+     (navigates to /rep/orders after creation). Reuses the same form as
+     OrderCreatePage.
+   - `RepOrderDetailPage`: Full order detail with rep-specific back link.
+     Reuses OrderTransitionActions component (gated by existing usePermission
+     checks -- reps with ORDER_MANAGE see all transitions; reps without it
+     see read-only).
+
+3. **Customers** (`/rep/customers`, `/rep/customers/:id`):
+   - `RepCustomerListPage`: Read-only list (GET /customers, server-side
+     representative-scoped). No create/edit/deactivate actions.
+   - `RepCustomerDetailPage`: Read-only detail view with rep portal back link.
+     Reuses CustomerDetailPage's display pattern.
+
+4. **Inventory** (`/rep/inventory`):
+   - `RepInventoryPage`: Read-only view of assigned warehouses (GET /warehouses/my)
+     with balance lookup (GET /inventory/balance). No post-transaction or
+     reverse actions -- those remain office-only.
+
+5. **Commission** (`/rep/commission`):
+   - `RepCommissionPage`: Dedicated page showing balance card and transaction
+     history table (GET /commission-transactions, server-side scoped).
+     State filter (ACCRUED/APPROVED/PAID/CLAWED_BACK) with pagination.
+
+**API hooks:** `useCommissions.ts` (balance + transactions list).
+
+**Tests:** 13 new Vitest + RTL tests (`rep-portal.test.tsx`):
+- AppShell: rep nav shows correct items (Dashboard, My Customers, My Orders,
+  My Inventory, My Commission), hides office items, renders sign out.
+- RepDashboardPage: renders heading, commission balance card, active orders
+  count, quick action buttons.
+- RepCustomerListPage: renders heading, search/filter inputs, no action
+  buttons, empty state.
+- RepInventoryPage: renders heading, assigned warehouses section.
+
+TypeScript: compiles with zero errors. All 85 frontend tests pass
+(9 test files).
+
+**Flags / Follow-up items (nothing silently dropped):**
+- The `GET /warehouses/my` endpoint was added as a backend prerequisite.
+  It was not previously needed by the bot layer (which used
+  `resolve_representative_warehouses()` directly in Python), but the
+  frontend required an HTTP endpoint.
+- Order creation still requires the representative to know their own
+  `representative_id` (entered as a UUID field). A future UX improvement
+  could auto-populate this from `GET /auth/me` or a dedicated endpoint.
+- No admin-facing features are exposed in the rep portal. All
+  navigation items are gated to rep-specific routes.
+
+-----------------
+
+
+-----------------
+
+Task 5 (update) -- Frontend: Bilingual Support Phase 1 (ADR-011)
+
+Date: 2026-08-31
+
+🟡 In progress -- Foundation and pilot screens only. Full per-feature
+rollout is a separate future phase.
+
+**ADR-011 (Bilingual Support):** Accepted. react-i18next with
+namespace-per-feature translation files. RTL via logical Tailwind
+properties. Jalali calendar for Persian users. Financial figures in
+Latin digits. localStorage persistence.
+
+**Phase 1 deliverables:**
+- i18n scaffold: react-i18next setup, `src/i18n/` directory structure,
+  locale files for `en/` and `fa/`
+- Language switcher in AppShell sidebar
+- `<html dir>` toggling on language change
+- Login page, AppShell nav, RepDashboardPage fully translated
+- RTL verification for piloted screens
+- 2x `pr-4` → `pe-4` fix in ReportRunDetailPage.tsx
+- Tests: language switcher changes dir, translated text renders
+
+**Explicitly out of scope (Phase 1):**
+- All other screens remain English-only
+- Jalali date library integration
+- Full shadcn/ui RTL audit
+- Number formatting utility
+- Backend changes
+
+**Future phases:**
+- Phase 2: Jalali date formatting
+- Phase 3: Per-feature translation rollout (starting with Orders)
+- Phase 4: shadcn/ui RTL audit + full logical-property migration
+- Phase 5: Number formatting utility
+- Phase 6: Backend string translation map completion
+
+-----------------
+
+Task (Desktop) -- Desktop Packaging Phase 1 (ADR-012)
+
+Date: 2026-08-31
+
+🟡 In progress -- Minimal working shell only. No auto-update, no native
+menus, no tray icon.
+
+**ADR-012 (Desktop Packaging):** Accepted. Electron + electron-builder
+(NSIS Windows target). Separate `desktop/` package. Backend URL via
+first-run settings screen + electron-store. Security hardened
+(contextIsolation, no nodeIntegration, sandbox).
+
+**Phase 1 deliverables:**
+- New `desktop/` package with Electron main process, preload script,
+  and settings.html
+- First-run "set backend URL" screen
+- electron-builder config for unsigned .exe (NSIS target)
+- Frontend `api/client.ts` updated for Electron URL injection
+  (backward-compatible, no web behavior change)
+- Build scripts (build frontend → package with electron-builder)
+- Manual verification: .exe opens, prompts for URL, logs in successfully
+
+**Explicitly out of scope (Phase 1):**
+- Auto-update (manual distribution for now)
+- Native menu customization
+- Tray icon
+- Code signing
+- macOS / Linux targets
+
+**Future phases:**
+- Phase 2: macOS DMG + Linux AppImage
+- Phase 3: Auto-update via electron-updater
+- Phase 4: Native menus
+- Phase 5: Tray icon
+- Phase 6: Code signing
+
+-----------------
+
+-----------------
+
+Task 5 (update) -- Bilingual Support Phase 1: Verification & Fixes
+
+Date: 2026-08-31
+
+Done -- Five-point verification of the Phase 1 i18n/desktop pass. All
+checks completed; fixes applied where issues were found.
+
+**Check #1: Physical Tailwind classes audit (RTL correctness)**
+Result: CLEAN (with notes).
+
+Comprehensive grep for pl-, pr-, ml-, mr-, left-, right-, space-x-,
+border-l-, border-r-, divide-x- across all frontend/src/**/*.{ts,tsx,css}:
+
+- pl-: 0 real hits (1 false positive: test fixture `price_list_id: "pl-1"`)
+- pr-: 0 hits (the 2 original `pr-4` instances were fixed in Phase 1)
+- ml-: 0 hits
+- mr-: 0 hits
+- left-/right-: 0 hits
+- space-x-: 2 hits in OrderDetailPage.tsx (lines 434, 454)
+  — `space-x-2` applies margin-left to children, which is a physical
+    directional property. NOT a pilot screen; flagged for Phase 4
+    (full logical-property migration).
+- border-l-/border-r-/divide-x-: 0 hits
+
+The codebase is ~99%+ direction-agnostic. Only `space-x-2` in a
+non-pilot screen is a known RTL trap for Phase 4.
+
+**Check #2: Persian-locale number rendering (Latin digits)**
+Result: FIXED.
+
+Audit found 89 `toLocaleString()` / `toLocaleDateString()` calls across
+the frontend, NONE of which specified `numberingSystem: "latn"` or an
+explicit locale. Under `lang="fa"`, these would produce Persian digits
+(۰-۹), violating ADR-011's explicit "financial figures always in Latin
+digits" decision.
+
+Fix applied:
+- Created `frontend/src/lib/format.ts` with `formatNumber()`,
+  `formatCurrency()`, `formatDate()`, and `formatDateTime()` utilities.
+  All number formatters explicitly use `locale: "en"` and
+  `numberingSystem: "latn"` to guarantee 0-9 digits.
+- Updated RepDashboardPage (pilot screen) to use `formatCurrency()` and
+  `formatDate()`.
+- Added `formatCurrency()` to `frontend/src/lib/format.ts`.
+
+Remaining ~87 `toLocaleString()` calls across non-pilot screens are
+flagged for Phase 5 (project-wide number formatting utility rollout).
+The pilot screen is guaranteed correct.
+
+**Check #3: Jalali calendar status**
+Result: NOT implemented in Phase 1 (correct per scope).
+
+Phase 1 scope was i18n scaffold + pilot screens only. Jalali date
+formatting is Phase 2 per the roadmap. RepDashboardPage's one date
+field (`order.ordered_at`) now goes through `formatDate()` which
+renders Gregorian (e.g. "Aug 31, 2026") regardless of language. This
+is explicitly documented in `format.ts` as a known temporary state —
+not silently wrong, deferred by design.
+
+**Check #4: Desktop .exe build verification**
+Result: BUILT successfully. Manual runtime test could not be performed
+(no display in this environment).
+
+Build verification:
+- `desktop/src/main.mts` compiles with tsc (ESM, electron-store v10)
+- `frontend/dist/` built via Vite
+- `desktop/dist/frontend/` populated with frontend build output
+- `electron-builder --win --dir` produces `dist/win-unpacked/Enterprise ERP.exe`
+  (201 MB, unsigned)
+- asar contents verified: `dist/main.js`, `dist/preload.js`,
+  `dist/settings.html`, `dist/frontend/index.html`,
+  `dist/frontend/assets/*` all present
+
+Fixes applied during build:
+- Converted desktop package to ESM (`"type": "module"`, `.mts` files)
+  because `electron-store` v10 is ESM-only
+- Added `@types/node` devDependency
+- Changed `__dirname` to `fileURLToPath(import.meta.url)` pattern
+- Updated frontend dist path from `../../frontend/dist/` to
+  `frontend/` (copied into `desktop/dist/` by build script)
+
+Manual verification (first-run settings → URL persistence → login)
+must be performed by a human with a display and a running backend.
+The build infrastructure is correct; runtime behavior is unverified.
+
+**Check #5: __BACKEND_URL__ injection timing vs createClient()**
+Result: FIXED (race condition found and resolved).
+
+Analysis traced the Electron execution order:
+1. Main process creates BrowserWindow with contextIsolation: true
+2. Preload script runs BEFORE page scripts
+3. Page scripts (bundled React app) execute AFTER preload
+
+The original implementation set `window.__BACKEND_URL__` directly in
+the preload via `Object.defineProperty(window, ...)`. However, with
+`contextIsolation: true`, the preload's `window` and the page's
+`window` are DIFFERENT objects. Properties set on the preload's
+window are NOT accessible from page code. Only properties explicitly
+exposed via `contextBridge.exposeInMainWorld()` are visible to the page.
+
+This meant `window.__BACKEND_URL__` was always `undefined` in
+`client.ts`, causing the API client to fall back to the empty proxy
+URL — the Electron-injected backend URL was silently ignored.
+
+Fix applied:
+- Preload simplified: removed broken `__BACKEND_URL__` property,
+  only exposes `electronAPI` via contextBridge (async getConfig/setConfig)
+- Main process: removed unused synchronous IPC handler
+- `frontend/src/api/client.ts`: refactored to lazy initialization.
+  `getApiClient()` is now async — resolves the base URL via
+  `window.electronAPI.getConfig()` on first use, NOT at module load.
+  The sync `apiClient` export is retained for backward compatibility
+  (uses default Vite env URL); new code should prefer
+  `await getApiClient()`.
+
+All 92 frontend tests pass. TypeScript compiles with zero errors in
+modified files.
+
+-----------------

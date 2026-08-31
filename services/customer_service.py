@@ -115,6 +115,7 @@ def list_customers(
     *,
     search: str | None = None,
     status: str | None = None,
+    representative_id: uuid.UUID | None = None,
     skip: int = 0,
     limit: int = 50,
 ) -> Iterable[Customer]:
@@ -124,7 +125,17 @@ def list_customers(
     ``tax_number`` -- the real model has no ``phone``/``national_id``
     columns (those belonged to the mismatched previous schema), so search
     is scoped to the fields that actually exist.
+
+    ``representative_id``: when set, only returns customers that have an
+    active ``CustomerRepAssignment`` linking to the given representative
+    (time-window check: ``effective_from <= now AND (effective_to IS NULL
+    OR effective_to > now)``).  This is the list-scope filtering
+    counterpart of the single-customer ``_require_customer_scope`` check
+    used by the GET-by-id endpoint.
     """
+    import datetime
+
+    from database.models.customer_rep_assignment import CustomerRepAssignment
 
     query = select(Customer).where(Customer.deleted_at.is_(None))
     if status is not None:
@@ -138,6 +149,22 @@ def list_customers(
                 Customer.tax_number.ilike(pattern),
             )
         )
+    if representative_id is not None:
+        # Subquery: customers with an active assignment to this representative.
+        now = datetime.datetime.now(datetime.timezone.utc)
+        scoped_customer_ids = (
+            select(CustomerRepAssignment.customer_id)
+            .where(
+                CustomerRepAssignment.representative_id == representative_id,
+                CustomerRepAssignment.effective_from <= now,
+                (
+                    CustomerRepAssignment.effective_to.is_(None)
+                    | (CustomerRepAssignment.effective_to > now)
+                ),
+            )
+            .distinct()
+        )
+        query = query.where(Customer.id.in_(scoped_customer_ids))
     query = query.order_by(Customer.name).offset(skip).limit(limit)
     return session.execute(query).scalars().all()
 

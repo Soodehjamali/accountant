@@ -32,10 +32,12 @@ from app.api.v1.endpoints import (
     inventory,
     invoices,
     kpi_snapshot,
+    movement_types,
     orders,
     payments,
     price_lists,
     products,
+    reason_codes,
     representatives,
     rbac,
     reports,
@@ -63,5 +65,7 @@ api_router.include_router(warehouses.router)
 api_router.include_router(price_lists.router)
 api_router.include_router(kpi_snapshot.router)
 api_router.include_router(reports.router)
+api_router.include_router(reason_codes.router)
+api_router.include_router(movement_types.router)
 
 __all__ = ["api_router"]

@@ -311,7 +311,23 @@ def execute_return(
             reference_id=customer_return.id,
         )
 
-    # 7. Audit the return mutation.
+    # 7. Trigger commission clawback for Scenario-B (DIRECT) returns.
+    #    Per SRS BR-R3: "Commission clawback on returned Scenario-B
+    #    sales." Scenario-B = order.order_type == 'DIRECT'.
+    clawback_msg = ""
+    if order_id is not None:
+        from services import return_service
+        order = session.execute(
+            sa_select(Order).where(Order.id == order_id)
+        ).scalar_one_or_none()
+        if order is not None and order.order_type == "DIRECT":
+            clawback_result = return_service._trigger_commission_clawback(
+                session, customer_return, actor_user_id,
+            )
+            if clawback_result:
+                clawback_msg = f"\n  Commission: {clawback_result}"
+
+    # 8. Audit the return mutation.
     audit_service.record(
         session,
         entity_type="customer_return",
@@ -325,6 +341,7 @@ def execute_return(
             "product_sku": payload["product_sku"],
             "quantity": quantity,
             "state": "PENDING_APPROVAL",
+            "commission_clawback": clawback_msg.strip() if clawback_msg else None,
         },
     )
     session.flush()
@@ -336,4 +353,5 @@ def execute_return(
         f"  Quantity: {quantity}\n"
         f"  Warehouse: {payload['warehouse_code']}\n"
         f"  Status: PENDING_APPROVAL"
+        f"{clawback_msg}"
     )

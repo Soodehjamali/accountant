@@ -1,0 +1,57 @@
+{
+  "app": {
+    "name": "سیستم ERP سازمانی",
+    "loading": "در حال بارگذاری…"
+  },
+  "nav": {
+    "dashboard": "داشبورد",
+    "products": "محصولات",
+    "customers": "مشتریان",
+    "orders": "سفارشات",
+    "invoices": "فاکتورها",
+    "inventory": "انبار",
+    "transfers": "انتقالات",
+    "payments": "پرداخت‌ها",
+    "commissions": "کمیسیون‌ها",
+    "kpiDashboard": "داشبورد KPI",
+    "reports": "گزارش‌ها",
+    "auditLog": "لاگ حسابرسی",
+    "myCustomers": "مشتریان من",
+    "myOrders": "سفارشات من",
+    "myInventory": "انبار من",
+    "myCommission": "کمیسیون من"
+  },
+  "shell": {
+    "office": "دفتر",
+    "repPortal": "پورتال نماینده",
+    "signOut": "خروج"
+  },
+  "auth": {
+    "signIn": "ورود",
+    "signingIn": "در حال ورود…",
+    "loginFailed": "ورود ناموفق"
+  },
+  "common": {
+    "viewDetails": "مشاهده جزئیات →",
+    "viewAll": "مشاهده همه →",
+    "newOrder": "سفارش جدید",
+    "viewCustomers": "مشاهده مشتریان",
+    "noDataYet": "هنوز داده‌ای موجود نیست.",
+    "back": "بازگشت"
+  },
+  "orderStates": {
+    "DRAFT": "پیش‌نویس",
+    "PENDING_APPROVAL": "در انتظار تأیید",
+    "APPROVED": "تأیید شده",
+    "RESERVED": "رزرو شده",
+    "FULFILLING": "در حال اجرا",
+    "SHIPPED": "ارسال شده",
+    "INVOICED": "فاکتور شده",
+    "PAID": "پرداخت شده",
+    "COMPLETED": "تکمیل شده",
+    "CANCELLED": "لغو شده",
+    "BACKORDERED": "سفارش معوق",
+    "PARTIALLY_FULFILLED": "اجرای جزئی",
+    "RETURNED": "برگشتی"
+  }
+}

@@ -112,6 +112,7 @@ def list_invoices(
     limit: int = Query(50, ge=1, le=100),
     customer_id: uuid.UUID | None = Query(default=None),
     state: str | None = Query(default=None),
+    order_id: uuid.UUID | None = Query(default=None),
 ) -> InvoiceListResponse:
     # Server-side representative scope: representative-linked users
     # can only see invoices linked to their own orders.  Admin/staff
@@ -123,7 +124,8 @@ def list_invoices(
     )
     invoices = invoice_service.list_invoices(
         db, customer_id=customer_id, state=state,
-        representative_id=representative_id, skip=skip, limit=limit,
+        representative_id=representative_id, order_id=order_id,
+        skip=skip, limit=limit,
     )
     return InvoiceListResponse(items=[_to_response(inv) for inv in invoices])
 

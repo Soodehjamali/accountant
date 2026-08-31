@@ -27,6 +27,8 @@ from app.schemas.credit_notes import (
 from database.models.app_user import AppUser
 from services import credit_note_service, customer_ledger_service
 
+from fastapi import Query  # noqa: E402
+
 router = APIRouter(prefix="/credit-notes", tags=["credit-notes"])
 
 _require_credit_note_manage = require_permission(
@@ -61,6 +63,24 @@ def _to_response(credit_note, lines=None) -> CreditNoteResponse:
     if lines is not None:
         response.lines = [CreditNoteLineResponse.model_validate(line) for line in lines]
     return response
+
+
+@router.get("", response_model=CreditNoteListResponse, summary="List credit notes")
+def list_credit_notes(
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    invoice_id: uuid.UUID | None = Query(default=None),
+    customer_id: uuid.UUID | None = Query(default=None),
+) -> CreditNoteListResponse:
+    credit_notes = credit_note_service.list_credit_notes(
+        db, invoice_id=invoice_id, customer_id=customer_id,
+        skip=skip, limit=limit,
+    )
+    return CreditNoteListResponse(
+        items=[CreditNoteResponse.model_validate(cn) for cn in credit_notes]
+    )
 
 
 @router.post(

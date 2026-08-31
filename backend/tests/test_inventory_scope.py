@@ -44,6 +44,7 @@ requires_database = pytest.mark.skipif(
 )
 
 TRANSFER_MANAGE = "TRANSFER_MANAGE"
+INVENTORY_MANAGE = "INVENTORY_MANAGE"
 
 
 def _now():
@@ -67,14 +68,15 @@ def _create_rep_user(session, system_user, rep, *, suffix: str):
 
     role_code = f"ROLE_INVSCOPE_{suffix}"
     rbac_service.create_role(session, code=role_code, name=f"InvScope {suffix}", created_by=system_user.id)
-    try:
-        rbac_service.create_permission(
-            session, code=TRANSFER_MANAGE, name=TRANSFER_MANAGE, resource="inventory", action="manage",
-            created_by=system_user.id,
-        )
-    except rbac_service.DuplicatePermissionCodeError:
-        pass
-    rbac_service.grant_permission_to_role(session, role_code=role_code, permission_code=TRANSFER_MANAGE)
+    for perm_code, perm_resource in [(TRANSFER_MANAGE, "inventory"), (INVENTORY_MANAGE, "inventory")]:
+        try:
+            rbac_service.create_permission(
+                session, code=perm_code, name=perm_code, resource=perm_resource, action="manage",
+                created_by=system_user.id,
+            )
+        except rbac_service.DuplicatePermissionCodeError:
+            pass
+        rbac_service.grant_permission_to_role(session, role_code=role_code, permission_code=perm_code)
     rbac_service.assign_role(session, user_id=user.id, role_code=role_code, assigned_by=system_user.id)
     session.commit()
 
@@ -101,14 +103,15 @@ def _create_admin_user(session, system_user, *, suffix: str):
 
     role_code = f"ROLE_INVSCOPE_ADMIN_{suffix}"
     rbac_service.create_role(session, code=role_code, name=f"InvScopeAdmin {suffix}", created_by=system_user.id)
-    try:
-        rbac_service.create_permission(
-            session, code=TRANSFER_MANAGE, name=TRANSFER_MANAGE, resource="inventory", action="manage",
-            created_by=system_user.id,
-        )
-    except rbac_service.DuplicatePermissionCodeError:
-        pass
-    rbac_service.grant_permission_to_role(session, role_code=role_code, permission_code=TRANSFER_MANAGE)
+    for perm_code, perm_resource in [(TRANSFER_MANAGE, "inventory"), (INVENTORY_MANAGE, "inventory")]:
+        try:
+            rbac_service.create_permission(
+                session, code=perm_code, name=perm_code, resource=perm_resource, action="manage",
+                created_by=system_user.id,
+            )
+        except rbac_service.DuplicatePermissionCodeError:
+            pass
+        rbac_service.grant_permission_to_role(session, role_code=role_code, permission_code=perm_code)
     rbac_service.assign_role(session, user_id=user.id, role_code=role_code, assigned_by=system_user.id)
     session.commit()
 

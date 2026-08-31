@@ -77,6 +77,12 @@ class TransactionResponse(BaseModel):
     prev_hash: str | None
 
 
+class TransactionListResponse(BaseModel):
+    """Response body for ``GET /inventory/transactions``."""
+
+    items: list[TransactionResponse]
+
+
 class BalanceResponse(BaseModel):
     """Response body for ``GET /inventory/balance``."""
 
@@ -101,5 +107,6 @@ __all__ = [
     "BalanceResponse",
     "PostTransactionRequest",
     "ReverseTransactionRequest",
+    "TransactionListResponse",
     "TransactionResponse",
 ]

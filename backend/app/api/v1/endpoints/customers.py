@@ -102,14 +102,23 @@ def create_customer(
 @router.get("", response_model=CustomerListResponse, summary="List customers")
 def list_customers(
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(get_current_user),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     search: str | None = Query(default=None, description="Matches name, code, or tax number"),
     status_: str | None = Query(default=None, alias="status"),
 ) -> CustomerListResponse:
+    # Server-side representative scope: representative-linked users
+    # can only see customers assigned to their representative.  Admin/staff
+    # users (no representative link) see all customers.
+    representative_id = (
+        current_user.representative_id
+        if current_user.representative_id is not None
+        else None
+    )
     items = customer_service.list_customers(
-        db, search=search, status=status_, skip=skip, limit=limit
+        db, search=search, status=status_,
+        representative_id=representative_id, skip=skip, limit=limit,
     )
     return CustomerListResponse(items=list(items))
 
@@ -118,8 +127,14 @@ def list_customers(
 def read_customer(
     customer_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(get_current_user),
 ) -> CustomerResponse:
+    # Customer scope: verify representative is assigned to this customer
+    # BEFORE returning any data.  404 for out-of-scope (not 403) to prevent
+    # existence leakage, matching the convention of order_scope/
+    # invoice_scope/transfer_scope.
+    _require_customer_scope(customer_id, current_user, db)
+
     try:
         return customer_service.get_customer(db, customer_id)
     except customer_service.CustomerNotFoundError as exc:

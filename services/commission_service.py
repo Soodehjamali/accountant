@@ -25,7 +25,7 @@ import decimal
 import uuid
 from collections.abc import Iterable
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from database.models.commission_config import CommissionConfig
@@ -43,6 +43,25 @@ class CommissionConfigNotFoundError(LookupError):
     def __init__(self, config_id: uuid.UUID) -> None:
         super().__init__(f"No commission config with id '{config_id}' exists.")
         self.config_id = config_id
+
+
+class CommissionTransactionNotFoundError(LookupError):
+    """Raised when a referenced commission_transaction_id has no matching row."""
+
+    def __init__(self, transaction_id: uuid.UUID) -> None:
+        super().__init__(f"No commission transaction with id '{transaction_id}' exists.")
+        self.transaction_id = transaction_id
+
+
+class InvalidCommissionStateError(ValueError):
+    """Raised when a commission state transition is not allowed."""
+
+    def __init__(self, current_state: str, requested_state: str) -> None:
+        super().__init__(
+            f"Cannot transition commission from '{current_state}' to '{requested_state}'."
+        )
+        self.current_state = current_state
+        self.requested_state = requested_state
 
 
 class OrderNotCompletedError(ValueError):
@@ -566,11 +585,19 @@ __all__ = [
     "COMMISSION_MANAGE_PERMISSION_CODE",
     "CommissionAlreadyCalculatedError",
     "CommissionConfigNotFoundError",
+    "CommissionTransactionNotFoundError",
+    "InvalidCommissionStateError",
     "NoCommissionConfigFoundError",
     "OrderNotCompletedError",
+    "approve_commission",
     "calculate_commission_for_order",
+    "clawback_commission",
     "create_commission_config",
+    "get_commission_transaction",
     "get_order_commission",
+    "get_representative_commission_balance",
     "list_commission_configs",
+    "list_commission_transactions",
+    "pay_commission",
     "resolve_commission_rate",
 ]

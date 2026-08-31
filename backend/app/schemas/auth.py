@@ -9,6 +9,7 @@ it (notably: no ``password_hash``, ever, under any field name).
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -64,6 +65,11 @@ class CurrentUserResponse(BaseModel):
     am I" for a client's own UI (e.g. "logged in as Alice"), not a full
     admin-facing user record dump. A future admin "view any user" endpoint
     is a different, separately-authorized concern.
+
+    ``portal`` is a narrow derived field that tells the frontend which
+    UI shell to render (``/office`` vs ``/rep`` routes) without leaking
+    the raw ``representative_id`` linkage itself.  It is computed
+    server-side from whether ``AppUser.representative_id`` is set.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -72,6 +78,10 @@ class CurrentUserResponse(BaseModel):
     username: str
     email: str
     status: str
+    #: ``"representative"`` if the user is linked to a Representative,
+    #: ``"office"`` otherwise.  Drives the frontend's role-based
+    #: routing between /office and /rep portal shells.
+    portal: Literal["office", "representative"]
 
 
 __all__ = ["CurrentUserResponse", "LoginRequest", "TokenResponse"]

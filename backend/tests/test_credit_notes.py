@@ -655,3 +655,64 @@ def test_apply_credit_note_succeeds_with_ledger_wired(
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["state"] == "APPLIED"
+
+
+# -----------------------------------------------------------------
+# GET /credit-notes list endpoint tests
+# -----------------------------------------------------------------
+
+
+@requires_database
+def test_list_credit_notes_filter_by_invoice_id(
+    client: TestClient, credit_note_fixtures: dict, manage_auth_headers: dict[str, str]
+) -> None:
+    """GET /credit-notes?invoice_id={id} returns only credit notes
+    linked to that invoice."""
+    fx = credit_note_fixtures
+
+    # Create two credit notes against the same invoice
+    cn_ids = []
+    for i in range(2):
+        resp = client.post(
+            "/api/v1/credit-notes",
+            json={
+                "invoice_id": fx["invoice_id"],
+                "reason_code_id": fx["reason_code_id"],
+                "lines": [{"description": f"Line {i}", "qty": "1", "unit_price": "10"}],
+            },
+            headers=manage_auth_headers,
+        )
+        assert resp.status_code == 201, resp.text
+        cn_ids.append(resp.json()["id"])
+
+    # Filter by invoice_id — should return exactly 2
+    resp = client.get(
+        f"/api/v1/credit-notes?invoice_id={fx['invoice_id']}",
+        headers=manage_auth_headers,
+    )
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) == 2
+    returned_ids = {item["id"] for item in items}
+    assert set(cn_ids) == returned_ids
+
+    # Filter by a non-existent invoice_id — should return empty
+    resp = client.get(
+        "/api/v1/credit-notes?invoice_id=00000000-0000-0000-0000-000000000000",
+        headers=manage_auth_headers,
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()["items"]) == 0
+
+
+@requires_database
+def test_list_credit_notes_returns_empty_for_nonexistent_invoice(
+    client: TestClient, credit_note_fixtures: dict, manage_auth_headers: dict[str, str]
+) -> None:
+    """GET /credit-notes?invoice_id={nonexistent} returns empty list."""
+    resp = client.get(
+        "/api/v1/credit-notes?invoice_id=00000000-0000-0000-0000-000000000000",
+        headers=manage_auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["items"] == []

@@ -87,11 +87,31 @@ class ReportRunListResponse(BaseModel):
     items: list[ReportRunResponse]
 
 
+class ReportTypeResponse(BaseModel):
+    """A report type from the reference catalog (R10)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    code: str
+
+
+class ReportTypeListResponse(BaseModel):
+    items: list[ReportTypeResponse]
+
+
+class ReportDefinitionListResponse(BaseModel):
+    items: list[ReportDefinitionResponse]
+
+
 __all__ = [
     "ReportDefinitionCreateRequest",
+    "ReportDefinitionListResponse",
     "ReportDefinitionResponse",
     "ReportRunListResponse",
     "ReportRunResponse",
     "ReportRunWithSnapshotResponse",
     "ReportSnapshotResponse",
+    "ReportTypeListResponse",
+    "ReportTypeResponse",
 ]

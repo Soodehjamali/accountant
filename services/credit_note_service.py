@@ -309,6 +309,29 @@ def get_credit_note(session: Session, credit_note_id: uuid.UUID) -> CreditNote:
     return _get_credit_note_or_raise(session, credit_note_id)
 
 
+def list_credit_notes(
+    session: Session,
+    *,
+    invoice_id: uuid.UUID | None = None,
+    customer_id: uuid.UUID | None = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> list[CreditNote]:
+    """List credit notes, optionally filtered.
+
+    ``invoice_id``: when set, returns only credit notes linked to the
+    specified invoice.  ``customer_id``: when set, returns only credit
+    notes for the specified customer.
+    """
+    query = select(CreditNote)
+    if invoice_id is not None:
+        query = query.where(CreditNote.invoice_id == invoice_id)
+    if customer_id is not None:
+        query = query.where(CreditNote.customer_id == customer_id)
+    query = query.order_by(CreditNote.created_at.desc()).offset(skip).limit(limit)
+    return list(session.execute(query).scalars().all())
+
+
 def list_credit_note_lines(session: Session, credit_note_id: uuid.UUID) -> list[CreditNoteLine]:
     """Return all lines for a credit note.  Raises: CreditNoteNotFoundError."""
     _get_credit_note_or_raise(session, credit_note_id)

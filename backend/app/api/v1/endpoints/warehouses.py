@@ -34,6 +34,40 @@ _require_warehouse_manage = require_permission(WAREHOUSE_MANAGE_PERMISSION_CODE)
 
 
 # ---------------------------------------------------------------------------
+# "My Warehouses" — representative-scoped
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/my",
+    response_model=WarehouseListResponse,
+    summary="List warehouses assigned to the current representative",
+)
+def list_my_warehouses(
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
+) -> WarehouseListResponse:
+    """Return warehouses actively assigned to the current representative.
+
+    For admin/staff users (no representative link), returns all warehouses
+    (same as GET /warehouses).  For representative-linked users, returns
+    only warehouses with an active WarehouseAssignment.
+    """
+    from services.representative_scope_service import resolve_representative_warehouses
+
+    if current_user.representative_id is not None:
+        warehouses = resolve_representative_warehouses(
+            db, current_user.representative_id,
+        )
+        return WarehouseListResponse(
+            items=[WarehouseResponse.model_validate(w) for w in warehouses]
+        )
+    else:
+        # Admin/staff — return all warehouses.
+        items = warehouse_service.list_warehouses(db)
+        return WarehouseListResponse(items=list(items))
+
+
+# ---------------------------------------------------------------------------
 # Warehouse CRUD
 # ---------------------------------------------------------------------------
 

@@ -572,6 +572,136 @@ def test_csv_output_format(
     assert "warehouse_id" in snapshot_data["csv"]  # CSV header
 
 
+# ------------------------------------------------------------------
+# GET /report-types and GET /report-definitions list tests
+# ------------------------------------------------------------------
+
+
+@requires_database
+def test_list_report_types(
+    client: TestClient,
+    manage_auth_headers: dict[str, str],
+    report_fixtures: dict,
+) -> None:
+    """GET /report-types returns the 3 seeded report types."""
+    resp = client.get("/api/v1/report-types", headers=manage_auth_headers)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    codes = {item["code"] for item in body["items"]}
+    assert "AR_AGING" in codes
+    assert "INVENTORY_VALUATION" in codes
+    assert "COMMISSION_PAYABLE" in codes
+    assert len(body["items"]) >= 3
+
+
+@requires_database
+def test_list_report_types_requires_auth(
+    client: TestClient,
+    report_fixtures: dict,
+) -> None:
+    """GET /report-types returns 401 without auth."""
+    resp = client.get("/api/v1/report-types")
+    assert resp.status_code == 401, resp.text
+
+
+@requires_database
+def test_list_report_definitions(
+    client: TestClient,
+    manage_auth_headers: dict[str, str],
+    report_fixtures: dict,
+) -> None:
+    """GET /report-definitions returns definitions the user created."""
+    # Create two definitions
+    session = get_session_factory()()
+    try:
+        rd1 = report_service.create_report_definition(
+            session,
+            report_type_id=uuid.UUID(report_fixtures["ar_aging_rt_id"]),
+            owner_user_id=uuid.UUID(report_fixtures["system_user_id"]),
+            name=f"List Test A {uuid.uuid4().hex[:8]}",
+            parameters={},
+            output_format="CSV",
+            actor_id=uuid.UUID(report_fixtures["system_user_id"]),
+        )
+        rd2 = report_service.create_report_definition(
+            session,
+            report_type_id=uuid.UUID(report_fixtures["inv_val_rt_id"]),
+            owner_user_id=uuid.UUID(report_fixtures["system_user_id"]),
+            name=f"List Test B {uuid.uuid4().hex[:8]}",
+            parameters={},
+            output_format="PDF",
+            actor_id=uuid.UUID(report_fixtures["system_user_id"]),
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.get("/api/v1/report-definitions", headers=manage_auth_headers)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert len(body["items"]) >= 2
+    names = {item["name"] for item in body["items"]}
+    assert rd1.name in names
+    assert rd2.name in names
+
+
+@requires_database
+def test_list_report_definitions_pagination(
+    client: TestClient,
+    manage_auth_headers: dict[str, str],
+    report_fixtures: dict,
+) -> None:
+    """GET /report-definitions respects skip/limit pagination."""
+    # Create 3 definitions
+    ids = []
+    session = get_session_factory()()
+    try:
+        for i in range(3):
+            rd = report_service.create_report_definition(
+                session,
+                report_type_id=uuid.UUID(report_fixtures["ar_aging_rt_id"]),
+                owner_user_id=uuid.UUID(report_fixtures["system_user_id"]),
+                name=f"Page Test {i} {uuid.uuid4().hex[:8]}",
+                parameters={},
+                output_format="CSV",
+                actor_id=uuid.UUID(report_fixtures["system_user_id"]),
+            )
+            ids.append(rd.id)
+        session.commit()
+    finally:
+        session.close()
+
+    # Limit to 2
+    resp = client.get(
+        "/api/v1/report-definitions",
+        params={"limit": 2},
+        headers=manage_auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert len(body["items"]) <= 2
+
+    # Skip past all
+    resp2 = client.get(
+        "/api/v1/report-definitions",
+        params={"skip": 1000},
+        headers=manage_auth_headers,
+    )
+    assert resp2.status_code == 200, resp2.text
+    assert len(resp2.json()["items"]) == 0
+
+
+@requires_database
+def test_list_report_definitions_requires_permission(
+    client: TestClient,
+    report_fixtures: dict,
+) -> None:
+    """GET /report-definitions returns 403 without REPORT_MANAGE."""
+    headers = _user_with_permissions()  # no permissions
+    resp = client.get("/api/v1/report-definitions", headers=headers)
+    assert resp.status_code == 403, resp.text
+
+
 @requires_database
 def test_inventory_valuation_non_lot_tracked(
     client: TestClient,

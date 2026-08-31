@@ -1,0 +1,13 @@
+{
+  "title": "داشبورد نماینده",
+  "commissionBalance": "مانده کمیسیون",
+  "activeOrders": "سفارشات فعال",
+  "quickActions": "عملیات سریع",
+  "recentOrders": "سفارشات اخیر",
+  "orderNumber": "شماره سفارش",
+  "state": "وضعیت",
+  "grandTotal": "جمع کل",
+  "ordered": "تاریخ سفارش",
+  "noOrdersYet": "هنوز سفارشی ثبت نشده است.",
+  "loading": "در حال بارگذاری…"
+}

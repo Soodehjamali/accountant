@@ -190,6 +190,8 @@ def _setup(client):
         "headers_admin": headers_admin,
         "cust_a_id": str(cust_a.id),
         "cust_b_id": str(cust_b.id),
+        "cust_a_code": cust_a.code,
+        "cust_b_code": cust_b.code,
         "rep_a_id": str(rep_a.id),
         "rep_b_id": str(rep_b.id),
     }
@@ -305,28 +307,86 @@ class TestCustomerDeactivateScope:
 
 
 @requires_database
-class TestCustomerReadGlobalAccess:
-    """Verify customer reads remain globally accessible (intentionally shared)."""
+class TestCustomerReadScope:
+    """GET /customers and GET /customers/{id} representative scope enforcement.
 
-    def test_representative_can_read_any_customer(self, client):
-        """Customers are shared — any authenticated user can read any customer."""
+    Covers M-01 (list scope) and M-02 (read scope) from
+    SECURITY_AUDIT_2026-08-29.md.
+    """
+
+    def test_representative_can_read_own_customer(self, client):
+        """Representative can read their own assigned customer."""
+        data = _setup(client)
+        resp = client.get(
+            f"/api/v1/customers/{data['cust_a_id']}",
+            headers=data["headers_a"],
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["id"] == data["cust_a_id"]
+
+    def test_representative_cannot_read_other_rep_customer(self, client):
+        """Representative cannot read another rep's customer -> 404."""
         data = _setup(client)
         resp = client.get(
             f"/api/v1/customers/{data['cust_b_id']}",
             headers=data["headers_a"],
         )
+        assert resp.status_code == 404
+
+    def test_nonexistent_customer_returns_404(self, client):
+        """Nonexistent customer returns 404 (same as out-of-scope)."""
+        data = _setup(client)
+        fake_id = str(uuid.uuid4())
+        resp = client.get(
+            f"/api/v1/customers/{fake_id}",
+            headers=data["headers_a"],
+        )
+        assert resp.status_code == 404
+
+    def test_admin_can_read_any_customer(self, client):
+        """Admin/staff can read any customer."""
+        data = _setup(client)
+        resp = client.get(
+            f"/api/v1/customers/{data['cust_a_id']}",
+            headers=data["headers_admin"],
+        )
         assert resp.status_code == 200, resp.text
 
-    def test_customer_list_is_global(self, client):
-        """Customer list is global — any authenticated user can list customers."""
+    def test_representative_only_sees_own_customers_in_list(self, client):
+        """Representative can only list customers assigned to them (M-01)."""
         data = _setup(client)
         resp = client.get(
             "/api/v1/customers",
             headers=data["headers_a"],
+            params={"limit": 100},
         )
         assert resp.status_code == 200, resp.text
-        # The list should return multiple customers (from test DB + test setup)
-        assert len(resp.json()["items"]) > 0
+        items = resp.json()["items"]
+        customer_ids = {item["id"] for item in items}
+        assert data["cust_a_id"] in customer_ids, "Own customer must be visible"
+        assert data["cust_b_id"] not in customer_ids, "Other rep's customer must not be visible"
+
+    def test_admin_sees_all_customers_in_list(self, client):
+        """Admin/staff can list all customers (verified via search by unique code)."""
+        data = _setup(client)
+        # Verify admin can see Customer A via unique code search
+        resp_a = client.get(
+            "/api/v1/customers",
+            headers=data["headers_admin"],
+            params={"search": data["cust_a_code"]},
+        )
+        assert resp_a.status_code == 200, resp_a.text
+        a_ids = {item["id"] for item in resp_a.json()["items"]}
+        assert data["cust_a_id"] in a_ids, "Admin must see Customer A"
+        # Verify admin can also see Customer B via unique code search
+        resp_b = client.get(
+            "/api/v1/customers",
+            headers=data["headers_admin"],
+            params={"search": data["cust_b_code"]},
+        )
+        assert resp_b.status_code == 200, resp_b.text
+        b_ids = {item["id"] for item in resp_b.json()["items"]}
+        assert data["cust_b_id"] in b_ids, "Admin must see Customer B"
 
 
 @requires_database

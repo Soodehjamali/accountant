@@ -1,30 +1,115 @@
-## ADR-009
+## ADR-012
 
-Approval Workflow Policies — Approver Selection, Timeout, Cancellation, Bulk Operations.
+Desktop Packaging (.exe) — Electron shell around existing web frontend.
 
 Status: Accepted
-Date: 2026-08-26
+Date: 2026-08-31
 
-See ADR-009-Approval-Workflow-Policies.md for the full decision record.
+See ADR-012-Desktop-Packaging.md for the full decision record.
 
 Summary of decisions:
 
-1. **Approver selection:** Any user with command-specific approval permission
-   (e.g. ORDER_APPROVE). assigned_approver_id remains NULL at creation time;
-   the queue is list_pending_requests().
+1. **Shell:** Electron + electron-builder (NSIS Windows target). Separate
+   `desktop/` package that builds the existing `frontend/` and wraps it.
+   No merged configs.
 
-2. **Approval timeout:** Leave PENDING indefinitely. No scheduler/worker
-   infrastructure exists; auto-cancellation of financial operations without
-   human review is risky. Future enhancement when scheduler is built.
+2. **Backend URL:** First-run settings screen (standalone HTML, not React)
+   where user enters backend base URL. Persisted via `electron-store` in
+   OS app-data directory. React app reads URL from Electron context bridge,
+   falls back to `VITE_API_BASE_URL` for web deployment.
 
-3. **Requester cancellation:** Allowed while PENDING. The requester may
-   cancel their own request. Separation of duties is preserved (cancel ≠ approve).
+3. **Security:** `contextIsolation: true`, `nodeIntegration: false`,
+   `sandbox: true`. Minimal IPC surface (get-config / set-config only).
+   JWT auth stays client-side against remote API.
 
-4. **Bulk operations:** One approval_request per batch (all-or-nothing).
-   Payload carries all data; executor processes all entities atomically.
+4. **Auto-update:** Out of scope — manual .exe distribution for now.
+   Flagged as future ADR.
 
-Schema changes: NONE (existing model supports all decisions).
-Production code changes: NONE (decisions define policies, not new code).
+5. **Code signing:** Out of scope — unsigned .exe, SmartScreen warning
+   expected.
+
+Schema changes: NONE.
+Production code changes: `frontend/src/api/client.ts` (backward-compatible
+Electron URL support).
+
+---
+
+## ADR-011
+
+Bilingual (Persian/English) Support — i18n architecture and RTL handling.
+
+Status: Accepted
+Date: 2026-08-31
+
+See ADR-011-Bilingual-Support.md for the full decision record.
+
+Summary of decisions:
+
+1. **Library:** react-i18next with namespace-per-feature translation files
+   mirroring `src/features/` folder structure.
+
+2. **RTL:** Migrate 2 existing `pr-4` instances to `pe-4` (logical
+   properties). Codebase is already 99%+ direction-agnostic. `<html dir>`
+   toggling on language change.
+
+3. **Calendar:** Jalali (Solar Hijri) for Persian-locale users. Date
+   storage stays Gregorian/ISO. Display formatting only changes.
+
+4. **Numbers:** Financial figures always in Latin digits (0-9), regardless
+   of language. Standard Iranian accounting practice.
+
+5. **Persistence:** `localStorage` for language preference (per-device).
+   Browser language detection on first load.
+
+6. **Backend strings:** Frontend maintains its own translation map keyed
+   by backend enum codes. No backend changes needed.
+
+Schema changes: NONE.
+Production code changes: New `src/i18n/` directory, modified App.tsx,
+AppShell.tsx, LoginPage.tsx, RepDashboardPage.tsx.
+
+---
+
+## ADR-010
+
+Frontend Technology Stack — Framework, UI Kit, API Client Generation, Auth Flow.
+
+Status: Accepted
+Date: 2026-08-30
+
+See ADR-010-Frontend-Technology-Stack.md for the full decision record.
+
+Summary of decisions:
+
+1. **Framework:** React 19 + TypeScript 5.x + Vite 6 + React Router v7.
+   Ratifies (with refinements) SRS §14.2 recommendation. SSR frameworks
+   (Next.js, Remix) rejected — unnecessary complexity for an internal
+   enterprise SPA.
+
+2. **Data layer:** TanStack Query v5 for server state; React Context for
+   auth/UI state. API client auto-generated from backend OpenAPI schema
+   via `openapi-typescript` + `openapi-fetch` (type-safe, no codegen
+   overhead). No hand-written request/response types.
+
+3. **UI kit:** shadcn/ui + Tailwind CSS 4. Components are copied into the
+   project (owned by codebase, not an external dependency). Lucide React
+   icons. TanStack Table v8 for data grids.
+
+4. **Auth:** JWT Bearer token stored in localStorage; attached to all
+   requests via shared fetch wrapper. `GET /rbac/me/permissions` drives
+   UI-level feature gating (UX-only — backend remains sole authorization
+   source of truth).
+
+5. **Single codebase, role-routed:** Same React app serves admin/office
+   UI (A1,A2,A5,A6) and representative portal (A4,A7) via /office/* and
+   /rep/* route prefixes. Server-side representative scope (ADR-007)
+   handles data filtering.
+
+6. **Folder structure:** src/api/, src/features/, src/components/, src/lib/,
+   src/routes/ — mirrors backend's api/services/dependencies separation.
+
+Schema changes: NONE.
+Production code changes: NONE (ADR only; scaffold is next milestone).
 
 ---
 

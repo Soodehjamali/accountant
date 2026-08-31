@@ -681,7 +681,16 @@ def mark_paid(
     2. Records the payment via ``payment_service.record_payment``, which
        updates the invoice's ``amount_paid``/``balance_due`` and posts a
        customer ledger entry.
-    3. Transitions the order INVOICED -> PAID.
+    3. Re-checks the invoice's ``balance_due``.  Only transitions the
+       order INVOICED -> PAID if the invoice is fully settled
+       (``balance_due == 0``).  Partial payments are recorded but the
+       order stays INVOICED — the caller receives a 409 indicating the
+       remaining balance.
+
+    ``payment_service.record_payment`` only rejects amounts that
+    *exceed* ``balance_due``; it happily accepts under-payments.
+    This endpoint must therefore guard the order transition itself,
+    not rely on the payment service to enforce full payment.
     """
     # Find the linked invoice.
     invoice_link = db.execute(
@@ -694,7 +703,7 @@ def mark_paid(
                    "Create an invoice first via POST /orders/{id}/invoice.",
         )
 
-    # Record a full payment against the invoice.
+    # Record a payment against the invoice.
     _run_invoice_payment(
         payment_service.record_payment,
         db,
@@ -708,7 +717,38 @@ def mark_paid(
         record_entry=customer_ledger_service.record_entry,
     )
 
-    # Transition the order INVOICED -> PAID.
+    # Re-check the invoice's balance_due after the payment.
+    # record_payment only rejects overpayments (amount > balance_due);
+    # it happily accepts partial payments.  We must guard the order
+    # transition here: only mark PAID if the invoice is fully settled.
+    from database.models.invoice import Invoice  # local to avoid circular
+
+    invoice = db.get(Invoice, invoice_link.invoice_id)
+    if invoice is None:
+        # Defensive — the invoice was just used by record_payment.
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Linked invoice not found after recording payment.",
+        )
+    db.refresh(invoice)  # ensure balance_due is current after record_payment
+
+    if invoice.balance_due > 0:
+        # Payment was recorded successfully, but the invoice is not
+        # fully settled.  Do NOT transition the order to PAID —
+        # commit the payment and return 409 so the caller knows the
+        # order is still INVOICED with a remaining balance.
+        db.commit()
+        db.refresh(order)
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=(
+                f"Payment of {body.amount} recorded, but invoice still has "
+                f"a balance of {invoice.balance_due} remaining — "
+                f"order was not marked PAID."
+            ),
+        )
+
+    # Invoice fully settled — transition the order INVOICED -> PAID.
     _run(order_service.mark_paid, db, order.id, actor_user_id=current_user.id, note=body.note)
     db.commit()
     db.refresh(order)

@@ -1,0 +1,23 @@
+{
+  "name": "enterprise-erp-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Enterprise ERP — Desktop shell (Electron)",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "tsc && electron dist/main.js",
+    "build": "tsc",
+    "package": "pnpm build && electron-builder --win",
+    "package:dir": "pnpm build && electron-builder --win --dir"
+  },
+  "dependencies": {
+    "electron-store": "^10.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "electron": "35.7.5",
+    "electron-builder": "^26.0.0",
+    "typescript": "~5.8.0"
+  }
+}

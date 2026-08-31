@@ -1,0 +1,57 @@
+{
+  "app": {
+    "name": "Enterprise ERP",
+    "loading": "Loading…"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "products": "Products",
+    "customers": "Customers",
+    "orders": "Orders",
+    "invoices": "Invoices",
+    "inventory": "Inventory",
+    "transfers": "Transfers",
+    "payments": "Payments",
+    "commissions": "Commissions",
+    "kpiDashboard": "KPI Dashboard",
+    "reports": "Reports",
+    "auditLog": "Audit Log",
+    "myCustomers": "My Customers",
+    "myOrders": "My Orders",
+    "myInventory": "My Inventory",
+    "myCommission": "My Commission"
+  },
+  "shell": {
+    "office": "Office",
+    "repPortal": "Rep Portal",
+    "signOut": "Sign out"
+  },
+  "auth": {
+    "signIn": "Sign in",
+    "signingIn": "Signing in…",
+    "loginFailed": "Login failed"
+  },
+  "common": {
+    "viewDetails": "View details →",
+    "viewAll": "View all →",
+    "newOrder": "New Order",
+    "viewCustomers": "View Customers",
+    "noDataYet": "No data yet.",
+    "back": "Back"
+  },
+  "orderStates": {
+    "DRAFT": "Draft",
+    "PENDING_APPROVAL": "Pending Approval",
+    "APPROVED": "Approved",
+    "RESERVED": "Reserved",
+    "FULFILLING": "Fulfilling",
+    "SHIPPED": "Shipped",
+    "INVOICED": "Invoiced",
+    "PAID": "Paid",
+    "COMPLETED": "Completed",
+    "CANCELLED": "Cancelled",
+    "BACKORDERED": "Backordered",
+    "PARTIALLY_FULFILLED": "Partially Fulfilled",
+    "RETURNED": "Returned"
+  }
+}

@@ -224,6 +224,7 @@ _ADMIN_DEFAULT_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
     ("WAREHOUSE_MANAGE", "Manage warehouses", "warehouse", "manage"),
     ("PRICE_LIST_MANAGE", "Manage price lists", "price_list", "manage"),
     ("REPORT_MANAGE", "Manage reports", "report", "manage"),
+    ("INVENTORY_MANAGE", "Manage inventory transactions", "inventory", "manage"),
     ("BOT_MANAGE", "Manage bot bindings and sessions", "bot", "manage"),
     ("BOT_QUERY", "Query data via bot", "bot", "query"),
     ("APPROVE", "Approve bot command requests", "approval", "approve"),
@@ -242,27 +243,74 @@ _SEEDED_BUT_NOT_DEFAULT: tuple[tuple[str, str, str, str], ...] = (
 APPROVE_PERMISSION_CODE = "APPROVE"
 
 
+#: Reason codes to seed -- (code, label, scope) tuples.
+#: Scopes follow the ERD vocabulary: ADJUSTMENT (stock corrections),
+#: VARIANCE (transfer / physical-count discrepancies), RETURN (customer
+#: returns), DAMAGE (damaged / written-off goods).  Each scope must have
+#: at least one seeded code so that frontend dropdowns (which filter by
+#: scope) are never empty in a fresh deployment.
+#:
+#: ``PRICING_ERROR`` stays ADJUSTMENT-scoped (inventory price corrections),
+#: not RETURN-scoped, because pricing errors are correction adjustments
+#: on the inventory ledger, not customer-return reasons.  The RETURN
+#: codes below cover the reasons a credit note is issued against an invoice
+#: (damaged goods, wrong item, etc.).
+_REASON_CODES: tuple[tuple[str, str, str], ...] = (
+    # -- ADJUSTMENT (stock / inventory corrections)
+    ("PRICING_ERROR", "Pricing error", "ADJUSTMENT"),
+    # -- RETURN (customer returns / credit note reasons)
+    ("DAMAGED_GOODS", "Damaged goods", "RETURN"),
+    ("WRONG_ITEM_SHIPPED", "Wrong item shipped", "RETURN"),
+    ("QUALITY_ISSUE", "Quality issue", "RETURN"),
+    # -- VARIANCE (transfer / physical-count discrepancies)
+    ("COUNT_VARIANCE", "Physical count variance", "VARIANCE"),
+    # -- DAMAGE (damaged / written-off goods)
+    ("SCRAP_GOODS", "Scrap / write-off", "DAMAGE"),
+)
+
+
+def ensure_reason_codes(session: Session, actor_id: uuid.UUID) -> list[ReasonCodeRef]:
+    """Seed all default ``ReasonCodeRef`` rows, creating any missing ones.
+
+    Returns the full list of seeded reason codes (pre-existing + newly
+    created).  Idempotent -- safe to call every run, same pattern as
+    ``ensure_movement_types()``.
+    """
+    result: list[ReasonCodeRef] = []
+    for code, label, scope in _REASON_CODES:
+        existing = session.execute(
+            select(ReasonCodeRef).where(ReasonCodeRef.code == code)
+        ).scalar_one_or_none()
+        if existing is not None:
+            result.append(existing)
+            continue
+        rc = ReasonCodeRef(
+            code=code,
+            label=label,
+            scope=scope,
+            created_by=actor_id,
+            updated_by=actor_id,
+        )
+        session.add(rc)
+        session.flush()
+        result.append(rc)
+    return result
+
+
 def ensure_default_reason_code(session: Session, actor_id: uuid.UUID) -> ReasonCodeRef:
     """Return the seeded "PRICING_ERROR" ``ReasonCodeRef``, creating it if absent.
 
-    ``credit_note.reason_code_id`` is NOT NULL, so at least one reason code
-    must exist before credit notes can be created.
+    Convenience wrapper around ``ensure_reason_codes()`` -- returns the
+    ADJUSTMENT-scoped PRICING_ERROR code that callers (credit note tests,
+    etc.) historically depended on.  ``credit_note.reason_code_id`` is
+    NOT NULL, so at least one reason code must exist before credit notes
+    can be created.
     """
-    code = "PRICING_ERROR"
-    existing = session.execute(
-        select(ReasonCodeRef).where(ReasonCodeRef.code == code)
-    ).scalar_one_or_none()
-    if existing is not None:
-        return existing
-    rc = ReasonCodeRef(
-        code=code,
-        label="Pricing error",
-        scope="ADJUSTMENT",
-        created_by=actor_id,
-        updated_by=actor_id,
-    )
-    session.add(rc)
-    session.flush()
+    # Seed all codes so every scope has at least one entry.
+    ensure_reason_codes(session, actor_id=actor_id)
+    rc = session.execute(
+        select(ReasonCodeRef).where(ReasonCodeRef.code == "PRICING_ERROR")
+    ).scalar_one()
     return rc
 
 
@@ -410,9 +458,11 @@ __all__ = [
     "RBAC_MANAGE_PERMISSION_CODE",
     "SYSTEM_USERNAME",
     "ensure_default_currency",
+    "ensure_default_reason_code",
     "ensure_default_uom",
     "ensure_default_warehouse",
     "ensure_movement_types",
+    "ensure_reason_codes",
     "APPROVE_PERMISSION_CODE",
     "ensure_rbac_bootstrap",
     "ensure_system_user",

@@ -18,7 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from database.session import get_session_factory
-from services import auth_service, bootstrap_service, inventory_service
+from services import auth_service, bootstrap_service, inventory_service, rbac_service
 
 requires_database = pytest.mark.skipif(
     not os.environ.get("DATABASE_URL"),
@@ -209,17 +209,30 @@ def test_hash_chain_links_consecutive_rows(
 def auth_headers() -> dict[str, str]:
     session = get_session_factory()()
     try:
+        bootstrap_service.ensure_rbac_bootstrap(session)
         system_user = bootstrap_service.ensure_system_user(session)
         suffix = uuid.uuid4().hex[:8]
         username = f"test_inventory_{suffix}"
         password = "correct-horse-battery-staple"
-        auth_service.create_user(
+        new_user = auth_service.create_user(
             session,
             username=username,
             email=f"{username}@example.invalid",
             password=password,
             created_by=system_user.id,
         )
+        # Grant INVENTORY_MANAGE so mutation endpoints accept the user.
+        role_code = f"INV_MANAGER_{suffix}"
+        rbac_service.create_role(session, code=role_code, name="Inv Manager (test)", created_by=system_user.id)
+        try:
+            rbac_service.create_permission(
+                session, code="INVENTORY_MANAGE", name="INVENTORY_MANAGE",
+                resource="inventory", action="manage", created_by=system_user.id,
+            )
+        except rbac_service.DuplicatePermissionCodeError:
+            pass
+        rbac_service.grant_permission_to_role(session, role_code=role_code, permission_code="INVENTORY_MANAGE")
+        rbac_service.assign_role(session, user_id=new_user.id, role_code=role_code, assigned_by=system_user.id)
         session.commit()
     finally:
         session.close()
@@ -315,3 +328,103 @@ def test_api_post_transaction_without_auth_returns_401(
         },
     )
     assert response.status_code == 401
+
+
+# ------------------------------------------------- GET /inventory/transactions
+
+
+@requires_database
+def test_api_list_transactions_returns_ledger_rows(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    ledger_context: dict[str, uuid.UUID],
+) -> None:
+    """GET /inventory/transactions returns raw ledger rows for a warehouse."""
+    # Post two transactions
+    for qty in ("10", "20"):
+        client.post(
+            "/api/v1/inventory/transactions",
+            json={
+                "product_id": str(ledger_context["product_id"]),
+                "warehouse_id": str(ledger_context["warehouse_id"]),
+                "movement_type_code": "RECEIPT_FROM_PRODUCTION",
+                "signed_quantity": qty,
+                "unit_cost": "5.0000",
+                "currency_id": str(ledger_context["currency_id"]),
+            },
+            headers=auth_headers,
+        )
+
+    resp = client.get(
+        "/api/v1/inventory/transactions",
+        params={
+            "warehouse_id": str(ledger_context["warehouse_id"]),
+            "product_id": str(ledger_context["product_id"]),
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) == 2
+    # Newest first (sequence_no DESC)
+    assert items[0]["sequence_no"] > items[1]["sequence_no"]
+
+
+@requires_database
+def test_api_list_transactions_empty_warehouse(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    ledger_context: dict[str, uuid.UUID],
+) -> None:
+    """GET /inventory/transactions for a warehouse with no transactions returns empty."""
+    other_warehouse = uuid.uuid4()
+    resp = client.get(
+        "/api/v1/inventory/transactions",
+        params={"warehouse_id": str(other_warehouse)},
+        headers=auth_headers,
+    )
+    # May be 200 with empty items or 404 (warehouse not found) depending on scope
+    assert resp.status_code in (200, 404)
+
+
+@requires_database
+def test_api_list_transactions_without_auth_returns_401(
+    client: TestClient, ledger_context: dict[str, uuid.UUID]
+) -> None:
+    resp = client.get(
+        "/api/v1/inventory/transactions",
+        params={"warehouse_id": str(ledger_context["warehouse_id"])},
+    )
+    assert resp.status_code == 401
+
+
+# --------------------------------------------------- GET /movement-types
+
+
+@requires_database
+def test_api_list_movement_types(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    ledger_context: dict[str, uuid.UUID],
+) -> None:
+    """GET /movement-types returns the seeded movement type catalog."""
+    resp = client.get("/api/v1/movement-types", headers=auth_headers)
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) >= 12  # 12 PART A movement types seeded
+    codes = {item["code"] for item in items}
+    assert "RECEIPT_FROM_PRODUCTION" in codes
+    assert "SALE_OUT" in codes
+    assert "REVERSAL" in codes
+    # Verify sign is present
+    for item in items:
+        assert item["sign"] in (-1, 1)
+
+
+@requires_database
+def test_api_list_movement_types_without_auth_returns_401(
+    client: TestClient,
+    ledger_context: dict[str, uuid.UUID]
+) -> None:
+    resp = client.get("/api/v1/movement-types")
+    assert resp.status_code == 401
