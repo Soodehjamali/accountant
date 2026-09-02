@@ -100,18 +100,23 @@
     "failedToCreate": "Failed to create product",
     "failedToDelete": "Failed to delete product",
     "fields": {
-      "sku": "SKU *",
-      "skuHelp": "Unique identifier for this product (e.g. SKU-001)",
-      "name": "Name *",
+      "sku": "Product Code *",
+      "skuHelp": "Example: PRD-001",
+      "name": "Product Name *",
+      "nameHelp": "Example: Organic pistachio extract",
       "description": "Description",
-      "baseUomId": "Base UoM ID *",
-      "categoryId": "Category ID"
+      "descriptionHelp": "Example: Green pistachio skin extract for agricultural use",
+      "baseUomId": "Unit of Measure *",
+      "baseUomIdHelp": "Example: Kilogram, Litre, Piece",
+      "categoryId": "Category",
+      "categoryIdHelp": "Example: Pesticides category"
     },
     "columns": {
       "sku": "SKU",
       "name": "Name",
       "status": "Status",
-      "lotTracked": "Lot Tracked"
+      "lotTracked": "Lot Tracked",
+      "unit": "Unit"
     },
     "buttons": {
       "create": "Create Product",
@@ -121,6 +126,11 @@
     "lotTracked": {
       "yes": "Yes",
       "no": "No"
+    },
+    "serialTracked": "Serial Tracked",
+    "perishable": "Perishable",
+    "validation": {
+      "unitRequired": "Unit of measure is required."
     },
     "categories": {
       "title": "Product Categories",

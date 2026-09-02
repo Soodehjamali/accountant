@@ -100,18 +100,23 @@
     "failedToCreate": "خطا در ایجاد محصول",
     "failedToDelete": "خطا در حذف محصول",
     "fields": {
-      "sku": "کد محصول *",
-      "skuHelp": "شناسه یکتای این محصول (مثلاً SKU-001)",
-      "name": "نام *",
+      "sku": "شناسه محصول *",
+      "skuHelp": "نمونه: PRD-001",
+      "name": "نام محصول *",
+      "nameHelp": "نمونه: سم ارگانیک پسته",
       "description": "توضیحات",
-      "baseUomId": "واحد پایه *",
-      "categoryId": "دسته‌بندی"
+      "descriptionHelp": "نمونه: عصاره پوست سبز پسته برای مصرف کشاورزی",
+      "baseUomId": "واحد اندازه‌گیری *",
+      "baseUomIdHelp": "نمونه: کیلوگرم، لیتر، عدد",
+      "categoryId": "دسته‌بندی",
+      "categoryIdHelp": "نمونه: دسته‌بندی سموم"
     },
     "columns": {
-      "sku": "کد محصول",
+      "sku": "شناسه محصول",
       "name": "نام",
       "status": "وضعیت",
-      "lotTracked": "ردیابی Lot"
+      "lotTracked": "ردیابی Lot",
+      "unit": "واحد"
     },
     "buttons": {
       "create": "ایجاد محصول",
@@ -121,6 +126,11 @@
     "lotTracked": {
       "yes": "بله",
       "no": "خیر"
+    },
+    "serialTracked": "ردیابی سریال",
+    "perishable": "فاسدشدنی",
+    "validation": {
+      "unitRequired": "انتخاب واحد اندازه‌گیری الزامی است."
     },
     "categories": {
       "title": "دسته‌بندی محصولات",

@@ -52,6 +52,12 @@ export function ProductEditPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (!baseUomId) {
+      setError(t("catalog.validation.unitRequired"));
+      return;
+    }
+
     try {
       await updateProduct.mutateAsync({
         productId: product!.id,
@@ -80,18 +86,27 @@ export function ProductEditPage() {
         <div>
           <label className="block text-sm font-medium text-gray-700">{t("catalog.fields.sku")}</label>
           <input type="text" value={product.sku} disabled className="mt-1 block w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500" />
+          <p className="mt-1 border-l-2 border-gray-200 pl-2 text-xs italic text-gray-400">
+            {t("catalog.fields.skuHelp")}
+          </p>
         </div>
 
         <div>
           <label htmlFor="name" className="block text-sm font-medium text-gray-700">{t("catalog.fields.name")}</label>
           <input id="name" type="text" value={name} onChange={(e) => setName(e.target.value)} required maxLength={160}
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <p className="mt-1 border-l-2 border-gray-200 pl-2 text-xs italic text-gray-400">
+            {t("catalog.fields.nameHelp")}
+          </p>
         </div>
 
         <div>
           <label htmlFor="description" className="block text-sm font-medium text-gray-700">{t("catalog.fields.description")}</label>
           <textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={255} rows={3}
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <p className="mt-1 border-l-2 border-gray-200 pl-2 text-xs italic text-gray-400">
+            {t("catalog.fields.descriptionHelp")}
+          </p>
         </div>
 
         <div>
@@ -103,6 +118,9 @@ export function ProductEditPage() {
               <option key={uom.id} value={uom.id}>{uom.name} ({uom.code})</option>
             ))}
           </select>
+          <p className="mt-1 border-l-2 border-gray-200 pl-2 text-xs italic text-gray-400">
+            {t("catalog.fields.baseUomIdHelp")}
+          </p>
         </div>
 
         <div>
@@ -114,6 +132,9 @@ export function ProductEditPage() {
               <option key={cat.id} value={cat.id}>{cat.name} ({cat.code})</option>
             ))}
           </select>
+          <p className="mt-1 border-l-2 border-gray-200 pl-2 text-xs italic text-gray-400">
+            {t("catalog.fields.categoryIdHelp")}
+          </p>
         </div>
 
         <div>

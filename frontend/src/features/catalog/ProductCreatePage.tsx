@@ -43,6 +43,11 @@ export function ProductCreatePage() {
     e.preventDefault();
     setError(null);
 
+    if (!baseUomId) {
+      setError(t("catalog.validation.unitRequired"));
+      return;
+    }
+
     try {
       await createProduct.mutateAsync({
         sku,
@@ -89,7 +94,7 @@ export function ProductCreatePage() {
             maxLength={40}
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 border-l-2 border-gray-200 pl-2 text-xs italic text-gray-400">
             {t("catalog.fields.skuHelp")}
           </p>
         </div>
@@ -107,6 +112,9 @@ export function ProductCreatePage() {
             maxLength={160}
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
+          <p className="mt-1 border-l-2 border-gray-200 pl-2 text-xs italic text-gray-400">
+            {t("catalog.fields.nameHelp")}
+          </p>
         </div>
 
         <div>
@@ -121,6 +129,9 @@ export function ProductCreatePage() {
             rows={3}
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
+          <p className="mt-1 border-l-2 border-gray-200 pl-2 text-xs italic text-gray-400">
+            {t("catalog.fields.descriptionHelp")}
+          </p>
         </div>
 
         <div>
@@ -144,6 +155,9 @@ export function ProductCreatePage() {
               </option>
             ))}
           </select>
+          <p className="mt-1 border-l-2 border-gray-200 pl-2 text-xs italic text-gray-400">
+            {t("catalog.fields.baseUomIdHelp")}
+          </p>
         </div>
 
         <div>
@@ -166,6 +180,9 @@ export function ProductCreatePage() {
               </option>
             ))}
           </select>
+          <p className="mt-1 border-l-2 border-gray-200 pl-2 text-xs italic text-gray-400">
+            {t("catalog.fields.categoryIdHelp")}
+          </p>
         </div>
 
         {error && (

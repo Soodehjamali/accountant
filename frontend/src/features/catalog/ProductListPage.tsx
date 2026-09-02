@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useProducts, useDeleteProduct } from "@/api/hooks/useProducts";
+import { useUnitsOfMeasure } from "@/api/hooks/useUnitsOfMeasure";
 import { usePermission } from "@/hooks/usePermission";
 import { PERMISSIONS } from "@/lib/constants";
 
@@ -10,8 +11,15 @@ export function ProductListPage() {
   const [search, setSearch] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const { data: products, isLoading, error } = useProducts();
+  const { data: uomList } = useUnitsOfMeasure();
   const canManage = usePermission(PERMISSIONS.PRODUCT_MANAGE);
   const deleteProduct = useDeleteProduct();
+
+  // Build a lookup map from UoM ID to name
+  const uomMap = new Map<string, string>();
+  for (const uom of uomList ?? []) {
+    uomMap.set(uom.id, uom.name);
+  }
 
   // Client-side filter (backend list endpoint has no search param — products
   // are master data and the list is small enough to filter in the browser).
@@ -68,6 +76,9 @@ export function ProductListPage() {
                   {t("catalog.columns.name")}
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  {t("catalog.columns.unit")}
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                   {t("catalog.columns.status")}
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
@@ -84,7 +95,7 @@ export function ProductListPage() {
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={5}
                     className="px-4 py-8 text-center text-sm text-gray-500"
                   >
                     {t("catalog.emptyState")}
@@ -103,6 +114,9 @@ export function ProductListPage() {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900">
                       {product.name}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
+                      {uomMap.get(product.base_uom_id) ?? "—"}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm">
                       <span
