@@ -74,6 +74,14 @@ class AssignmentNotFoundError(LookupError):
         self.warehouse_id = warehouse_id
 
 
+class WarehouseInUseError(ValueError):
+    """Raised when attempting to delete a warehouse that is still referenced."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
 # ---------------------------------------------------------------------------
 # Warehouse CRUD
 # ---------------------------------------------------------------------------
@@ -335,16 +343,76 @@ def delete_assignment(
     session.flush()
 
 
+def delete_warehouse(session: Session, warehouse_id: uuid.UUID) -> None:
+    """Hard-delete a warehouse if it is not referenced by any other records.
+
+    Raises:
+        WarehouseNotFoundError: if no non-deleted warehouse with this ID exists.
+        WarehouseInUseError: if the warehouse is referenced by other records.
+    """
+    from sqlalchemy import func as sqlfunc
+
+    wh = _get_warehouse_or_raise(session, warehouse_id)
+
+    # Check FK references from transactional / catalog tables.
+    from database.models.order import Order
+    from database.models.order_line import OrderLine
+    from database.models.inventory_transaction import InventoryTransaction
+    from database.models.inventory_balance_snapshot import InventoryBalanceSnapshot
+    from database.models.warehouse_assignment import WarehouseAssignment
+    from database.models.kpi_snapshot import KpiSnapshot
+    from database.models.shipment import Shipment
+    from database.models.stock_adjustment import StockAdjustment
+    from database.models.stock_reservation import StockReservation
+    from database.models.physical_count import PhysicalCount
+    from database.models.stock_transfer import StockTransfer
+    from database.models.warehouse_location import WarehouseLocation
+
+    checks = [
+        (Order, "fulfillment_warehouse_id", "orders"),
+        (OrderLine, "fulfillment_warehouse_id", "order lines"),
+        (InventoryTransaction, "warehouse_id", "inventory transactions"),
+        (InventoryBalanceSnapshot, "warehouse_id", "inventory snapshots"),
+        (WarehouseAssignment, "warehouse_id", "warehouse assignments"),
+        (KpiSnapshot, "warehouse_id", "KPI snapshots"),
+        (Shipment, "source_warehouse_id", "shipments"),
+        (StockAdjustment, "warehouse_id", "stock adjustments"),
+        (StockReservation, "warehouse_id", "stock reservations"),
+        (PhysicalCount, "warehouse_id", "physical counts"),
+        (StockTransfer, "source_warehouse_id", "stock transfers (source)"),
+        (StockTransfer, "destination_warehouse_id", "stock transfers (destination)"),
+        (WarehouseLocation, "warehouse_id", "warehouse locations"),
+    ]
+
+    refs = []
+    for model, col, label in checks:
+        count = session.execute(
+            select(sqlfunc.count()).select_from(model).where(
+                getattr(model, col) == warehouse_id
+            )
+        ).scalar_one()
+        if count > 0:
+            refs.append(f"{count} {label}")
+
+    if refs:
+        raise WarehouseInUseError(f"Cannot delete: still referenced by {', '.join(refs)}")
+
+    session.delete(wh)
+    session.flush()
+
+
 __all__ = [
     "AssignmentNotFoundError",
     "DuplicateAssignmentError",
     "DuplicateWarehouseCodeError",
     "WarehouseNotFoundError",
     "WarehouseNotDeactivatableError",
+    "WarehouseInUseError",
     "create_assignment",
     "create_warehouse",
     "deactivate_warehouse",
     "delete_assignment",
+    "delete_warehouse",
     "get_warehouse",
     "list_assignments_for_representative",
     "list_assignments_for_warehouse",

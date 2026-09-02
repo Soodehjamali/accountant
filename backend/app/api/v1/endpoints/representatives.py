@@ -148,4 +148,27 @@ def deactivate_representative(
     return rep
 
 
+@router.delete(
+    "/{representative_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a representative",
+)
+def delete_representative(
+    representative_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _current_user: AppUser = Depends(_require_representative_manage),
+) -> None:
+    """Hard-delete a representative if it is not referenced by any other records.
+
+    Returns HTTP 409 if the representative is still in use.
+    """
+    try:
+        representative_service.delete_representative(db, representative_id)
+    except representative_service.RepresentativeNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except representative_service.RepresentativeInUseError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    db.commit()
+
+
 __all__ = ["router"]

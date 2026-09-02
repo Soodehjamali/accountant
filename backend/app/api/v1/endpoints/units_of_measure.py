@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.orm import Session
 
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
+from app.dependencies.rbac import require_permission
 from database.models.app_user import AppUser
 from database.models.unit_of_measure import UnitOfMeasure
 
@@ -61,6 +62,83 @@ def list_units_of_measure(
     return UnitOfMeasureListResponse(
         items=[UnitOfMeasureResponse.model_validate(r) for r in rows]
     )
+
+
+PRODUCT_MANAGE_PERMISSION_CODE = "PRODUCT_MANAGE"
+_require_product_manage = require_permission(PRODUCT_MANAGE_PERMISSION_CODE)
+
+
+class UnitOfMeasureInUseError(ValueError):
+    """Raised when attempting to delete a UoM that is still referenced."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
+@router.delete(
+    "/units-of-measure/{uom_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a unit of measure",
+)
+def delete_unit_of_measure(
+    uom_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _current_user: AppUser = Depends(_require_product_manage),
+) -> None:
+    """Hard-delete a unit of measure if it is not referenced.
+
+    Checks for: products using this as base UoM, UoM conversions.
+    Returns HTTP 409 if still in use.
+    """
+    from database.models.product import Product
+    from database.models.uom_conversion import UomConversion
+
+    uom = db.execute(
+        select(UnitOfMeasure).where(UnitOfMeasure.id == uom_id)
+    ).scalar_one_or_none()
+    if uom is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail=f"No unit of measure with id '{uom_id}' exists.",
+        )
+
+    refs = []
+
+    # Check products using this as base UoM.
+    product_count = db.execute(
+        select(sqlfunc.count()).select_from(Product).where(
+            Product.base_uom_id == uom_id
+        )
+    ).scalar_one()
+    if product_count > 0:
+        refs.append(f"{product_count} products")
+
+    # Check UoM conversions (from_uom_id or to_uom_id).
+    from_count = db.execute(
+        select(sqlfunc.count()).select_from(UomConversion).where(
+            UomConversion.from_uom_id == uom_id
+        )
+    ).scalar_one()
+    if from_count > 0:
+        refs.append(f"{from_count} UoM conversions (source)")
+
+    to_count = db.execute(
+        select(sqlfunc.count()).select_from(UomConversion).where(
+            UomConversion.to_uom_id == uom_id
+        )
+    ).scalar_one()
+    if to_count > 0:
+        refs.append(f"{to_count} UoM conversions (target)")
+
+    if refs:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"Cannot delete: still referenced by {', '.join(refs)}",
+        )
+
+    db.delete(uom)
+    db.commit()
 
 
 __all__ = ["router"]

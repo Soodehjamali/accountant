@@ -273,4 +273,27 @@ def assign_customer_price_list(
     return assignment
 
 
+@router.delete(
+    "/{customer_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a customer",
+)
+def delete_customer(
+    customer_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(_require_customer_manage),
+) -> None:
+    """Hard-delete a customer if it is not referenced by any other records.
+
+    Returns HTTP 409 if the customer is still in use.
+    """
+    try:
+        customer_service.delete_customer(db, customer_id)
+    except customer_service.CustomerNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except customer_service.CustomerInUseError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    db.commit()
+
+
 __all__ = ["router"]

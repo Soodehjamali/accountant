@@ -47,6 +47,14 @@ class RepresentativeNotDeactivatableError(ValueError):
         self.representative_id = representative_id
 
 
+class RepresentativeInUseError(ValueError):
+    """Raised when attempting to delete a representative that is still referenced."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
 def _get_representative_or_raise(session: Session, representative_id: uuid.UUID) -> Representative:
     rep = session.execute(
         select(Representative).where(
@@ -197,12 +205,75 @@ def deactivate_representative(
     return rep
 
 
+def delete_representative(session: Session, representative_id: uuid.UUID) -> None:
+    """Hard-delete a representative if it is not referenced by any other records.
+
+    Raises:
+        RepresentativeNotFoundError: if no non-deleted rep with this ID exists.
+        RepresentativeInUseError: if the representative is referenced by other records.
+    """
+    from sqlalchemy import func as sqlfunc
+
+    rep = _get_representative_or_raise(session, representative_id)
+
+    # Check FK references from transactional / catalog tables.
+    from database.models.order import Order
+    from database.models.app_user import AppUser
+    from database.models.commission_transaction import CommissionTransaction
+    from database.models.commission_config import CommissionConfig
+    from database.models.warehouse_assignment import WarehouseAssignment
+    from database.models.kpi_snapshot import KpiSnapshot
+    from database.models.notification import Notification
+    from database.models.customer_rep_assignment import CustomerRepAssignment
+    from database.models.representative_contact import RepresentativeContact
+    from database.models.bot_binding_token import BotBindingToken
+    from database.models.bot_session import BotSession
+    from database.models.customer_return import CustomerReturn
+    from database.models.discount import Discount
+    from database.models.credit_limit_config import CreditLimitConfig
+
+    checks = [
+        (Order, "representative_id", "orders"),
+        (AppUser, "representative_id", "app users"),
+        (CommissionTransaction, "representative_id", "commission transactions"),
+        (CommissionConfig, "representative_id", "commission configs"),
+        (WarehouseAssignment, "representative_id", "warehouse assignments"),
+        (KpiSnapshot, "representative_id", "KPI snapshots"),
+        (Notification, "recipient_representative_id", "notifications"),
+        (CustomerRepAssignment, "representative_id", "rep assignments"),
+        (RepresentativeContact, "representative_id", "contacts"),
+        (BotBindingToken, "representative_id", "bot binding tokens"),
+        (BotSession, "representative_id", "bot sessions"),
+        (CustomerReturn, "representative_id", "customer returns"),
+        (Discount, "representative_id", "discounts"),
+        (CreditLimitConfig, "representative_id", "credit limit configs"),
+    ]
+
+    refs = []
+    for model, col, label in checks:
+        count = session.execute(
+            select(sqlfunc.count()).select_from(model).where(
+                getattr(model, col) == representative_id
+            )
+        ).scalar_one()
+        if count > 0:
+            refs.append(f"{count} {label}")
+
+    if refs:
+        raise RepresentativeInUseError(f"Cannot delete: still referenced by {', '.join(refs)}")
+
+    session.delete(rep)
+    session.flush()
+
+
 __all__ = [
     "DuplicateRepresentativeCodeError",
     "RepresentativeNotFoundError",
     "RepresentativeNotDeactivatableError",
+    "RepresentativeInUseError",
     "create_representative",
     "deactivate_representative",
+    "delete_representative",
     "get_representative",
     "list_representatives",
     "update_representative",

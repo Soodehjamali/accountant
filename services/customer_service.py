@@ -247,6 +247,69 @@ class CustomerAlreadyActiveError(ValueError):
         self.customer_id = customer_id
 
 
+class CustomerInUseError(ValueError):
+    """Raised when attempting to delete a customer that is still referenced."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
+def delete_customer(session: Session, customer_id: uuid.UUID) -> None:
+    """Hard-delete a customer if it is not referenced by any other records.
+
+    Raises:
+        CustomerNotFoundError: if no non-deleted customer with this ID exists.
+        CustomerInUseError: if the customer is referenced by other records.
+    """
+    from sqlalchemy import func as sqlfunc
+
+    customer = _get_customer_or_raise(session, customer_id)
+
+    # Check FK references from transactional / catalog tables.
+    from database.models.order import Order
+    from database.models.invoice import Invoice
+    from database.models.credit_note import CreditNote
+    from database.models.payment import Payment
+    from database.models.customer_return import CustomerReturn
+    from database.models.customer_rep_assignment import CustomerRepAssignment
+    from database.models.credit_limit_config import CreditLimitConfig
+    from database.models.customer_ledger import CustomerLedger
+    from database.models.customer_contact import CustomerContact
+    from database.models.customer_price_list import CustomerPriceList
+    from database.models.discount import Discount
+
+    checks = [
+        (Order, "customer_id", "orders"),
+        (Invoice, "customer_id", "invoices"),
+        (CreditNote, "customer_id", "credit notes"),
+        (Payment, "customer_id", "payments"),
+        (CustomerReturn, "customer_id", "customer returns"),
+        (CustomerRepAssignment, "customer_id", "rep assignments"),
+        (CreditLimitConfig, "customer_id", "credit limit configs"),
+        (CustomerLedger, "customer_id", "customer ledger"),
+        (CustomerContact, "customer_id", "customer contacts"),
+        (CustomerPriceList, "customer_id", "price list assignments"),
+        (Discount, "customer_id", "discounts"),
+    ]
+
+    refs = []
+    for model, col, label in checks:
+        count = session.execute(
+            select(sqlfunc.count()).select_from(model).where(
+                getattr(model, col) == customer_id
+            )
+        ).scalar_one()
+        if count > 0:
+            refs.append(f"{count} {label}")
+
+    if refs:
+        raise CustomerInUseError(f"Cannot delete: still referenced by {', '.join(refs)}")
+
+    session.delete(customer)
+    session.flush()
+
+
 __all__ = [
     "CustomerAlreadyActiveError",
     "CustomerNotFoundError",

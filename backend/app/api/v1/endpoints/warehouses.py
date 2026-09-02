@@ -253,4 +253,27 @@ def delete_assignment(
     db.commit()
 
 
+@router.delete(
+    "/{warehouse_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a warehouse",
+)
+def delete_warehouse(
+    warehouse_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _current_user: AppUser = Depends(_require_warehouse_manage),
+) -> None:
+    """Hard-delete a warehouse if it is not referenced by any other records.
+
+    Returns HTTP 409 if the warehouse is still in use.
+    """
+    try:
+        warehouse_service.delete_warehouse(db, warehouse_id)
+    except warehouse_service.WarehouseNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except warehouse_service.WarehouseInUseError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    db.commit()
+
+
 __all__ = ["router"]

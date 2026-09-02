@@ -18,6 +18,8 @@ no representative scope enforcement is applied.
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -106,6 +108,29 @@ def read_product(
             detail=f"No product found with SKU '{sku}'.",
         )
     return product
+
+
+@router.delete(
+    "/{product_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a product",
+)
+def delete_product(
+    product_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _current_user: AppUser = Depends(_require_product_manage),
+) -> None:
+    """Hard-delete a product if it is not referenced by any other records.
+
+    Returns HTTP 409 if the product is still in use.
+    """
+    try:
+        product_service.delete_product(db, product_id)
+    except product_service.ProductNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except product_service.ProductInUseError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    db.commit()
 
 
 __all__ = ["router"]
