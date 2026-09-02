@@ -41,6 +41,9 @@ SYSTEM_USERNAME = "system"
 SYSTEM_EMAIL = "system@local.invalid"
 DEFAULT_UOM_CODE = "PCS"
 DEFAULT_CURRENCY_CODE = "IRR"
+#: NOTE: DEFAULT_WAREHOUSE_CODE ("MAIN") is used only by ensure_default_warehouse()
+#: which is a DEVELOPMENT/TEST helper, not part of normal system bootstrap.
+#: A fresh production installation starts with zero warehouses.
 DEFAULT_WAREHOUSE_CODE = "MAIN"
 
 #: RBAC bootstrap constants -- the role/permission that break the RBAC
@@ -225,6 +228,7 @@ _ADMIN_DEFAULT_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
     ("PRICE_LIST_MANAGE", "Manage price lists", "price_list", "manage"),
     ("REPORT_MANAGE", "Manage reports", "report", "manage"),
     ("INVENTORY_MANAGE", "Manage inventory transactions", "inventory", "manage"),
+    ("RETURN_MANAGE", "Manage customer returns", "customer_return", "manage"),
     ("BOT_MANAGE", "Manage bot bindings and sessions", "bot", "manage"),
     ("BOT_QUERY", "Query data via bot", "bot", "query"),
     ("APPROVE", "Approve bot command requests", "approval", "approve"),

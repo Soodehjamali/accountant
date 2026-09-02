@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
+import { useTranslation } from "react-i18next";
 import { useInvoices } from "@/api/hooks/useInvoices";
 import { ROUTES } from "@/lib/constants";
 
@@ -24,6 +25,7 @@ const STATE_BADGE: Record<string, string> = {
 };
 
 export function InvoiceListPage() {
+  const { t } = useTranslation("common");
   const [page, setPage] = useState(0);
   const [stateFilter, setStateFilter] = useState("");
 
@@ -36,7 +38,7 @@ export function InvoiceListPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t("invoices.title")}</h1>
       </div>
 
       {/* Filters */}
@@ -49,7 +51,7 @@ export function InvoiceListPage() {
           }}
           className="rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         >
-          <option value="">All states</option>
+          <option value="">{t("invoices.allStates")}</option>
           {INVOICE_STATES.map((s) => (
             <option key={s} value={s}>
               {s.replace(/_/g, " ")}
@@ -58,8 +60,8 @@ export function InvoiceListPage() {
         </select>
       </div>
 
-      {isLoading && <p className="text-gray-500">Loading…</p>}
-      {error && <p className="text-red-600">Failed to load invoices.</p>}
+      {isLoading && <p className="text-gray-500">{t("status.loading")}</p>}
+      {error && <p className="text-red-600">{t("invoices.failedToLoad")}</p>}
 
       {!isLoading && !error && (
         <>
@@ -68,22 +70,22 @@ export function InvoiceListPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Invoice #
+                    {t("invoices.columns.invoiceNumber")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Customer
+                    {t("invoices.columns.customer")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    State
+                    {t("invoices.columns.state")}
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Grand Total
+                    {t("invoices.columns.grandTotal")}
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Balance Due
+                    {t("invoices.columns.balanceDue")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Due Date
+                    {t("invoices.columns.dueDate")}
                   </th>
                 </tr>
               </thead>
@@ -94,7 +96,7 @@ export function InvoiceListPage() {
                       colSpan={6}
                       className="px-4 py-8 text-center text-sm text-gray-500"
                     >
-                      No invoices found.
+                      {t("invoices.emptyState")}
                     </td>
                   </tr>
                 ) : (
@@ -108,7 +110,7 @@ export function InvoiceListPage() {
                           {inv.invoice_number}
                         </Link>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm font-mono text-xs text-gray-500">
+                      <td className="whitespace-nowrap px-4 py-3 text-xs font-mono text-gray-500">
                         {inv.customer_id.slice(0, 8)}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm">
@@ -153,15 +155,15 @@ export function InvoiceListPage() {
               disabled={page === 0}
               className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
-              Previous
+              {t("pagination.previous")}
             </button>
-            <span className="text-sm text-gray-500">Page {page + 1}</span>
+            <span className="text-sm text-gray-500">{t("pagination.page", { page: page + 1 })}</span>
             <button
               onClick={() => setPage((p) => p + 1)}
               disabled={(invoices ?? []).length < PAGE_SIZE}
               className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
-              Next
+              {t("pagination.next")}
             </button>
           </div>
         </>

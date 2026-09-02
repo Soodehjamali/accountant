@@ -9,6 +9,7 @@ import {
 } from "@/api/hooks/useInventory";
 import { useReasonCodes } from "@/api/hooks/useReasonCodes";
 import { useMovementTypes } from "@/api/hooks/useInventory";
+import { useDefaultCurrency } from "@/api/hooks/useCurrency";
 import { usePermission } from "@/hooks/usePermission";
 import { PERMISSIONS } from "@/lib/constants";
 
@@ -139,7 +140,15 @@ export function InventoryLedgerPage() {
         </div>
       )}
 
-      {/* Post Transaction form */}
+      {/* Register Initial Inventory helper */}
+      {canManage && warehouseId && productId && (
+        <InitialInventorySection
+          warehouseId={warehouseId}
+          productId={productId}
+        />
+      )}
+
+      {/* Post Transaction form (advanced) */}
       {canManage && warehouseId && productId && (
         <PostTransactionSection
           warehouseId={warehouseId}
@@ -267,7 +276,119 @@ function TransactionRow({
 }
 
 // ---------------------------------------------------------------------------
-// Post Transaction form
+// Register Initial Inventory (user-friendly wrapper around INITIAL_OPENING_BALANCE)
+// ---------------------------------------------------------------------------
+
+function InitialInventorySection({
+  warehouseId,
+  productId,
+}: {
+  warehouseId: string;
+  productId: string;
+}) {
+  const postTransaction = usePostTransaction();
+  const { data: defaultCurrency } = useDefaultCurrency();
+  const [quantity, setQuantity] = useState("");
+  const [unitCost, setUnitCost] = useState("0");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSuccess(false);
+
+    const qty = Number(quantity);
+    if (!quantity || qty <= 0) {
+      setError("Quantity must be a positive number.");
+      return;
+    }
+
+    try {
+      await postTransaction.mutateAsync({
+        product_id: productId,
+        warehouse_id: warehouseId,
+        movement_type_code: "INITIAL_OPENING_BALANCE",
+        signed_quantity: qty,
+        unit_cost: unitCost || "0",
+        currency_id: defaultCurrency?.id ?? "",
+      });
+      setSuccess(true);
+      setQuantity("");
+      setUnitCost("0");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to register initial inventory");
+    }
+  }
+
+  return (
+    <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-6">
+      <h2 className="mb-2 text-lg font-semibold text-gray-900">
+        Register Initial Inventory
+      </h2>
+      <p className="mb-4 text-sm text-gray-600">
+        Set the opening stock quantity for this product in the selected warehouse.
+        This creates the first inventory entry for this product-warehouse pair.
+      </p>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Quantity *
+            </label>
+            <input
+              type="number"
+              step="any"
+              min="0"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              required
+              placeholder="e.g. 100"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Unit Cost
+            </label>
+            <input
+              type="number"
+              step="any"
+              min="0"
+              value={unitCost}
+              onChange={(e) => setUnitCost(e.target.value)}
+              placeholder="0"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
+        {error && (
+          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+        {success && (
+          <div className="rounded-md bg-green-50 p-3 text-sm text-green-700">
+            Initial inventory registered successfully.
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={postTransaction.isPending || !defaultCurrency}
+          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          {postTransaction.isPending ? "Registering…" : "Register Initial Inventory"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Post Transaction form (advanced, manual movement type selection)
 // ---------------------------------------------------------------------------
 
 function PostTransactionSection({
@@ -279,11 +400,13 @@ function PostTransactionSection({
 }) {
   const { data: movementTypes } = useMovementTypes();
   const postTransaction = usePostTransaction();
+  const { data: defaultCurrency } = useDefaultCurrency();
   const [movementTypeCode, setMovementTypeCode] = useState("");
   const [signedQuantity, setSignedQuantity] = useState("");
   const [unitCost, setUnitCost] = useState("0");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const selectedType = (movementTypes ?? []).find(
     (mt: any) => mt.code === movementTypeCode,
@@ -324,7 +447,7 @@ function PostTransactionSection({
         movement_type_code: movementTypeCode,
         signed_quantity: signedQuantity,
         unit_cost: unitCost || "0",
-        currency_id: "00000000-0000-0000-0000-000000000000", // placeholder
+        currency_id: defaultCurrency?.id ?? "",
       });
       setSuccess(true);
       setSignedQuantity("");
@@ -337,82 +460,96 @@ function PostTransactionSection({
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-6">
-      <h2 className="mb-4 text-lg font-semibold text-gray-900">
-        Post Transaction
-      </h2>
-      <p className="mb-4 text-sm text-gray-500">
-        Post a new ledger entry. The signed quantity must match the movement
-        type's sign convention (shown in parentheses).
-      </p>
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="flex w-full items-center justify-between text-left"
+      >
+        <h2 className="text-lg font-semibold text-gray-900">
+          Post Transaction (Advanced)
+        </h2>
+        <span className="text-sm text-gray-500">
+          {expanded ? "▲ Collapse" : "▼ Expand"}
+        </span>
+      </button>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Movement Type *
-            </label>
-            <select
-              value={movementTypeCode}
-              onChange={(e) => setMovementTypeCode(e.target.value)}
-              required
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+      {expanded && (
+        <>
+          <p className="mb-4 mt-2 text-sm text-gray-500">
+            Post a new ledger entry with a specific movement type. The signed
+            quantity must match the movement type's sign convention.
+          </p>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Movement Type *
+                </label>
+                <select
+                  value={movementTypeCode}
+                  onChange={(e) => setMovementTypeCode(e.target.value)}
+                  required
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">Select type…</option>
+                  {(movementTypes ?? []).map((mt: any) => (
+                    <option key={mt.code} value={mt.code}>
+                      {mt.label} ({mt.sign > 0 ? "+" : ""}{mt.sign})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Signed Quantity *
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={signedQuantity}
+                  onChange={(e) => setSignedQuantity(e.target.value)}
+                  required
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder={expectedSign != null ? (expectedSign > 0 ? "e.g. 100" : "e.g. -10") : ""}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Unit Cost
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={unitCost}
+                  onChange={(e) => setUnitCost(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            {error && (
+              <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+            {success && (
+              <div className="rounded-md bg-green-50 p-3 text-sm text-green-700">
+                Transaction posted successfully.
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={postTransaction.isPending || !defaultCurrency}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              <option value="">Select type…</option>
-              {(movementTypes ?? []).map((mt: any) => (
-                <option key={mt.code} value={mt.code}>
-                  {mt.label} ({mt.sign > 0 ? "+" : ""}{mt.sign})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Signed Quantity *
-            </label>
-            <input
-              type="number"
-              step="any"
-              value={signedQuantity}
-              onChange={(e) => setSignedQuantity(e.target.value)}
-              required
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder={expectedSign != null ? (expectedSign > 0 ? "e.g. 100" : "e.g. -10") : ""}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Unit Cost
-            </label>
-            <input
-              type="number"
-              step="any"
-              min="0"
-              value={unitCost}
-              onChange={(e) => setUnitCost(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
-        </div>
-
-        {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-        {success && (
-          <div className="rounded-md bg-green-50 p-3 text-sm text-green-700">
-            Transaction posted successfully.
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={postTransaction.isPending}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {postTransaction.isPending ? "Posting…" : "Post Transaction"}
-        </button>
-      </form>
+              {postTransaction.isPending ? "Posting…" : "Post Transaction"}
+            </button>
+          </form>
+        </>
+      )}
     </div>
   );
 }

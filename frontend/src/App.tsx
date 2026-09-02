@@ -1,5 +1,5 @@
 import "@/i18n";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router";
+import { HashRouter, Navigate, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/features/auth/AuthContext";
 import { LoginPage } from "@/features/auth/LoginPage";
@@ -7,6 +7,10 @@ import { AppShell } from "@/features/layout/AppShell";
 import { ProductListPage } from "@/features/catalog/ProductListPage";
 import { ProductDetailPage } from "@/features/catalog/ProductDetailPage";
 import { ProductCreatePage } from "@/features/catalog/ProductCreatePage";
+import { WarehouseListPage } from "@/features/warehouses/WarehouseListPage";
+import { WarehouseCreatePage } from "@/features/warehouses/WarehouseCreatePage";
+import { RepresentativeListPage } from "@/features/representatives/RepresentativeListPage";
+import { RepresentativeCreatePage } from "@/features/representatives/RepresentativeCreatePage";
 import { CustomerListPage } from "@/features/customers/CustomerListPage";
 import { CustomerDetailPage } from "@/features/customers/CustomerDetailPage";
 import { CustomerCreatePage } from "@/features/customers/CustomerCreatePage";
@@ -20,6 +24,7 @@ import { RepOrderCreatePage } from "@/features/orders/RepOrderCreatePage";
 import { RepOrderDetailPage } from "@/features/orders/RepOrderDetailPage";
 import { InvoiceListPage } from "@/features/invoices/InvoiceListPage";
 import { InvoiceDetailPage } from "@/features/invoices/InvoiceDetailPage";
+import { PaymentListPage } from "@/features/payments/PaymentListPage";
 import { PaymentDetailPage } from "@/features/payments/PaymentDetailPage";
 import { CreditNoteCreatePage } from "@/features/credit-notes/CreditNoteCreatePage";
 import { CreditNoteDetailPage } from "@/features/credit-notes/CreditNoteDetailPage";
@@ -32,6 +37,11 @@ import { ReportListPage } from "@/features/reports/ReportListPage";
 import { ReportRunDetailPage } from "@/features/reports/ReportRunDetailPage";
 import { KpiDashboardPage } from "@/features/kpi/KpiDashboardPage";
 import { RepDashboardPage } from "@/features/dashboard/RepDashboardPage";
+import { ReturnListPage } from "@/features/returns/ReturnListPage";
+import { ReturnDetailPage } from "@/features/returns/ReturnDetailPage";
+import { ReturnCreatePage } from "@/features/returns/ReturnCreatePage";
+import { AuditLogPage } from "@/features/audit-log/AuditLogPage";
+import { CommissionAdminPage } from "@/features/commissions/CommissionAdminPage";
 import { RepCommissionPage } from "@/features/commissions/RepCommissionPage";
 import { ROUTES } from "@/lib/constants";
 
@@ -101,6 +111,12 @@ function AppRoutes() {
         <Route path="catalog" element={<ProductListPage />} />
         <Route path="catalog/new" element={<ProductCreatePage />} />
         <Route path="catalog/:sku" element={<ProductDetailPage />} />
+        {/* Warehouses */}
+        <Route path="warehouses" element={<WarehouseListPage />} />
+        <Route path="warehouses/new" element={<WarehouseCreatePage />} />
+        {/* Representatives */}
+        <Route path="representatives" element={<RepresentativeListPage />} />
+        <Route path="representatives/new" element={<RepresentativeCreatePage />} />
         {/* Customers */}
         <Route path="customers" element={<CustomerListPage />} />
         <Route path="customers/new" element={<CustomerCreatePage />} />
@@ -123,12 +139,15 @@ function AppRoutes() {
         <Route path="transfers" element={<TransferListPage />} />
         <Route path="transfers/new" element={<TransferCreatePage />} />
         <Route path="transfers/:id" element={<TransferDetailPage />} />
-        <Route path="payments" element={<PlaceholderPage title="Payments" />} />
-        <Route path="commissions" element={<PlaceholderPage title="Commissions" />} />
+        <Route path="payments" element={<PaymentListPage />} />
+        <Route path="commissions" element={<CommissionAdminPage />} />
         <Route path="reports" element={<ReportListPage />} />
         <Route path="reports/runs/:id" element={<ReportRunDetailPage />} />
         <Route path="kpi" element={<KpiDashboardPage />} />
-        <Route path="audit-log" element={<PlaceholderPage title="Audit Log" />} />
+        <Route path="returns" element={<ReturnListPage />} />
+        <Route path="returns/new" element={<ReturnCreatePage />} />
+        <Route path="returns/:id" element={<ReturnDetailPage />} />
+        <Route path="audit-log" element={<AuditLogPage />} />
       </Route>
 
       {/* Representative portal shell */}
@@ -157,11 +176,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <HashRouter>
         <AuthProvider>
           <AppRoutes />
         </AuthProvider>
-      </BrowserRouter>
+      </HashRouter>
     </QueryClientProvider>
   );
 }

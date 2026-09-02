@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
+import { useTranslation } from "react-i18next";
 import {
   useReportTypes,
   useReportDefinitions,
@@ -12,6 +13,7 @@ import { PERMISSIONS } from "@/lib/constants";
 const PAGE_SIZE = 50;
 
 export function ReportListPage() {
+  const { t } = useTranslation("common");
   const canManage = usePermission(PERMISSIONS.REPORT_MANAGE);
   const [page, setPage] = useState(0);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -24,13 +26,13 @@ export function ReportListPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t("reports.title")}</h1>
         {canManage && (
           <button
             onClick={() => setShowCreateForm(!showCreateForm)}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
-            {showCreateForm ? "Cancel" : "New Report Definition"}
+            {showCreateForm ? t("reports.cancel") : t("reports.newDefinition")}
           </button>
         )}
       </div>
@@ -41,7 +43,7 @@ export function ReportListPage() {
         />
       )}
 
-      {isLoading && <p className="text-gray-500">Loading…</p>}
+      {isLoading && <p className="text-gray-500">{t("status.loading")}</p>}
 
       {!isLoading && (
         <>
@@ -50,23 +52,23 @@ export function ReportListPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Name
+                    {t("reports.columns.name")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Type
+                    {t("reports.columns.type")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Format
+                    {t("reports.columns.format")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Status
+                    {t("reports.columns.status")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Created
+                    {t("reports.columns.created")}
                   </th>
                   {canManage && (
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                      Actions
+                      Action
                     </th>
                   )}
                 </tr>
@@ -78,7 +80,7 @@ export function ReportListPage() {
                       colSpan={6}
                       className="px-4 py-8 text-center text-sm text-gray-500"
                     >
-                      No report definitions found. Create one to get started.
+                      {t("reports.emptyState")}
                     </td>
                   </tr>
                 ) : (
@@ -100,15 +102,15 @@ export function ReportListPage() {
               disabled={page === 0}
               className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
-              Previous
+              {t("pagination.previous")}
             </button>
-            <span className="text-sm text-gray-500">Page {page + 1}</span>
+            <span className="text-sm text-gray-500">{t("pagination.page", { page: page + 1 })}</span>
             <button
               onClick={() => setPage((p) => p + 1)}
               disabled={(definitions ?? []).length < PAGE_SIZE}
               className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
-              Next
+              {t("pagination.next")}
             </button>
           </div>
         </>
@@ -135,6 +137,7 @@ function DefinitionRow({
   };
   canManage: boolean;
 }) {
+  const { t } = useTranslation("common");
   const runReport = useRunReport();
   const [runResult, setRunResult] = useState<{
     runId: string;
@@ -164,7 +167,7 @@ function DefinitionRow({
         {definition.name}
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
-        <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">
+        <span className="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">
           {definition.report_type_id.slice(0, 8)}
         </span>
       </td>
@@ -179,7 +182,7 @@ function DefinitionRow({
               : "bg-gray-100 text-gray-800"
           }`}
         >
-          {definition.is_active ? "Active" : "Inactive"}
+          {definition.is_active ? t("reports.statusLabels.active") : t("reports.statusLabels.inactive")}
         </span>
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
@@ -193,14 +196,14 @@ function DefinitionRow({
               disabled={runReport.isPending}
               className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {runReport.isPending ? "Running…" : "Run Now"}
+              {runReport.isPending ? t("reports.buttons.running") : t("reports.buttons.runNow")}
             </button>
             {runResult && (
               <Link
                 to={`/office/reports/runs/${runResult.runId}`}
                 className="text-xs text-blue-600 hover:underline"
               >
-                View Result ({runResult.rowCount ?? 0} rows)
+                {t("reports.buttons.createView", { count: runResult.rowCount ?? 0 })}
               </Link>
             )}
             {runError && (
@@ -218,6 +221,7 @@ function DefinitionRow({
 // ---------------------------------------------------------------------------
 
 function CreateReportDefinitionForm({ onCreated }: { onCreated: () => void }) {
+  const { t } = useTranslation("common");
   const { data: reportTypes } = useReportTypes();
   const createDefinition = useCreateReportDefinition();
 
@@ -231,11 +235,11 @@ function CreateReportDefinitionForm({ onCreated }: { onCreated: () => void }) {
     setError(null);
 
     if (!name.trim()) {
-      setError("Name is required.");
+      setError(t("reports.validation.nameRequired"));
       return;
     }
     if (!reportTypeId) {
-      setError("Report type is required.");
+      setError(t("reports.validation.typeRequired"));
       return;
     }
 
@@ -255,13 +259,13 @@ function CreateReportDefinitionForm({ onCreated }: { onCreated: () => void }) {
   return (
     <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6">
       <h2 className="mb-4 text-lg font-semibold text-gray-900">
-        New Report Definition
+        {t("reports.newDefinition")}
       </h2>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
             <label className="block text-sm font-medium text-gray-700">
-              Name *
+              {t("reports.fields.name")}
             </label>
             <input
               type="text"
@@ -269,12 +273,12 @@ function CreateReportDefinitionForm({ onCreated }: { onCreated: () => void }) {
               onChange={(e) => setName(e.target.value)}
               required
               className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="e.g. Monthly AR Aging"
+              placeholder={t("reports.fields.namePlaceholder")}
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700">
-              Report Type *
+              {t("reports.fields.reportType")}
             </label>
             <select
               value={reportTypeId}
@@ -282,7 +286,7 @@ function CreateReportDefinitionForm({ onCreated }: { onCreated: () => void }) {
               required
               className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
-              <option value="">Select type…</option>
+              <option value="">{t("reports.fields.selectType")}</option>
               {(reportTypes ?? []).map((rt) => (
                 <option key={rt.id} value={rt.id}>
                   {rt.code}
@@ -292,7 +296,7 @@ function CreateReportDefinitionForm({ onCreated }: { onCreated: () => void }) {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700">
-              Output Format
+              {t("reports.fields.outputFormat")}
             </label>
             <select
               value={outputFormat}
@@ -317,7 +321,7 @@ function CreateReportDefinitionForm({ onCreated }: { onCreated: () => void }) {
           disabled={createDefinition.isPending}
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
         >
-          {createDefinition.isPending ? "Creating…" : "Create Definition"}
+          {createDefinition.isPending ? t("reports.buttons.creating") : t("reports.buttons.create")}
         </button>
       </form>
     </div>

@@ -70,6 +70,25 @@ def _to_response(payment, allocations=None) -> PaymentResponse:
     return response
 
 
+@router.get(
+    "/payments",
+    response_model=PaymentListResponse,
+    summary="List all payments",
+)
+def list_payments(
+    customer_id: uuid.UUID | None = None,
+    skip: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    _current_user: AppUser = Depends(get_current_user),
+) -> PaymentListResponse:
+    """Return payments, optionally filtered by customer."""
+    payments = payment_service.list_payments(
+        db, customer_id=customer_id, skip=skip, limit=limit,
+    )
+    return PaymentListResponse(items=[_to_response(p) for p in payments])
+
+
 @router.post(
     "/payments",
     response_model=PaymentResponse,

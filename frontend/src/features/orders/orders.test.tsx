@@ -1,7 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { I18nextProvider } from "react-i18next";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import i18n from "@/i18n";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -77,11 +79,13 @@ vi.mock("@/api/hooks/useOrders", () => ({
 
 function renderWithProviders(ui: React.ReactElement) {
   return render(
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
-      {ui}
-    </QueryClientProvider>,
+    <I18nextProvider i18n={i18n}>
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        {ui}
+      </QueryClientProvider>
+    </I18nextProvider>,
   );
 }
 

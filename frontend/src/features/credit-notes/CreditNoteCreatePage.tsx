@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router";
+import { useTranslation } from "react-i18next";
 import { useCreateCreditNote } from "@/api/hooks/useCreditNotes";
 import { useReasonCodes } from "@/api/hooks/useReasonCodes";
 import { useInvoice } from "@/api/hooks/useInvoices";
@@ -21,6 +22,7 @@ const EMPTY_LINE: LineInput = {
 };
 
 export function CreditNoteCreatePage() {
+  const { t } = useTranslation("common");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const invoiceId = searchParams.get("invoice_id") ?? "";
@@ -39,13 +41,13 @@ export function CreditNoteCreatePage() {
     return (
       <div>
         <p className="text-red-600">
-          You do not have permission to create credit notes.
+          {t("creditNotes.noPermission")}
         </p>
         <Link
           to={ROUTES.OFFICE}
           className="mt-4 inline-block text-sm text-blue-600 hover:underline"
         >
-          ← Back
+          {t("common.back")}
         </Link>
       </div>
     );
@@ -55,13 +57,13 @@ export function CreditNoteCreatePage() {
     return (
       <div>
         <p className="text-red-600">
-          An invoice_id is required to create a credit note.
+          {t("creditNotes.invoiceRequired")}
         </p>
         <Link
           to={`${ROUTES.OFFICE}/invoices`}
           className="mt-4 inline-block text-sm text-blue-600 hover:underline"
         >
-          ← Back to invoices
+          {t("creditNotes.backToInvoice")}
         </Link>
       </div>
     );
@@ -86,22 +88,22 @@ export function CreditNoteCreatePage() {
     setError(null);
 
     if (!reasonCodeId) {
-      setError("Reason code is required.");
+      setError(t("creditNotes.validation.reasonRequired"));
       return;
     }
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (!line.description.trim()) {
-        setError(`Line ${i + 1}: Description is required.`);
+        setError(t("creditNotes.validation.lineDescriptionRequired", { line: i + 1 }));
         return;
       }
       if (!line.qty || Number(line.qty) <= 0) {
-        setError(`Line ${i + 1}: Quantity must be greater than 0.`);
+        setError(t("creditNotes.validation.lineQtyRequired", { line: i + 1 }));
         return;
       }
       if (!line.unit_price || Number(line.unit_price) <= 0) {
-        setError(`Line ${i + 1}: Unit price must be greater than 0.`);
+        setError(t("creditNotes.validation.linePriceRequired", { line: i + 1 }));
         return;
       }
     }
@@ -120,7 +122,7 @@ export function CreditNoteCreatePage() {
       });
       navigate(`${ROUTES.OFFICE}/invoices/${invoiceId}`, { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create credit note");
+      setError(err instanceof Error ? err.message : t("creditNotes.failedToCreate"));
     }
   }
 
@@ -131,24 +133,24 @@ export function CreditNoteCreatePage() {
           to={`${ROUTES.OFFICE}/invoices/${invoiceId}`}
           className="text-sm text-blue-600 hover:underline"
         >
-          ← Back to invoice
+          {t("creditNotes.backToInvoice")}
         </Link>
       </div>
 
       <h1 className="mb-6 text-2xl font-bold text-gray-900">
-        Create Credit Note
+        {t("creditNotes.createTitle")}
       </h1>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Header fields */}
         <div className="rounded-lg border border-gray-200 bg-white p-6">
           <h2 className="mb-4 text-lg font-semibold text-gray-900">
-            Credit Note Details
+            {t("creditNotes.fields.creditNoteDetails")}
           </h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Invoice
+                {t("creditNotes.fields.invoice")}
               </label>
               <p className="mt-1 text-sm text-gray-900">
                 {invoice?.invoice_number ?? invoiceId.slice(0, 8)}
@@ -159,7 +161,7 @@ export function CreditNoteCreatePage() {
                 htmlFor="reason_code"
                 className="block text-sm font-medium text-gray-700"
               >
-                Reason Code *
+                {t("creditNotes.fields.reasonCode")}
               </label>
               <select
                 id="reason_code"
@@ -168,7 +170,7 @@ export function CreditNoteCreatePage() {
                 required
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="">Select reason…</option>
+                <option value="">{t("creditNotes.fields.selectReason")}</option>
                 {(reasonCodes ?? []).map((rc) => (
                   <option key={rc.id} value={rc.id}>
                     {rc.code} — {rc.label}
@@ -183,14 +185,14 @@ export function CreditNoteCreatePage() {
         <div className="rounded-lg border border-gray-200 bg-white p-6">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">
-              Line Items
+              {t("creditNotes.fields.lineItems")}
             </h2>
             <button
               type="button"
               onClick={addLine}
               className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
             >
-              + Add Line
+              {t("creditNotes.fields.addLine")}
             </button>
           </div>
 
@@ -202,7 +204,7 @@ export function CreditNoteCreatePage() {
               >
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-gray-500">
-                    Invoice Line ID (optional)
+                    {t("creditNotes.fields.invoiceLineId")}
                   </label>
                   <select
                     value={line.invoice_line_id}
@@ -211,7 +213,7 @@ export function CreditNoteCreatePage() {
                     }
                     className="mt-1 block w-full rounded border border-gray-300 px-2 py-1 text-sm"
                   >
-                    <option value="">Unlinked</option>
+                    <option value="">{t("creditNotes.fields.unlinked")}</option>
                     {(invoice?.lines ?? []).map((il) => (
                       <option key={il.id} value={il.id}>
                         {il.description} ({il.qty} × {il.unit_price})
@@ -221,7 +223,7 @@ export function CreditNoteCreatePage() {
                 </div>
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-gray-500">
-                    Description *
+                    {t("creditNotes.fields.description")}
                   </label>
                   <input
                     type="text"
@@ -235,7 +237,7 @@ export function CreditNoteCreatePage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500">
-                    Qty *
+                    {t("creditNotes.fields.qty")}
                   </label>
                   <input
                     type="number"
@@ -249,7 +251,7 @@ export function CreditNoteCreatePage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500">
-                    Unit Price *
+                    {t("creditNotes.fields.unitPrice")}
                   </label>
                   <input
                     type="number"
@@ -283,7 +285,7 @@ export function CreditNoteCreatePage() {
             htmlFor="note"
             className="block text-sm font-medium text-gray-700"
           >
-            Note (optional)
+            {t("creditNotes.fields.note")}
           </label>
           <textarea
             id="note"
@@ -306,7 +308,7 @@ export function CreditNoteCreatePage() {
           disabled={createCreditNote.isPending}
           className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
         >
-          {createCreditNote.isPending ? "Creating…" : "Create Credit Note"}
+          {createCreditNote.isPending ? t("creditNotes.buttons.creating") : t("creditNotes.buttons.create")}
         </button>
       </form>
     </div>

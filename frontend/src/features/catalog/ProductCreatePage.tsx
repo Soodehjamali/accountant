@@ -1,10 +1,12 @@
 import { type FormEvent, useState } from "react";
 import { useNavigate, Link } from "react-router";
+import { useTranslation } from "react-i18next";
 import { useCreateProduct } from "@/api/hooks/useProducts";
 import { usePermission } from "@/hooks/usePermission";
 import { PERMISSIONS } from "@/lib/constants";
 
 export function ProductCreatePage() {
+  const { t } = useTranslation("common");
   const navigate = useNavigate();
   const createProduct = useCreateProduct();
   const canManage = usePermission(PERMISSIONS.PRODUCT_MANAGE);
@@ -20,13 +22,13 @@ export function ProductCreatePage() {
     return (
       <div>
         <p className="text-red-600">
-          You do not have permission to create products.
+          {t("catalog.noPermission")}
         </p>
         <Link
           to="/office/catalog"
           className="mt-4 inline-block text-sm text-blue-600 hover:underline"
         >
-          ← Back to products
+          {t("catalog.backToProducts")}
         </Link>
       </div>
     );
@@ -46,7 +48,7 @@ export function ProductCreatePage() {
       });
       navigate(`/office/catalog/${sku}`, { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create product");
+      setError(err instanceof Error ? err.message : t("catalog.failedToCreate"));
     }
   }
 
@@ -57,12 +59,12 @@ export function ProductCreatePage() {
           to="/office/catalog"
           className="text-sm text-blue-600 hover:underline"
         >
-          ← Products
+          {t("catalog.backToProducts")}
         </Link>
       </div>
 
       <h1 className="mb-6 text-2xl font-bold text-gray-900">
-        Create Product
+        {t("catalog.createTitle")}
       </h1>
 
       <form
@@ -71,7 +73,7 @@ export function ProductCreatePage() {
       >
         <div>
           <label htmlFor="sku" className="block text-sm font-medium text-gray-700">
-            SKU *
+            {t("catalog.fields.sku")}
           </label>
           <input
             id="sku"
@@ -86,7 +88,7 @@ export function ProductCreatePage() {
 
         <div>
           <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-            Name *
+            {t("catalog.fields.name")}
           </label>
           <input
             id="name"
@@ -101,7 +103,7 @@ export function ProductCreatePage() {
 
         <div>
           <label htmlFor="description" className="block text-sm font-medium text-gray-700">
-            Description
+            {t("catalog.fields.description")}
           </label>
           <textarea
             id="description"
@@ -115,7 +117,7 @@ export function ProductCreatePage() {
 
         <div>
           <label htmlFor="base_uom_id" className="block text-sm font-medium text-gray-700">
-            Base UoM ID *
+            {t("catalog.fields.baseUomId")}
           </label>
           <input
             id="base_uom_id"
@@ -123,21 +125,21 @@ export function ProductCreatePage() {
             value={baseUomId}
             onChange={(e) => setBaseUomId(e.target.value)}
             required
-            placeholder="UUID"
+            placeholder={t("forms.uuidPlaceholder")}
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <div>
           <label htmlFor="category_id" className="block text-sm font-medium text-gray-700">
-            Category ID
+            {t("catalog.fields.categoryId")}
           </label>
           <input
             id="category_id"
             type="text"
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
-            placeholder="UUID (optional)"
+            placeholder={t("forms.uuidOptionalPlaceholder")}
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
@@ -153,7 +155,7 @@ export function ProductCreatePage() {
           disabled={createProduct.isPending}
           className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
         >
-          {createProduct.isPending ? "Creating…" : "Create Product"}
+          {createProduct.isPending ? t("catalog.buttons.creating") : t("catalog.buttons.create")}
         </button>
       </form>
     </div>

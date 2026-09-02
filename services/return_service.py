@@ -80,6 +80,125 @@ class ReturnAlreadyClosedError(ValueError):
         self.return_id = return_id
 
 
+def _generate_return_number() -> str:
+    """A simple, collision-safe business key: date-stamped + random suffix."""
+    today = datetime.date.today().strftime("%Y%m%d")
+    return f"RET-{today}-{uuid.uuid4().hex[:8].upper()}"
+
+
+def create_return(
+    session: Session,
+    *,
+    customer_id: uuid.UUID | None = None,
+    representative_id: uuid.UUID | None = None,
+    warehouse_id: uuid.UUID,
+    reason_code_id: uuid.UUID,
+    return_type: str,
+    order_id: uuid.UUID | None = None,
+    actor_user_id: uuid.UUID,
+    note: str | None = None,
+    lines: list[dict] | None = None,
+) -> CustomerReturn:
+    """Create a new customer return in PENDING_APPROVAL state.
+
+    Args:
+        customer_id: The customer returning goods (required for CUSTOMER_RETURN).
+        representative_id: The rep initiating the return (required for REP_RETURN_TO_FACTORY).
+        warehouse_id: The warehouse receiving the return.
+        reason_code_id: Why the return is happening.
+        return_type: CUSTOMER_RETURN, REP_RETURN_TO_FACTORY, or DAMAGED_RETURN.
+        order_id: The original order being returned (optional).
+        actor_user_id: User creating the return.
+        note: Optional note.
+        lines: List of dicts with product_id, qty_returned, order_line_id (optional), unit_refund_amount (optional).
+
+    Raises:
+        ValueError: if no lines provided, or if customer_id/representative_id constraints violated.
+    """
+    if not lines:
+        raise ValueError("At least one return line is required.")
+
+    customer_return = CustomerReturn(
+        return_number=_generate_return_number(),
+        order_id=order_id,
+        customer_id=customer_id,
+        representative_id=representative_id,
+        warehouse_id=warehouse_id,
+        initiated_by=actor_user_id,
+        reason_code_id=reason_code_id,
+        return_type=return_type,
+        state="PENDING_APPROVAL",
+        requested_at=datetime.datetime.now(datetime.timezone.utc),
+        created_by=actor_user_id,
+        updated_by=actor_user_id,
+    )
+    session.add(customer_return)
+    session.flush()
+
+    # Add return lines.
+    from database.models.return_line import ReturnLine
+
+    for line_data in lines:
+        return_line = ReturnLine(
+            customer_return_id=customer_return.id,
+            order_line_id=line_data.get("order_line_id"),
+            product_id=line_data["product_id"],
+            qty_returned=line_data["qty_returned"],
+            unit_refund_amount=line_data.get("unit_refund_amount", 0),
+            created_by=actor_user_id,
+            updated_by=actor_user_id,
+        )
+        session.add(return_line)
+
+    session.flush()
+
+    audit_service.record(
+        session,
+        entity_type="customer_return",
+        entity_id=customer_return.id,
+        action="CREATE",
+        actor_user_id=actor_user_id,
+        after={
+            "return_number": customer_return.return_number,
+            "return_type": return_type,
+            "customer_id": str(customer_id) if customer_id else None,
+            "order_id": str(order_id) if order_id else None,
+            "lines_count": len(lines),
+        },
+    )
+    session.flush()
+
+    return customer_return
+
+
+def list_returns(
+    session: Session,
+    *,
+    customer_id: uuid.UUID | None = None,
+    state: str | None = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> list[CustomerReturn]:
+    """List customer returns with optional filters."""
+    query = select(CustomerReturn)
+    if customer_id is not None:
+        query = query.where(CustomerReturn.customer_id == customer_id)
+    if state is not None:
+        query = query.where(CustomerReturn.state == state)
+    query = query.order_by(CustomerReturn.requested_at.desc()).offset(skip).limit(limit)
+    return list(session.execute(query).scalars().all())
+
+
+def get_return_lines(session: Session, return_id: uuid.UUID) -> list:
+    """Return all lines for a given customer return."""
+    from database.models.return_line import ReturnLine
+    return list(
+        session.execute(
+            select(ReturnLine).where(ReturnLine.customer_return_id == return_id)
+        ).scalars().all()
+    )
+
+
 def _get_return_or_raise(session: Session, return_id: uuid.UUID) -> CustomerReturn:
     """Return a ``CustomerReturn`` by ID, or raise ``ReturnNotFoundError``."""
     cr = session.get(CustomerReturn, return_id)
@@ -319,7 +438,10 @@ __all__ = [
     "ReturnNotFoundError",
     "InvalidReturnStateTransitionError",
     "close_return",
+    "create_return",
     "get_return",
+    "get_return_lines",
     "inspect_return",
+    "list_returns",
     "receive_return",
 ]

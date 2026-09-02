@@ -1,10 +1,12 @@
 import { type FormEvent, useState } from "react";
 import { useNavigate, Link } from "react-router";
+import { useTranslation } from "react-i18next";
 import { useCreateCustomer } from "@/api/hooks/useCustomers";
 import { usePermission } from "@/hooks/usePermission";
 import { PERMISSIONS } from "@/lib/constants";
 
 export function CustomerCreatePage() {
+  const { t } = useTranslation("common");
   const navigate = useNavigate();
   const createCustomer = useCreateCustomer();
   const canManage = usePermission(PERMISSIONS.CUSTOMER_MANAGE);
@@ -22,13 +24,13 @@ export function CustomerCreatePage() {
     return (
       <div>
         <p className="text-red-600">
-          You do not have permission to create customers.
+          {t("customers.noPermission")}
         </p>
         <Link
           to="/office/customers"
           className="mt-4 inline-block text-sm text-blue-600 hover:underline"
         >
-          ← Back to customers
+          {t("customers.backToCustomers")}
         </Link>
       </div>
     );
@@ -48,11 +50,10 @@ export function CustomerCreatePage() {
         credit_limit_amount: creditLimit,
         tax_number: taxNumber || undefined,
       });
-      // Navigate to the customer list since we don't have the ID in the response redirect
       navigate("/office/customers", { replace: true });
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to create customer",
+        err instanceof Error ? err.message : t("customers.failedToCreate"),
       );
     }
   }
@@ -64,12 +65,12 @@ export function CustomerCreatePage() {
           to="/office/customers"
           className="text-sm text-blue-600 hover:underline"
         >
-          ← Customers
+          {t("customers.backToCustomers")}
         </Link>
       </div>
 
       <h1 className="mb-6 text-2xl font-bold text-gray-900">
-        Create Customer
+        {t("customers.createTitle")}
       </h1>
 
       <form
@@ -78,7 +79,7 @@ export function CustomerCreatePage() {
       >
         <div>
           <label htmlFor="code" className="block text-sm font-medium text-gray-700">
-            Code *
+            {t("customers.fields.code")}
           </label>
           <input
             id="code"
@@ -93,7 +94,7 @@ export function CustomerCreatePage() {
 
         <div>
           <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-            Name *
+            {t("customers.fields.name")}
           </label>
           <input
             id="name"
@@ -108,7 +109,7 @@ export function CustomerCreatePage() {
 
         <div>
           <label htmlFor="type" className="block text-sm font-medium text-gray-700">
-            Type *
+            {t("customers.fields.type")}
           </label>
           <select
             id="type"
@@ -116,14 +117,14 @@ export function CustomerCreatePage() {
             onChange={(e) => setType(e.target.value as "INDIVIDUAL" | "CORPORATE")}
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
-            <option value="CORPORATE">Corporate</option>
-            <option value="INDIVIDUAL">Individual</option>
+            <option value="CORPORATE">{t("customers.typeOptions.CORPORATE")}</option>
+            <option value="INDIVIDUAL">{t("customers.typeOptions.INDIVIDUAL")}</option>
           </select>
         </div>
 
         <div>
           <label htmlFor="currency_id" className="block text-sm font-medium text-gray-700">
-            Currency ID *
+            {t("customers.fields.currencyId")}
           </label>
           <input
             id="currency_id"
@@ -131,14 +132,14 @@ export function CustomerCreatePage() {
             value={currencyId}
             onChange={(e) => setCurrencyId(e.target.value)}
             required
-            placeholder="UUID"
+            placeholder={t("forms.uuidPlaceholder")}
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <div>
           <label htmlFor="credit_limit" className="block text-sm font-medium text-gray-700">
-            Credit Limit
+            {t("customers.fields.creditLimit")}
           </label>
           <input
             id="credit_limit"
@@ -151,7 +152,7 @@ export function CustomerCreatePage() {
 
         <div>
           <label htmlFor="billing_address" className="block text-sm font-medium text-gray-700">
-            Billing Address
+            {t("customers.fields.billingAddress")}
           </label>
           <textarea
             id="billing_address"
@@ -165,7 +166,7 @@ export function CustomerCreatePage() {
 
         <div>
           <label htmlFor="tax_number" className="block text-sm font-medium text-gray-700">
-            Tax Number
+            {t("customers.fields.taxNumber")}
           </label>
           <input
             id="tax_number"
@@ -188,7 +189,7 @@ export function CustomerCreatePage() {
           disabled={createCustomer.isPending}
           className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
         >
-          {createCustomer.isPending ? "Creating…" : "Create Customer"}
+          {createCustomer.isPending ? t("customers.buttons.creating") : t("customers.buttons.create")}
         </button>
       </form>
     </div>

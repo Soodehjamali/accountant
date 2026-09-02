@@ -2,7 +2,37 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
 
 // ---------------------------------------------------------------------------
-// Read
+// Read — List
+// ---------------------------------------------------------------------------
+
+/** Fetch all payments, optionally filtered by customer_id. */
+export function usePaymentsList(params: {
+  customer_id?: string;
+  skip?: number;
+  limit?: number;
+} = {}) {
+  const { customer_id, skip = 0, limit = 50 } = params;
+  return useQuery({
+    queryKey: ["payments", "list", { customer_id, skip, limit }],
+    queryFn: async () => {
+      const { data, error } = await apiClient.GET("/api/v1/payments" as any, {
+        params: {
+          query: {
+            skip,
+            limit,
+            ...(customer_id ? { customer_id: customer_id as any } : {}),
+          },
+        } as any,
+        headers: authHeader(),
+      } as any);
+      if (error) throw new Error(String(error));
+      return (data as any).items;
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Read — Single
 // ---------------------------------------------------------------------------
 
 /** Fetch a single payment by ID (includes allocations). */

@@ -26,7 +26,9 @@ from app.api.v1.endpoints import (
     auth,
     commissions,
     credit_notes,
+    currencies,
     customer_ledger,
+    customer_returns,
     customers,
     health,
     inventory,
@@ -60,6 +62,7 @@ api_router.include_router(transfers.router)
 api_router.include_router(payments.router)
 api_router.include_router(commissions.router)
 api_router.include_router(credit_notes.router)
+api_router.include_router(customer_returns.router)
 api_router.include_router(representatives.router)
 api_router.include_router(warehouses.router)
 api_router.include_router(price_lists.router)
@@ -67,5 +70,6 @@ api_router.include_router(kpi_snapshot.router)
 api_router.include_router(reports.router)
 api_router.include_router(reason_codes.router)
 api_router.include_router(movement_types.router)
+api_router.include_router(currencies.router)
 
 __all__ = ["api_router"]

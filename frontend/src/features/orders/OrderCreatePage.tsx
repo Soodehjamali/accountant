@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from "react";
 import { useNavigate, Link } from "react-router";
+import { useTranslation } from "react-i18next";
 import { useCreateOrder } from "@/api/hooks/useOrders";
 import { usePermission } from "@/hooks/usePermission";
 import { PERMISSIONS, ROUTES } from "@/lib/constants";
@@ -19,6 +20,7 @@ const EMPTY_LINE: LineInput = {
 };
 
 export function OrderCreatePage() {
+  const { t } = useTranslation("common");
   const navigate = useNavigate();
   const createOrder = useCreateOrder();
   const canManage = usePermission(PERMISSIONS.ORDER_MANAGE);
@@ -38,13 +40,13 @@ export function OrderCreatePage() {
     return (
       <div>
         <p className="text-red-600">
-          You do not have permission to create orders.
+          {t("orders.noPermission")}
         </p>
         <Link
           to={`${ROUTES.OFFICE}/orders`}
           className="mt-4 inline-block text-sm text-blue-600 hover:underline"
         >
-          ← Back to orders
+          {t("orders.backToOrders")}
         </Link>
       </div>
     );
@@ -72,15 +74,15 @@ export function OrderCreatePage() {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (!line.product_id.trim()) {
-        setError(`Line ${i + 1}: Product ID is required.`);
+        setError(t("orders.validation.lineProductRequired", { line: i + 1 }));
         return;
       }
       if (!line.fulfillment_warehouse_id.trim()) {
-        setError(`Line ${i + 1}: Warehouse ID is required.`);
+        setError(t("orders.validation.lineWarehouseRequired", { line: i + 1 }));
         return;
       }
       if (!line.qty_ordered || Number(line.qty_ordered) <= 0) {
-        setError(`Line ${i + 1}: Quantity must be greater than 0.`);
+        setError(t("orders.validation.lineQtyRequired", { line: i + 1 }));
         return;
       }
     }
@@ -102,9 +104,7 @@ export function OrderCreatePage() {
       });
       navigate(`${ROUTES.OFFICE}/orders`, { replace: true });
     } catch (err) {
-      // Surface the verbatim API error (e.g. NoCurrentPriceError,
-      // CustomerCreditLimitExceededError) as a form-level message.
-      setError(err instanceof Error ? err.message : "Failed to create order");
+      setError(err instanceof Error ? err.message : t("orders.failedToCreate"));
     }
   }
 
@@ -115,17 +115,17 @@ export function OrderCreatePage() {
           to={`${ROUTES.OFFICE}/orders`}
           className="text-sm text-blue-600 hover:underline"
         >
-          ← Orders
+          {t("orders.backToOrders")}
         </Link>
       </div>
 
-      <h1 className="mb-6 text-2xl font-bold text-gray-900">Create Order</h1>
+      <h1 className="mb-6 text-2xl font-bold text-gray-900">{t("orders.createTitle")}</h1>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Header fields */}
         <div className="rounded-lg border border-gray-200 bg-white p-6">
           <h2 className="mb-4 text-lg font-semibold text-gray-900">
-            Order Details
+            {t("orders.fields.orderDetails")}
           </h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div>
@@ -133,7 +133,7 @@ export function OrderCreatePage() {
                 htmlFor="customer_id"
                 className="block text-sm font-medium text-gray-700"
               >
-                Customer ID *
+                {t("orders.fields.customerId")}
               </label>
               <input
                 id="customer_id"
@@ -141,7 +141,7 @@ export function OrderCreatePage() {
                 value={customerId}
                 onChange={(e) => setCustomerId(e.target.value)}
                 required
-                placeholder="UUID"
+                placeholder={t("forms.uuidPlaceholder")}
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
@@ -150,7 +150,7 @@ export function OrderCreatePage() {
                 htmlFor="representative_id"
                 className="block text-sm font-medium text-gray-700"
               >
-                Representative ID *
+                {t("orders.fields.representativeId")}
               </label>
               <input
                 id="representative_id"
@@ -158,7 +158,7 @@ export function OrderCreatePage() {
                 value={representativeId}
                 onChange={(e) => setRepresentativeId(e.target.value)}
                 required
-                placeholder="UUID"
+                placeholder={t("forms.uuidPlaceholder")}
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
@@ -167,7 +167,7 @@ export function OrderCreatePage() {
                 htmlFor="currency_id"
                 className="block text-sm font-medium text-gray-700"
               >
-                Currency ID *
+                {t("orders.fields.currencyId")}
               </label>
               <input
                 id="currency_id"
@@ -175,7 +175,7 @@ export function OrderCreatePage() {
                 value={currencyId}
                 onChange={(e) => setCurrencyId(e.target.value)}
                 required
-                placeholder="UUID"
+                placeholder={t("forms.uuidPlaceholder")}
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
@@ -184,7 +184,7 @@ export function OrderCreatePage() {
                 htmlFor="order_type"
                 className="block text-sm font-medium text-gray-700"
               >
-                Order Type *
+                {t("orders.fields.orderType")}
               </label>
               <select
                 id="order_type"
@@ -194,8 +194,8 @@ export function OrderCreatePage() {
                 }
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="LOCAL">Local</option>
-                <option value="DIRECT">Direct</option>
+                <option value="LOCAL">{t("orders.typeOptions.LOCAL")}</option>
+                <option value="DIRECT">{t("orders.typeOptions.DIRECT")}</option>
               </select>
             </div>
             <div>
@@ -203,7 +203,7 @@ export function OrderCreatePage() {
                 htmlFor="fulfillment_mode"
                 className="block text-sm font-medium text-gray-700"
               >
-                Fulfillment Mode *
+                {t("orders.fields.fulfillmentMode")}
               </label>
               <select
                 id="fulfillment_mode"
@@ -215,8 +215,8 @@ export function OrderCreatePage() {
                 }
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="REP_LOCAL">Rep Local</option>
-                <option value="FACTORY_DIRECT">Factory Direct</option>
+                <option value="REP_LOCAL">{t("orders.fulfillmentOptions.REP_LOCAL")}</option>
+                <option value="FACTORY_DIRECT">{t("orders.fulfillmentOptions.FACTORY_DIRECT")}</option>
               </select>
             </div>
             <div>
@@ -224,7 +224,7 @@ export function OrderCreatePage() {
                 htmlFor="sales_channel"
                 className="block text-sm font-medium text-gray-700"
               >
-                Sales Channel *
+                {t("orders.fields.salesChannel")}
               </label>
               <input
                 id="sales_channel"
@@ -243,14 +243,14 @@ export function OrderCreatePage() {
         <div className="rounded-lg border border-gray-200 bg-white p-6">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">
-              Line Items
+              {t("orders.fields.lineItems")}
             </h2>
             <button
               type="button"
               onClick={addLine}
               className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
             >
-              + Add Line
+              {t("orders.fields.addLine")}
             </button>
           </div>
 
@@ -262,7 +262,7 @@ export function OrderCreatePage() {
               >
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-gray-500">
-                    Product ID *
+                    {t("orders.fields.productId")}
                   </label>
                   <input
                     type="text"
@@ -271,13 +271,13 @@ export function OrderCreatePage() {
                       updateLine(index, "product_id", e.target.value)
                     }
                     required
-                    placeholder="UUID"
+                    placeholder={t("forms.uuidPlaceholder")}
                     className="mt-1 block w-full rounded border border-gray-300 px-2 py-1 text-sm font-mono"
                   />
                 </div>
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-gray-500">
-                    Warehouse ID *
+                    {t("orders.fields.warehouseId")}
                   </label>
                   <input
                     type="text"
@@ -290,13 +290,13 @@ export function OrderCreatePage() {
                       )
                     }
                     required
-                    placeholder="UUID"
+                    placeholder={t("forms.uuidPlaceholder")}
                     className="mt-1 block w-full rounded border border-gray-300 px-2 py-1 text-sm font-mono"
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500">
-                    Qty *
+                    {t("orders.fields.qty")}
                   </label>
                   <input
                     type="number"
@@ -335,7 +335,7 @@ export function OrderCreatePage() {
           disabled={createOrder.isPending}
           className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
         >
-          {createOrder.isPending ? "Creating…" : "Create Order"}
+          {createOrder.isPending ? t("orders.buttons.creating") : t("orders.buttons.create")}
         </button>
       </form>
     </div>

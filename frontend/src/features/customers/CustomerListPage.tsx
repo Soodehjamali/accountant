@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
+import { useTranslation } from "react-i18next";
 import { useCustomers } from "@/api/hooks/useCustomers";
 import { usePermission } from "@/hooks/usePermission";
 import { PERMISSIONS } from "@/lib/constants";
@@ -7,6 +8,7 @@ import { PERMISSIONS } from "@/lib/constants";
 const PAGE_SIZE = 50;
 
 export function CustomerListPage() {
+  const { t } = useTranslation("common");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -22,13 +24,13 @@ export function CustomerListPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t("customers.title")}</h1>
         {canManage && (
           <Link
             to="/office/customers/new"
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
-            New Customer
+            {t("customers.newCustomer")}
           </Link>
         )}
       </div>
@@ -37,7 +39,7 @@ export function CustomerListPage() {
       <div className="mb-4 flex flex-wrap gap-3">
         <input
           type="text"
-          placeholder="Search by name, code, or tax number…"
+          placeholder={t("customers.searchPlaceholder")}
           value={search}
           onChange={(e) => {
             setSearch(e.target.value);
@@ -53,14 +55,14 @@ export function CustomerListPage() {
           }}
           className="rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         >
-          <option value="">All statuses</option>
-          <option value="ACTIVE">Active</option>
-          <option value="INACTIVE">Inactive</option>
+          <option value="">{t("status.all")}</option>
+          <option value="ACTIVE">{t("status.active")}</option>
+          <option value="INACTIVE">{t("status.inactive")}</option>
         </select>
       </div>
 
-      {isLoading && <p className="text-gray-500">Loading…</p>}
-      {error && <p className="text-red-600">Failed to load customers.</p>}
+      {isLoading && <p className="text-gray-500">{t("status.loading")}</p>}
+      {error && <p className="text-red-600">{t("customers.failedToLoad")}</p>}
 
       {!isLoading && !error && (
         <>
@@ -69,19 +71,19 @@ export function CustomerListPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Code
+                    {t("customers.columns.code")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Name
+                    {t("customers.columns.name")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Type
+                    {t("customers.columns.type")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Status
+                    {t("customers.columns.status")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Credit Limit
+                    {t("customers.columns.creditLimit")}
                   </th>
                 </tr>
               </thead>
@@ -92,7 +94,7 @@ export function CustomerListPage() {
                       colSpan={5}
                       className="px-4 py-8 text-center text-sm text-gray-500"
                     >
-                      No customers found.
+                      {t("customers.emptyState")}
                     </td>
                   </tr>
                 ) : (
@@ -140,17 +142,17 @@ export function CustomerListPage() {
               disabled={page === 0}
               className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
-              Previous
+              {t("pagination.previous")}
             </button>
             <span className="text-sm text-gray-500">
-              Page {page + 1}
+              {t("pagination.page", { page: page + 1 })}
             </span>
             <button
               onClick={() => setPage((p) => p + 1)}
               disabled={(customers ?? []).length < PAGE_SIZE}
               className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
-              Next
+              {t("pagination.next")}
             </button>
           </div>
         </>

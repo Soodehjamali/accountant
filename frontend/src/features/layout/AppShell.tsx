@@ -13,10 +13,13 @@ import { cn } from "@/lib/utils";
 const OFFICE_NAV_ITEMS = [
   { navKey: "nav.dashboard", path: `${ROUTES.OFFICE}/dashboard`, permission: null },
   { navKey: "nav.products", path: `${ROUTES.OFFICE}/catalog`, permission: null },
+  { navKey: "nav.warehouses", path: ROUTES.OFFICE + "/warehouses", permission: PERMISSIONS.WAREHOUSE_MANAGE },
+  { navKey: "nav.representatives", path: ROUTES.OFFICE + "/representatives", permission: PERMISSIONS.REPRESENTATIVE_MANAGE },
   { navKey: "nav.customers", path: `${ROUTES.OFFICE}/customers`, permission: null },
   { navKey: "nav.orders", path: `${ROUTES.OFFICE}/orders`, permission: null },
   { navKey: "nav.invoices", path: `${ROUTES.OFFICE}/invoices`, permission: null },
   { navKey: "nav.inventory", path: `${ROUTES.OFFICE}/inventory`, permission: PERMISSIONS.INVENTORY_MANAGE },
+  { navKey: "nav.returns", path: `${ROUTES.OFFICE}/returns`, permission: "RETURN_MANAGE" },
   { navKey: "nav.transfers", path: `${ROUTES.OFFICE}/transfers`, permission: PERMISSIONS.TRANSFER_MANAGE },
   { navKey: "nav.payments", path: `${ROUTES.OFFICE}/payments`, permission: PERMISSIONS.PAYMENT_MANAGE },
   { navKey: "nav.commissions", path: `${ROUTES.OFFICE}/commissions`, permission: PERMISSIONS.COMMISSION_MANAGE },

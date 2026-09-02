@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
+import { useTranslation } from "react-i18next";
 import { useOrders } from "@/api/hooks/useOrders";
 import { usePermission } from "@/hooks/usePermission";
 import { PERMISSIONS, ROUTES } from "@/lib/constants";
@@ -39,6 +40,7 @@ const STATE_BADGE: Record<string, string> = {
 };
 
 export function OrderListPage() {
+  const { t } = useTranslation("common");
   const [page, setPage] = useState(0);
   const [stateFilter, setStateFilter] = useState("");
   const canManage = usePermission(PERMISSIONS.ORDER_MANAGE);
@@ -52,13 +54,13 @@ export function OrderListPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t("orders.title")}</h1>
         {canManage && (
           <Link
             to={`${ROUTES.OFFICE}/orders/new`}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
-            New Order
+            {t("orders.newOrder")}
           </Link>
         )}
       </div>
@@ -73,7 +75,7 @@ export function OrderListPage() {
           }}
           className="rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         >
-          <option value="">All states</option>
+          <option value="">{t("orders.allStates")}</option>
           {ORDER_STATES.map((s) => (
             <option key={s} value={s}>
               {s.replace(/_/g, " ")}
@@ -82,8 +84,8 @@ export function OrderListPage() {
         </select>
       </div>
 
-      {isLoading && <p className="text-gray-500">Loading…</p>}
-      {error && <p className="text-red-600">Failed to load orders.</p>}
+      {isLoading && <p className="text-gray-500">{t("status.loading")}</p>}
+      {error && <p className="text-red-600">{t("orders.failedToLoad")}</p>}
 
       {!isLoading && !error && (
         <>
@@ -92,25 +94,25 @@ export function OrderListPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Order #
+                    {t("orders.columns.orderNumber")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Customer
+                    {t("orders.columns.customer")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Rep
+                    {t("orders.columns.rep")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Type
+                    {t("orders.columns.type")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    State
+                    {t("orders.columns.state")}
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Grand Total
+                    {t("orders.columns.grandTotal")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Ordered
+                    {t("orders.columns.ordered")}
                   </th>
                 </tr>
               </thead>
@@ -121,7 +123,7 @@ export function OrderListPage() {
                       colSpan={7}
                       className="px-4 py-8 text-center text-sm text-gray-500"
                     >
-                      No orders found.
+                      {t("orders.emptyState")}
                     </td>
                   </tr>
                 ) : (
@@ -177,15 +179,15 @@ export function OrderListPage() {
               disabled={page === 0}
               className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
-              Previous
+              {t("pagination.previous")}
             </button>
-            <span className="text-sm text-gray-500">Page {page + 1}</span>
+            <span className="text-sm text-gray-500">{t("pagination.page", { page: page + 1 })}</span>
             <button
               onClick={() => setPage((p) => p + 1)}
               disabled={(orders ?? []).length < PAGE_SIZE}
               className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
-              Next
+              {t("pagination.next")}
             </button>
           </div>
         </>

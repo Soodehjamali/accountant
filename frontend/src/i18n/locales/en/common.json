@@ -10,12 +10,15 @@
     "orders": "Orders",
     "invoices": "Invoices",
     "inventory": "Inventory",
+    "returns": "Returns",
     "transfers": "Transfers",
     "payments": "Payments",
     "commissions": "Commissions",
     "kpiDashboard": "KPI Dashboard",
     "reports": "Reports",
     "auditLog": "Audit Log",
+    "warehouses": "Warehouses",
+    "representatives": "Representatives",
     "myCustomers": "My Customers",
     "myOrders": "My Orders",
     "myInventory": "My Inventory",
@@ -53,5 +56,457 @@
     "BACKORDERED": "Backordered",
     "PARTIALLY_FULFILLED": "Partially Fulfilled",
     "RETURNED": "Returned"
+  },
+  "pagination": {
+    "previous": "Previous",
+    "next": "Next",
+    "page": "Page {{page}}"
+  },
+  "status": {
+    "all": "All statuses",
+    "active": "Active",
+    "inactive": "Inactive",
+    "loading": "Loading…"
+  },
+  "forms": {
+    "required": "*",
+    "requiredField": "This field is required.",
+    "backTo": "← Back to {{target}}",
+    "creating": "Creating…",
+    "saving": "Saving…",
+    "searchPlaceholder": "Search…",
+    "selectOption": "Select…",
+    "optional": "(optional)",
+    "uuidPlaceholder": "UUID",
+    "uuidOptionalPlaceholder": "UUID (optional)"
+  },
+  "catalog": {
+    "title": "Products",
+    "createTitle": "Create Product",
+    "newProduct": "New Product",
+    "backToProducts": "← Products",
+    "searchPlaceholder": "Search by SKU or name…",
+    "emptyState": "No products found.",
+    "noPermission": "You do not have permission to create products.",
+    "failedToLoad": "Failed to load products.",
+    "failedToCreate": "Failed to create product",
+    "fields": {
+      "sku": "SKU *",
+      "name": "Name *",
+      "description": "Description",
+      "baseUomId": "Base UoM ID *",
+      "categoryId": "Category ID"
+    },
+    "columns": {
+      "sku": "SKU",
+      "name": "Name",
+      "status": "Status",
+      "lotTracked": "Lot Tracked"
+    },
+    "buttons": {
+      "create": "Create Product",
+      "creating": "Creating…"
+    },
+    "lotTracked": {
+      "yes": "Yes",
+      "no": "No"
+    }
+  },
+  "warehouses": {
+    "title": "Warehouses",
+    "createTitle": "Create Warehouse",
+    "addWarehouse": "+ Add Warehouse",
+    "backToWarehouses": "← Warehouses",
+    "searchPlaceholder": "Search by code or name…",
+    "emptyState": "No warehouses found.",
+    "noPermission": "You do not have permission to create warehouses.",
+    "failedToLoad": "Failed to load warehouses.",
+    "failedToCreate": "Failed to create warehouse",
+    "fields": {
+      "code": "Code *",
+      "codeHelp": "Unique identifier for this warehouse (e.g. WH-001)",
+      "name": "Name *",
+      "nameHelp": "Display name for this warehouse",
+      "type": "Type *",
+      "ownership": "Ownership *",
+      "address": "Address"
+    },
+    "columns": {
+      "code": "Code",
+      "name": "Name",
+      "type": "Type",
+      "ownership": "Ownership",
+      "status": "Status"
+    },
+    "typeOptions": {
+      "FACTORY": "Factory",
+      "REPRESENTATIVE": "Representative"
+    },
+    "ownershipOptions": {
+      "OWNED": "Owned",
+      "CONSIGNMENT": "Consignment"
+    },
+    "buttons": {
+      "create": "Create Warehouse",
+      "creating": "Creating…"
+    }
+  },
+  "representatives": {
+    "title": "Sales Representatives",
+    "createTitle": "Create Representative",
+    "addRepresentative": "+ Add Representative",
+    "backToRepresentatives": "← Representatives",
+    "searchPlaceholder": "Search by code or name…",
+    "emptyState": "No representatives found.",
+    "noPermission": "You do not have permission to create representatives.",
+    "failedToLoad": "Failed to load representatives.",
+    "failedToCreate": "Failed to create representative",
+    "fields": {
+      "code": "Code *",
+      "codeHelp": "Unique identifier for this representative (e.g. REP-001)",
+      "fullName": "Full Name *",
+      "nationalId": "National ID",
+      "taxId": "Tax ID"
+    },
+    "columns": {
+      "code": "Code",
+      "name": "Name",
+      "nationalId": "National ID",
+      "taxId": "Tax ID",
+      "status": "Status"
+    },
+    "buttons": {
+      "create": "Create Representative",
+      "creating": "Creating…"
+    }
+  },
+  "customers": {
+    "title": "Customers",
+    "createTitle": "Create Customer",
+    "newCustomer": "New Customer",
+    "backToCustomers": "← Customers",
+    "searchPlaceholder": "Search by name, code, or tax number…",
+    "emptyState": "No customers found.",
+    "noPermission": "You do not have permission to create customers.",
+    "failedToLoad": "Failed to load customers.",
+    "failedToCreate": "Failed to create customer",
+    "fields": {
+      "code": "Code *",
+      "name": "Name *",
+      "type": "Type *",
+      "currencyId": "Currency ID *",
+      "creditLimit": "Credit Limit",
+      "billingAddress": "Billing Address",
+      "taxNumber": "Tax Number"
+    },
+    "columns": {
+      "code": "Code",
+      "name": "Name",
+      "type": "Type",
+      "status": "Status",
+      "creditLimit": "Credit Limit"
+    },
+    "typeOptions": {
+      "CORPORATE": "Corporate",
+      "INDIVIDUAL": "Individual"
+    },
+    "buttons": {
+      "create": "Create Customer",
+      "creating": "Creating…"
+    }
+  },
+  "orders": {
+    "title": "Orders",
+    "createTitle": "Create Order",
+    "newOrder": "New Order",
+    "backToOrders": "← Orders",
+    "emptyState": "No orders found.",
+    "noPermission": "You do not have permission to create orders.",
+    "failedToLoad": "Failed to load orders.",
+    "failedToCreate": "Failed to create order",
+    "fields": {
+      "customerId": "Customer ID *",
+      "representativeId": "Representative ID *",
+      "currencyId": "Currency ID *",
+      "orderType": "Order Type *",
+      "fulfillmentMode": "Fulfillment Mode *",
+      "salesChannel": "Sales Channel *",
+      "orderDetails": "Order Details",
+      "lineItems": "Line Items",
+      "addLine": "+ Add Line",
+      "productId": "Product ID *",
+      "warehouseId": "Warehouse ID *",
+      "qty": "Qty *"
+    },
+    "columns": {
+      "orderNumber": "Order #",
+      "customer": "Customer",
+      "rep": "Rep",
+      "type": "Type",
+      "state": "State",
+      "grandTotal": "Grand Total",
+      "ordered": "Ordered"
+    },
+    "typeOptions": {
+      "LOCAL": "Local",
+      "DIRECT": "Direct"
+    },
+    "fulfillmentOptions": {
+      "REP_LOCAL": "Rep Local",
+      "FACTORY_DIRECT": "Factory Direct"
+    },
+    "allStates": "All states",
+    "validation": {
+      "lineProductRequired": "Line {{line}}: Product ID is required.",
+      "lineWarehouseRequired": "Line {{line}}: Warehouse ID is required.",
+      "lineQtyRequired": "Line {{line}}: Quantity must be greater than 0."
+    },
+    "buttons": {
+      "create": "Create Order",
+      "creating": "Creating…"
+    }
+  },
+  "invoices": {
+    "title": "Invoices",
+    "emptyState": "No invoices found.",
+    "failedToLoad": "Failed to load invoices.",
+    "columns": {
+      "invoiceNumber": "Invoice #",
+      "customer": "Customer",
+      "state": "State",
+      "grandTotal": "Grand Total",
+      "balanceDue": "Balance Due",
+      "dueDate": "Due Date"
+    },
+    "allStates": "All states"
+  },
+  "transfers": {
+    "title": "Stock Transfers",
+    "createTitle": "Create Stock Transfer",
+    "backToTransfers": "← Back to transfers",
+    "emptyState": "No transfers found.",
+    "noPermission": "You do not have permission to create stock transfers.",
+    "failedToLoad": "Failed to load transfers.",
+    "failedToCreate": "Failed to create transfer",
+    "fields": {
+      "transferDetails": "Transfer Details",
+      "sourceWarehouse": "Source Warehouse *",
+      "destWarehouse": "Destination Warehouse *",
+      "selectSource": "Select source…",
+      "selectDest": "Select destination…",
+      "transferLines": "Transfer Lines",
+      "addLine": "+ Add Line",
+      "product": "Product *",
+      "selectProduct": "Select product…",
+      "qty": "Qty *",
+      "unitCost": "Unit Cost",
+      "note": "Note (optional)"
+    },
+    "validation": {
+      "sourceRequired": "Source warehouse is required.",
+      "destRequired": "Destination warehouse is required.",
+      "sourceDestDifferent": "Source and destination warehouses must be different.",
+      "linesRequired": "At least one line with a product and quantity > 0 is required."
+    },
+    "buttons": {
+      "create": "Create Transfer",
+      "creating": "Creating…"
+    }
+  },
+  "returns": {
+    "title": "Customer Returns",
+    "createTitle": "Create Customer Return",
+    "backToReturns": "← Customer Returns",
+    "emptyState": "No returns found.",
+    "failedToLoad": "Failed to load returns.",
+    "failedToCreate": "Failed to create return",
+    "fields": {
+      "customer": "Customer *",
+      "selectCustomer": "Select customer…",
+      "warehouse": "Warehouse *",
+      "selectWarehouse": "Select warehouse…",
+      "returnType": "Return Type *",
+      "reason": "Reason *",
+      "selectReason": "Select reason…",
+      "note": "Note",
+      "notePlaceholder": "Optional note…",
+      "returnLines": "Return Lines",
+      "addLine": "+ Add Line",
+      "product": "Product *",
+      "selectProduct": "Select product…",
+      "qty": "Qty *",
+      "refund": "Refund",
+      "remove": "Remove"
+    },
+    "typeOptions": {
+      "CUSTOMER_RETURN": "Customer Return",
+      "REP_RETURN_TO_FACTORY": "Rep Return to Factory",
+      "DAMAGED_RETURN": "Damaged Return"
+    },
+    "validation": {
+      "customerRequired": "Customer is required.",
+      "warehouseRequired": "Warehouse is required.",
+      "reasonRequired": "Reason code is required.",
+      "linesRequired": "At least one line with product and quantity is required."
+    },
+    "buttons": {
+      "create": "Create Return",
+      "creating": "Creating…"
+    }
+  },
+  "creditNotes": {
+    "title": "Credit Notes",
+    "createTitle": "Create Credit Note",
+    "backToInvoice": "← Back to invoice",
+    "emptyState": "No credit notes found.",
+    "noPermission": "You do not have permission to create credit notes.",
+    "invoiceRequired": "An invoice_id is required to create a credit note.",
+    "failedToCreate": "Failed to create credit note",
+    "fields": {
+      "creditNoteDetails": "Credit Note Details",
+      "invoice": "Invoice",
+      "reasonCode": "Reason Code *",
+      "selectReason": "Select reason…",
+      "lineItems": "Line Items",
+      "addLine": "+ Add Line",
+      "invoiceLineId": "Invoice Line ID (optional)",
+      "unlinked": "Unlinked",
+      "description": "Description *",
+      "qty": "Qty *",
+      "unitPrice": "Unit Price *",
+      "note": "Note (optional)"
+    },
+    "validation": {
+      "reasonRequired": "Reason code is required.",
+      "lineDescriptionRequired": "Line {{line}}: Description is required.",
+      "lineQtyRequired": "Line {{line}}: Quantity must be greater than 0.",
+      "linePriceRequired": "Line {{line}}: Unit price must be greater than 0."
+    },
+    "buttons": {
+      "create": "Create Credit Note",
+      "creating": "Creating…"
+    }
+  },
+  "reports": {
+    "title": "Reports",
+    "newDefinition": "New Report Definition",
+    "cancel": "Cancel",
+    "emptyState": "No report definitions found. Create one to get started.",
+    "fields": {
+      "name": "Name *",
+      "namePlaceholder": "e.g. Monthly AR Aging",
+      "reportType": "Report Type *",
+      "selectType": "Select type…",
+      "outputFormat": "Output Format"
+    },
+    "columns": {
+      "name": "Name",
+      "type": "Type",
+      "format": "Format",
+      "status": "Status",
+      "created": "Created"
+    },
+    "statusLabels": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "buttons": {
+      "runNow": "Run Now",
+      "running": "Running…",
+      "createView": "View Result ({{count}} rows)",
+      "create": "Create Definition",
+      "creating": "Creating…"
+    },
+    "validation": {
+      "nameRequired": "Name is required.",
+      "typeRequired": "Report type is required."
+    }
+  },
+  "inventory": {
+    "title": "Inventory Ledger",
+    "description": "Balances are always computed live from the immutable ledger — they update whenever transactions change.",
+    "fields": {
+      "warehouse": "Warehouse *",
+      "selectWarehouse": "Select warehouse…",
+      "product": "Product *",
+      "selectProduct": "Select product…"
+    },
+    "balance": {
+      "title": "Current Balance",
+      "computed": "Computed live from the ledger (not cached)"
+    },
+    "transactions": {
+      "title": "Transactions",
+      "emptyState": "No transactions for this warehouse",
+      "emptyStateWithProduct": "No transactions for this warehouse and product.",
+      "columns": {
+        "seqNo": "Seq #",
+        "movementType": "Movement Type",
+        "signedQty": "Signed Qty",
+        "unitCost": "Unit Cost",
+        "reference": "Reference",
+        "reversed": "Reversed",
+        "date": "Date",
+        "action": "Action"
+      },
+      "reversed": "✓ Reversed",
+      "reverse": "Reverse",
+      "reason": "Reason:",
+      "selectReasonOptional": "Select reason (optional)…",
+      "confirmReverse": "Confirm Reverse",
+      "reversing": "Reversing…",
+      "cancel": "Cancel"
+    },
+    "initialInventory": {
+      "title": "Register Initial Inventory",
+      "description": "Set the opening stock quantity for this product in the selected warehouse. This creates the first inventory entry for this product-warehouse pair.",
+      "quantity": "Quantity *",
+      "quantityPlaceholder": "e.g. 100",
+      "unitCost": "Unit Cost",
+      "success": "Initial inventory registered successfully.",
+      "failed": "Failed to register initial inventory",
+      "registering": "Registering…",
+      "register": "Register Initial Inventory",
+      "validationQtyRequired": "Quantity must be a positive number."
+    },
+    "postTransaction": {
+      "title": "Post Transaction (Advanced)",
+      "expand": "▼ Expand",
+      "collapse": "▲ Collapse",
+      "description": "Post a new ledger entry with a specific movement type. The signed quantity must match the movement type's sign convention.",
+      "movementType": "Movement Type *",
+      "selectType": "Select type…",
+      "signedQty": "Signed Quantity *",
+      "unitCost": "Unit Cost",
+      "success": "Transaction posted successfully.",
+      "failed": "Failed to post transaction",
+      "posting": "Posting…",
+      "post": "Post Transaction",
+      "validation": {
+        "typeRequired": "Movement type is required.",
+        "qtyRequired": "Signed quantity must be non-zero.",
+        "signMismatch": "Sign mismatch: {{type}} requires a {{sign}} quantity."
+      }
+    }
+  },
+  "payments": {
+    "title": "Payments",
+    "emptyState": "No payments found.",
+    "failedToLoad": "Failed to load payments."
+  },
+  "commissions": {
+    "title": "Commissions",
+    "emptyState": "No commission data found.",
+    "failedToLoad": "Failed to load commissions."
+  },
+  "kpi": {
+    "title": "KPI Dashboard",
+    "emptyState": "No KPI data available.",
+    "failedToLoad": "Failed to load KPI data."
+  },
+  "auditLog": {
+    "title": "Audit Log",
+    "emptyState": "No audit entries found.",
+    "failedToLoad": "Failed to load audit log."
   }
 }

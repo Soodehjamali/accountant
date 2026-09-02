@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router";
+import { useTranslation } from "react-i18next";
 import { useProducts } from "@/api/hooks/useProducts";
 import { usePermission } from "@/hooks/usePermission";
 import { PERMISSIONS } from "@/lib/constants";
 
 export function ProductListPage() {
+  const { t } = useTranslation("common");
   const [search, setSearch] = useState("");
   const { data: products, isLoading, error } = useProducts();
   const canManage = usePermission(PERMISSIONS.PRODUCT_MANAGE);
@@ -21,13 +23,13 @@ export function ProductListPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Products</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t("catalog.title")}</h1>
         {canManage && (
           <Link
             to="/office/catalog/new"
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
-            New Product
+            {t("catalog.newProduct")}
           </Link>
         )}
       </div>
@@ -36,15 +38,15 @@ export function ProductListPage() {
       <div className="mb-4">
         <input
           type="text"
-          placeholder="Search by SKU or name…"
+          placeholder={t("catalog.searchPlaceholder")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full max-w-md rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
       </div>
 
-      {isLoading && <p className="text-gray-500">Loading…</p>}
-      {error && <p className="text-red-600">Failed to load products.</p>}
+      {isLoading && <p className="text-gray-500">{t("status.loading")}</p>}
+      {error && <p className="text-red-600">{t("catalog.failedToLoad")}</p>}
 
       {!isLoading && !error && (
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
@@ -52,16 +54,16 @@ export function ProductListPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                  SKU
+                  {t("catalog.columns.sku")}
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                  Name
+                  {t("catalog.columns.name")}
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                  Status
+                  {t("catalog.columns.status")}
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                  Lot Tracked
+                  {t("catalog.columns.lotTracked")}
                 </th>
               </tr>
             </thead>
@@ -72,7 +74,7 @@ export function ProductListPage() {
                     colSpan={4}
                     className="px-4 py-8 text-center text-sm text-gray-500"
                   >
-                    No products found.
+                    {t("catalog.emptyState")}
                   </td>
                 </tr>
               ) : (
@@ -101,7 +103,7 @@ export function ProductListPage() {
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
-                      {product.is_lot_tracked ? "Yes" : "No"}
+                      {product.is_lot_tracked ? t("catalog.lotTracked.yes") : t("catalog.lotTracked.no")}
                     </td>
                   </tr>
                 ))

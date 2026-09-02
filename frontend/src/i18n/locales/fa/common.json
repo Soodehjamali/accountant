@@ -10,12 +10,15 @@
     "orders": "سفارشات",
     "invoices": "فاکتورها",
     "inventory": "انبار",
+    "returns": "برگشت‌ها",
     "transfers": "انتقالات",
     "payments": "پرداخت‌ها",
     "commissions": "کمیسیون‌ها",
     "kpiDashboard": "داشبورد KPI",
     "reports": "گزارش‌ها",
     "auditLog": "لاگ حسابرسی",
+    "warehouses": "انبارها",
+    "representatives": "نمایندگان",
     "myCustomers": "مشتریان من",
     "myOrders": "سفارشات من",
     "myInventory": "انبار من",
@@ -53,5 +56,457 @@
     "BACKORDERED": "سفارش معوق",
     "PARTIALLY_FULFILLED": "اجرای جزئی",
     "RETURNED": "برگشتی"
+  },
+  "pagination": {
+    "previous": "قبلی",
+    "next": "بعدی",
+    "page": "صفحه {{page}}"
+  },
+  "status": {
+    "all": "همه وضعیت‌ها",
+    "active": "فعال",
+    "inactive": "غیرفعال",
+    "loading": "در حال بارگذاری…"
+  },
+  "forms": {
+    "required": "*",
+    "requiredField": "این فیلد الزامی است.",
+    "backTo": "← بازگشت به {{target}}",
+    "creating": "در حال ایجاد…",
+    "saving": "در حال ذخیره…",
+    "searchPlaceholder": "جستجو…",
+    "selectOption": "انتخاب کنید…",
+    "optional": "(اختیاری)",
+    "uuidPlaceholder": "شناسه",
+    "uuidOptionalPlaceholder": "شناسه (اختیاری)"
+  },
+  "catalog": {
+    "title": "محصولات",
+    "createTitle": "افزودن محصول",
+    "newProduct": "محصول جدید",
+    "backToProducts": "← محصولات",
+    "searchPlaceholder": "جستجو بر اساس SKU یا نام…",
+    "emptyState": "محصولی یافت نشد.",
+    "noPermission": "شما اجازه ایجاد محصول را ندارید.",
+    "failedToLoad": "خطا در بارگذاری محصولات.",
+    "failedToCreate": "خطا در ایجاد محصول",
+    "fields": {
+      "sku": "کد محصول *",
+      "name": "نام *",
+      "description": "توضیحات",
+      "baseUomId": "واحد پایه *",
+      "categoryId": "دسته‌بندی"
+    },
+    "columns": {
+      "sku": "کد محصول",
+      "name": "نام",
+      "status": "وضعیت",
+      "lotTracked": "ردیابی Lot"
+    },
+    "buttons": {
+      "create": "ایجاد محصول",
+      "creating": "در حال ایجاد…"
+    },
+    "lotTracked": {
+      "yes": "بله",
+      "no": "خیر"
+    }
+  },
+  "warehouses": {
+    "title": "انبارها",
+    "createTitle": "افزودن انبار",
+    "addWarehouse": "+ افزودن انبار",
+    "backToWarehouses": "← انبارها",
+    "searchPlaceholder": "جستجو بر اساس کد یا نام…",
+    "emptyState": "انباری یافت نشد.",
+    "noPermission": "شما اجازه ایجاد انبار را ندارید.",
+    "failedToLoad": "خطا در بارگذاری انبارها.",
+    "failedToCreate": "خطا در ایجاد انبار",
+    "fields": {
+      "code": "کد *",
+      "codeHelp": "شناسه یکتای این انبار (مثلاً WH-001)",
+      "name": "نام *",
+      "nameHelp": "نام نمایشی این انبار",
+      "type": "نوع *",
+      "ownership": "نوع مالکیت *",
+      "address": "آدرس"
+    },
+    "columns": {
+      "code": "کد",
+      "name": "نام",
+      "type": "نوع",
+      "ownership": "مالکیت",
+      "status": "وضعیت"
+    },
+    "typeOptions": {
+      "FACTORY": "کارخانه",
+      "REPRESENTATIVE": "نمایندگی"
+    },
+    "ownershipOptions": {
+      "OWNED": "مالکیتی",
+      "CONSIGNMENT": "امانی"
+    },
+    "buttons": {
+      "create": "ایجاد انبار",
+      "creating": "در حال ایجاد…"
+    }
+  },
+  "representatives": {
+    "title": "نمایندگان فروش",
+    "createTitle": "افزودن نماینده",
+    "addRepresentative": "+ افزودن نماینده",
+    "backToRepresentatives": "← نمایندگان",
+    "searchPlaceholder": "جستجو بر اساس کد یا نام…",
+    "emptyState": "نماینده‌ای یافت نشد.",
+    "noPermission": "شما اجازه ایجاد نماینده را ندارید.",
+    "failedToLoad": "خطا در بارگذاری نمایندگان.",
+    "failedToCreate": "خطا در ایجاد نماینده",
+    "fields": {
+      "code": "کد *",
+      "codeHelp": "شناسه یکتای این نماینده (مثلاً REP-001)",
+      "fullName": "نام کامل *",
+      "nationalId": "کد ملی",
+      "taxId": "شماره مالیاتی"
+    },
+    "columns": {
+      "code": "کد",
+      "name": "نام",
+      "nationalId": "کد ملی",
+      "taxId": "شماره مالیاتی",
+      "status": "وضعیت"
+    },
+    "buttons": {
+      "create": "ایجاد نماینده",
+      "creating": "در حال ایجاد…"
+    }
+  },
+  "customers": {
+    "title": "مشتریان",
+    "createTitle": "افزودن مشتری",
+    "newCustomer": "مشتری جدید",
+    "backToCustomers": "← مشتریان",
+    "searchPlaceholder": "جستجو بر اساس نام، کد یا شماره مالیاتی…",
+    "emptyState": "مشتری‌ای یافت نشد.",
+    "noPermission": "شما اجازه ایجاد مشتری را ندارید.",
+    "failedToLoad": "خطا در بارگذاری مشتریان.",
+    "failedToCreate": "خطا در ایجاد مشتری",
+    "fields": {
+      "code": "کد *",
+      "name": "نام *",
+      "type": "نوع *",
+      "currencyId": "واحد پول *",
+      "creditLimit": "سقف اعتبار",
+      "billingAddress": "آدرس صورتحساب",
+      "taxNumber": "شماره مالیاتی"
+    },
+    "columns": {
+      "code": "کد",
+      "name": "نام",
+      "type": "نوع",
+      "status": "وضعیت",
+      "creditLimit": "سقف اعتبار"
+    },
+    "typeOptions": {
+      "CORPORATE": "شرکتی",
+      "INDIVIDUAL": "حقیقی"
+    },
+    "buttons": {
+      "create": "ایجاد مشتری",
+      "creating": "در حال ایجاد…"
+    }
+  },
+  "orders": {
+    "title": "سفارشات",
+    "createTitle": "ایجاد سفارش",
+    "newOrder": "سفارش جدید",
+    "backToOrders": "← سفارشات",
+    "emptyState": "سفارشی یافت نشد.",
+    "noPermission": "شما اجازه ایجاد سفارش را ندارید.",
+    "failedToLoad": "خطا در بارگذاری سفارشات.",
+    "failedToCreate": "خطا در ایجاد سفارش",
+    "fields": {
+      "customerId": "شناسه مشتری *",
+      "representativeId": "شناسه نماینده *",
+      "currencyId": "شناسه واحد پول *",
+      "orderType": "نوع سفارش *",
+      "fulfillmentMode": "نحوه اجرا *",
+      "salesChannel": "کانال فروش *",
+      "orderDetails": "جزئیات سفارش",
+      "lineItems": "آیتم‌های سفارش",
+      "addLine": "+ افزودن ردیف",
+      "productId": "شناسه محصول *",
+      "warehouseId": "شناسه انبار *",
+      "qty": "تعداد *"
+    },
+    "columns": {
+      "orderNumber": "شماره سفارش",
+      "customer": "مشتری",
+      "rep": "نماینده",
+      "type": "نوع",
+      "state": "وضعیت",
+      "grandTotal": "جمع کل",
+      "ordered": "تاریخ سفارش"
+    },
+    "typeOptions": {
+      "LOCAL": "locals",
+      "DIRECT": "direct"
+    },
+    "fulfillmentOptions": {
+      "REP_LOCAL": "locals نماینده",
+      "FACTORY_DIRECT": "direct کارخانه"
+    },
+    "allStates": "همه وضعیت‌ها",
+    "validation": {
+      "lineProductRequired": "ردیف {{line}}: شناسه محصول الزامی است.",
+      "lineWarehouseRequired": "ردیف {{line}}: شناسه انبار الزامی است.",
+      "lineQtyRequired": "ردیف {{line}}: تعداد باید بیشتر از صفر باشد."
+    },
+    "buttons": {
+      "create": "ایجاد سفارش",
+      "creating": "در حال ایجاد…"
+    }
+  },
+  "invoices": {
+    "title": "فاکتورها",
+    "emptyState": "فاکتوری یافت نشد.",
+    "failedToLoad": "خطا در بارگذاری فاکتورها.",
+    "columns": {
+      "invoiceNumber": "شماره فاکتور",
+      "customer": "مشتری",
+      "state": "وضعیت",
+      "grandTotal": "جمع کل",
+      "balanceDue": "مانده پرداختی",
+      "dueDate": "تاریخ سررسید"
+    },
+    "allStates": "همه وضعیت‌ها"
+  },
+  "transfers": {
+    "title": "انتقالات انبار",
+    "createTitle": "ایجاد انتقال انبار",
+    "backToTransfers": "← بازگشت به انتقالات",
+    "emptyState": "انتقالی یافت نشد.",
+    "noPermission": "شما اجازه ایجاد انتقال انبار را ندارید.",
+    "failedToLoad": "خطا در بارگذاری انتقالات.",
+    "failedToCreate": "خطا در ایجاد انتقال",
+    "fields": {
+      "transferDetails": "جزئیات انتقال",
+      "sourceWarehouse": "انبار مبدأ *",
+      "destWarehouse": "انبار مقصد *",
+      "selectSource": "انتخاب انبار مبدأ…",
+      "selectDest": "انتخاب انبار مقصد…",
+      "transferLines": "ردیف‌های انتقال",
+      "addLine": "+ افزودن ردیف",
+      "product": "محصول *",
+      "selectProduct": "انتخاب محصول…",
+      "qty": "تعداد *",
+      "unitCost": "unit cost",
+      "note": "یادداشت (اختیاری)"
+    },
+    "validation": {
+      "sourceRequired": "انبار مبدأ الزامی است.",
+      "destRequired": "انبار مقصد الزامی است.",
+      "sourceDestDifferent": "انبار مبدأ و مقصد باید متفاوت باشند.",
+      "linesRequired": "حداقل یک ردیف با محصول و تعداد بیشتر از صفر الزامی است."
+    },
+    "buttons": {
+      "create": "ایجاد انتقال",
+      "creating": "در حال ایجاد…"
+    }
+  },
+  "returns": {
+    "title": "برگشت مشتری",
+    "createTitle": "ایجاد برگشت مشتری",
+    "backToReturns": "← برگشت مشتری",
+    "emptyState": "برگشتی یافت نشد.",
+    "failedToLoad": "خطا در بارگذاری برگشت‌ها.",
+    "failedToCreate": "خطا در ایجاد برگشت",
+    "fields": {
+      "customer": "مشتری *",
+      "selectCustomer": "انتخاب مشتری…",
+      "warehouse": "انبار *",
+      "selectWarehouse": "انتخاب انبار…",
+      "returnType": "نوع برگشت *",
+      "reason": "دلیل *",
+      "selectReason": "انتخاب دلیل…",
+      "note": "یادداشت",
+      "notePlaceholder": "یادداشت اختیاری…",
+      "returnLines": "ردیف‌های برگشت",
+      "addLine": "+ افزودن ردیف",
+      "product": "محصول *",
+      "selectProduct": "انتخاب محصول…",
+      "qty": "تعداد *",
+      "refund": "مبلغ بازپرداخت",
+      "remove": "حذف"
+    },
+    "typeOptions": {
+      "CUSTOMER_RETURN": "برگشت مشتری",
+      "REP_RETURN_TO_FACTORY": "برگشت نماینده به کارخانه",
+      "DAMAGED_RETURN": "برگشت آسیب‌دیده"
+    },
+    "validation": {
+      "customerRequired": "مشتری الزامی است.",
+      "warehouseRequired": "انبار الزامی است.",
+      "reasonRequired": "کد دلیل الزامی است.",
+      "linesRequired": "حداقل یک ردیف با محصول و تعداد الزامی است."
+    },
+    "buttons": {
+      "create": "ایجاد برگشت",
+      "creating": "در حال ایجاد…"
+    }
+  },
+  "creditNotes": {
+    "title": "یادداشت اعتباری",
+    "createTitle": "ایجاد یادداشت اعتباری",
+    "backToInvoice": "← بازگشت به فاکتور",
+    "emptyState": "یادداشت اعتباری‌ای یافت نشد.",
+    "noPermission": "شما اجازه ایجاد یادداشت اعتباری را ندارید.",
+    "invoiceRequired": "برای ایجاد یادداشت اعتباری، شناسه فاکتور الزامی است.",
+    "failedToCreate": "خطا در ایجاد یادداشت اعتباری",
+    "fields": {
+      "creditNoteDetails": "جزئیات یادداشت اعتباری",
+      "invoice": "فاکتور",
+      "reasonCode": "کد دلیل *",
+      "selectReason": "انتخاب دلیل…",
+      "lineItems": "آیتم‌ها",
+      "addLine": "+ افزودن ردیف",
+      "invoiceLineId": "شناسه ردیف فاکتور (اختیاری)",
+      "unlinked": "پیوست نشده",
+      "description": "توضیحات *",
+      "qty": "تعداد *",
+      "unitPrice": "unit price *",
+      "note": "یادداشت (اختیاری)"
+    },
+    "validation": {
+      "reasonRequired": "کد دلیل الزامی است.",
+      "lineDescriptionRequired": "ردیف {{line}}: توضیحات الزامی است.",
+      "lineQtyRequired": "ردیف {{line}}: تعداد باید بیشتر از صفر باشد.",
+      "linePriceRequired": "ردیف {{line}}: unit price باید بیشتر از صفر باشد."
+    },
+    "buttons": {
+      "create": "ایجاد یادداشت اعتباری",
+      "creating": "در حال ایجاد…"
+    }
+  },
+  "reports": {
+    "title": "گزارش‌ها",
+    "newDefinition": "تعریف گزارش جدید",
+    "cancel": "لغو",
+    "emptyState": "تعریف گزارشی یافت نشد. برای شروع یکی ایجاد کنید.",
+    "fields": {
+      "name": "نام *",
+      "namePlaceholder": "مثلاً گزارش ماهانه مطالبات",
+      "reportType": "نوع گزارش *",
+      "selectType": "انتخاب نوع…",
+      "outputFormat": "فرmat خروجی"
+    },
+    "columns": {
+      "name": "نام",
+      "type": "نوع",
+      "format": "فرمت",
+      "status": "وضعیت",
+      "created": "تاریخ ایجاد"
+    },
+    "statusLabels": {
+      "active": "فعال",
+      "inactive": "غیرفعال"
+    },
+    "buttons": {
+      "runNow": "اجرای فوری",
+      "running": "در حال اجرا…",
+      "createView": "مشاهده نتیجه ({{count}} ردیف)",
+      "create": "ایجاد تعریف",
+      "creating": "در حال ایجاد…"
+    },
+    "validation": {
+      "nameRequired": "نام الزامی است.",
+      "typeRequired": "نوع گزارش الزامی است."
+    }
+  },
+  "inventory": {
+    "title": "دفتر انبار",
+    "description": "موجودی همواره به صورت زنده از دفتر تغییرناپذیر محاسبه می‌شود — با هر تغییر تراکنش به‌روز می‌شود.",
+    "fields": {
+      "warehouse": "انبار *",
+      "selectWarehouse": "انتخاب انبار…",
+      "product": "محصول *",
+      "selectProduct": "انتخاب محصول…"
+    },
+    "balance": {
+      "title": "موجودی فعلی",
+      "computed": "محاسبه زنده از دفتر (کش نیست)"
+    },
+    "transactions": {
+      "title": "تراکنش‌ها",
+      "emptyState": "تراکنشی برای این انبار وجود ندارد",
+      "emptyStateWithProduct": "تراکنشی برای این انبار و محصول وجود ندارد.",
+      "columns": {
+        "seqNo": "شماره ردیف",
+        "movementType": "نوع حرکت",
+        "signedQty": "تعداد علامت‌دار",
+        "unitCost": "unit cost",
+        "reference": "مرجع",
+        "reversed": "برگشت خورده",
+        "date": "تاریخ",
+        "action": "عملیات"
+      },
+      "reversed": "✓ برگشت خورده",
+      "reverse": "برگشت",
+      "reason": "دلیل:",
+      "selectReasonOptional": "انتخاب دلیل (اختیاری)…",
+      "confirmReverse": "تأیید برگشت",
+      "reversing": "در حال برگشت…",
+      "cancel": "لغو"
+    },
+    "initialInventory": {
+      "title": "ثبت موجودی اولیه",
+      "description": "تعداد موجودی اولیه این محصول در انبار انتخاب شده را تنظیم کنید. این اولین رکورد موجودی برای این جفت محصول-انبار ایجاد می‌کند.",
+      "quantity": "تعداد *",
+      "quantityPlaceholder": "مثلاً 100",
+      "unitCost": "unit cost",
+      "success": "موجودی اولیه با موفقیت ثبت شد.",
+      "failed": "خطا در ثبت موجودی اولیه",
+      "registering": "در حال ثبت…",
+      "register": "ثبت موجودی اولیه",
+      "validationQtyRequired": "تعداد باید عدد مثبت باشد."
+    },
+    "postTransaction": {
+      "title": "ثبت تراکنش (پیشرفته)",
+      "expand": "▼ گسترش",
+      "collapse": "▲ جمع‌بندی",
+      "description": "ثبت یک رکورد جدید در دفتر با نوع حرکت خاص. تعداد علامت‌دار باید با قرارداد علامت نوع حرکت مطابقت داشته باشد.",
+      "movementType": "نوع حرکت *",
+      "selectType": "انتخاب نوع…",
+      "signedQty": "تعداد علامت‌دار *",
+      "unitCost": "unit cost",
+      "success": "تراکنش با موفقیت ثبت شد.",
+      "failed": "خطا در ثبت تراکنش",
+      "posting": "در حال ثبت…",
+      "post": "ثبت تراکنش",
+      "validation": {
+        "typeRequired": "نوع حرکت الزامی است.",
+        "qtyRequired": "تعداد علامت‌دار باید نامساوی صفر باشد.",
+        "signMismatch": "عدم تطابق علامت: {{type}} نیاز به تعداد {{sign}} دارد."
+      }
+    }
+  },
+  "payments": {
+    "title": "پرداخت‌ها",
+    "emptyState": "پرداختی یافت نشد.",
+    "failedToLoad": "خطا در بارگذاری پرداخت‌ها."
+  },
+  "commissions": {
+    "title": "کمیسیون‌ها",
+    "emptyState": "داده کمیسیونی یافت نشد.",
+    "failedToLoad": "خطا در بارگذاری کمیسیون‌ها."
+  },
+  "kpi": {
+    "title": "داشبورد KPI",
+    "emptyState": "داده KPI موجود نیست.",
+    "failedToLoad": "خطا در بارگذاری داده KPI."
+  },
+  "auditLog": {
+    "title": "لاگ حسابرسی",
+    "emptyState": "رکورد حسابرسی‌ای یافت نشد.",
+    "failedToLoad": "خطا در بارگذاری لاگ حسابرسی."
   }
 }

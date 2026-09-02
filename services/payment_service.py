@@ -314,6 +314,24 @@ def list_allocations_for_payment(session: Session, payment_id: uuid.UUID) -> Ite
     ).scalars().all()
 
 
+def list_payments(
+    session: Session,
+    *,
+    customer_id: uuid.UUID | None = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> Iterable[Payment]:
+    """Return payments, optionally filtered by customer.
+
+    Ordered by ``received_at DESC`` (newest first).
+    """
+    query = select(Payment)
+    if customer_id is not None:
+        query = query.where(Payment.customer_id == customer_id)
+    query = query.order_by(Payment.received_at.desc()).offset(skip).limit(limit)
+    return session.execute(query).scalars().all()
+
+
 def list_payments_for_invoice(session: Session, invoice_id: uuid.UUID) -> Iterable[Payment]:
     """Return all payments that have allocations to a given invoice."""
     allocation_subq = (
@@ -338,6 +356,7 @@ __all__ = [
     "get_payment",
     "list_allocations_for_payment",
     "list_payment_allocations",
+    "list_payments",
     "list_payments_for_invoice",
     "record_payment",
 ]

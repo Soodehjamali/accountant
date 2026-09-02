@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from "react";
 import { useNavigate, Link } from "react-router";
+import { useTranslation } from "react-i18next";
 import { useCreateTransfer } from "@/api/hooks/useTransfers";
 import { useWarehouses } from "@/api/hooks/useWarehouses";
 import { useProducts } from "@/api/hooks/useProducts";
@@ -21,6 +22,7 @@ const EMPTY_LINE: LineInput = {
 };
 
 export function TransferCreatePage() {
+  const { t } = useTranslation("common");
   const navigate = useNavigate();
   const canManage = usePermission(PERMISSIONS.TRANSFER_MANAGE);
   const { data: warehouses } = useWarehouses();
@@ -37,13 +39,13 @@ export function TransferCreatePage() {
     return (
       <div>
         <p className="text-red-600">
-          You do not have permission to create stock transfers.
+          {t("transfers.noPermission")}
         </p>
         <Link
           to={ROUTES.OFFICE}
           className="mt-4 inline-block text-sm text-blue-600 hover:underline"
         >
-          ← Back
+          {t("common.back")}
         </Link>
       </div>
     );
@@ -68,15 +70,15 @@ export function TransferCreatePage() {
     setError(null);
 
     if (!sourceWarehouseId) {
-      setError("Source warehouse is required.");
+      setError(t("transfers.validation.sourceRequired"));
       return;
     }
     if (!destWarehouseId) {
-      setError("Destination warehouse is required.");
+      setError(t("transfers.validation.destRequired"));
       return;
     }
     if (sourceWarehouseId === destWarehouseId) {
-      setError("Source and destination warehouses must be different.");
+      setError(t("transfers.validation.sourceDestDifferent"));
       return;
     }
 
@@ -84,7 +86,7 @@ export function TransferCreatePage() {
       (l) => l.product_id && Number(l.qty_requested) > 0,
     );
     if (validLines.length === 0) {
-      setError("At least one line with a product and quantity > 0 is required.");
+      setError(t("transfers.validation.linesRequired"));
       return;
     }
 
@@ -102,7 +104,7 @@ export function TransferCreatePage() {
       });
       navigate(`${ROUTES.OFFICE}/transfers`, { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create transfer");
+      setError(err instanceof Error ? err.message : t("transfers.failedToCreate"));
     }
   }
 
@@ -113,24 +115,24 @@ export function TransferCreatePage() {
           to={`${ROUTES.OFFICE}/transfers`}
           className="text-sm text-blue-600 hover:underline"
         >
-          ← Back to transfers
+          {t("transfers.backToTransfers")}
         </Link>
       </div>
 
       <h1 className="mb-6 text-2xl font-bold text-gray-900">
-        Create Stock Transfer
+        {t("transfers.createTitle")}
       </h1>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Warehouse pickers */}
         <div className="rounded-lg border border-gray-200 bg-white p-6">
           <h2 className="mb-4 text-lg font-semibold text-gray-900">
-            Transfer Details
+            {t("transfers.fields.transferDetails")}
           </h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Source Warehouse *
+                {t("transfers.fields.sourceWarehouse")}
               </label>
               <select
                 value={sourceWarehouseId}
@@ -138,7 +140,7 @@ export function TransferCreatePage() {
                 required
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="">Select source…</option>
+                <option value="">{t("transfers.fields.selectSource")}</option>
                 {(warehouses ?? []).map((wh: any) => (
                   <option key={wh.id} value={wh.id}>
                     {wh.code} — {wh.name}
@@ -148,7 +150,7 @@ export function TransferCreatePage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Destination Warehouse *
+                {t("transfers.fields.destWarehouse")}
               </label>
               <select
                 value={destWarehouseId}
@@ -156,7 +158,7 @@ export function TransferCreatePage() {
                 required
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="">Select destination…</option>
+                <option value="">{t("transfers.fields.selectDest")}</option>
                 {(warehouses ?? []).map((wh: any) => (
                   <option key={wh.id} value={wh.id}>
                     {wh.code} — {wh.name}
@@ -171,14 +173,14 @@ export function TransferCreatePage() {
         <div className="rounded-lg border border-gray-200 bg-white p-6">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">
-              Transfer Lines
+              {t("transfers.fields.transferLines")}
             </h2>
             <button
               type="button"
               onClick={addLine}
               className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
             >
-              + Add Line
+              {t("transfers.fields.addLine")}
             </button>
           </div>
 
@@ -190,7 +192,7 @@ export function TransferCreatePage() {
               >
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-gray-500">
-                    Product *
+                    {t("transfers.fields.product")}
                   </label>
                   <select
                     value={line.product_id}
@@ -199,7 +201,7 @@ export function TransferCreatePage() {
                     }
                     className="mt-1 block w-full rounded border border-gray-300 px-2 py-1 text-sm"
                   >
-                    <option value="">Select product…</option>
+                    <option value="">{t("transfers.fields.selectProduct")}</option>
                     {(products ?? []).map((p: any) => (
                       <option key={p.id} value={p.id}>
                         {p.sku} — {p.name}
@@ -209,7 +211,7 @@ export function TransferCreatePage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500">
-                    Qty *
+                    {t("transfers.fields.qty")}
                   </label>
                   <input
                     type="number"
@@ -225,7 +227,7 @@ export function TransferCreatePage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500">
-                    Unit Cost
+                    {t("transfers.fields.unitCost")}
                   </label>
                   <input
                     type="number"
@@ -258,7 +260,7 @@ export function TransferCreatePage() {
             htmlFor="note"
             className="block text-sm font-medium text-gray-700"
           >
-            Note (optional)
+            {t("transfers.fields.note")}
           </label>
           <textarea
             id="note"
@@ -281,7 +283,7 @@ export function TransferCreatePage() {
           disabled={createTransfer.isPending}
           className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
         >
-          {createTransfer.isPending ? "Creating…" : "Create Transfer"}
+          {createTransfer.isPending ? t("transfers.buttons.creating") : t("transfers.buttons.create")}
         </button>
       </form>
     </div>

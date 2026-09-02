@@ -76,9 +76,6 @@ function loadApp() {
     mainWindow.loadFile(path.join(__dirname, "settings.html"));
   } else {
     // URL configured — load the built frontend with the URL injected.
-    // The preload script sets window.__BACKEND_URL__ synchronously via
-    // ipcRenderer.sendSync before any page scripts execute.
-    // Path: dist/main.js → dist/frontend/index.html (copied by build script)
     mainWindow.loadFile(
       path.join(__dirname, "frontend/index.html"),
     );
