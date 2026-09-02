@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
-import { useRepresentatives } from "@/api/hooks/useRepresentatives";
+import { useRepresentatives, useDeleteRepresentative } from "@/api/hooks/useRepresentatives";
 import { usePermission } from "@/hooks/usePermission";
 import { PERMISSIONS } from "@/lib/constants";
 
@@ -11,7 +11,9 @@ export function RepresentativeListPage() {
   const { t } = useTranslation("common");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const canManage = usePermission(PERMISSIONS.REPRESENTATIVE_MANAGE);
+  const deleteRepresentative = useDeleteRepresentative();
 
   const { data: representatives, isLoading, error } = useRepresentatives();
 
@@ -46,6 +48,12 @@ export function RepresentativeListPage() {
       {isLoading && <p className="text-gray-500">{t("status.loading")}</p>}
       {error && <p className="text-red-600">{t("representatives.failedToLoad")}</p>}
 
+      {deleteError && (
+        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+          {deleteError}
+        </div>
+      )}
+
       {!isLoading && !error && (
         <>
           <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
@@ -67,6 +75,11 @@ export function RepresentativeListPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                     {t("representatives.columns.status")}
                   </th>
+                  {canManage && (
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      {t("common.actions")}
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -113,6 +126,23 @@ export function RepresentativeListPage() {
                           {rep.status}
                         </span>
                       </td>
+                      {canManage && (
+                        <td className="whitespace-nowrap px-4 py-3 text-sm">
+                          <button
+                            onClick={() => {
+                              if (!window.confirm(t("common.confirmDelete"))) return;
+                              setDeleteError(null);
+                              deleteRepresentative.mutate(rep.id, {
+                                onError: (err) => setDeleteError(err.message),
+                              });
+                            }}
+                            disabled={deleteRepresentative.isPending}
+                            className="text-red-600 hover:text-red-800 hover:underline disabled:opacity-50"
+                          >
+                            {t("common.delete")}
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}

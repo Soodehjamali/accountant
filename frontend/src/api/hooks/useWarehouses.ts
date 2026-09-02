@@ -2,6 +2,23 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
 import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
+/** Delete a warehouse by ID. */
+export function useDeleteWarehouse() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (warehouseId: string) => {
+      const { error } = await apiClient.DELETE("/api/v1/warehouses/{warehouse_id}", {
+        params: { path: { warehouse_id: warehouseId } },
+        headers: authHeader(),
+      });
+      if (error) throw new Error(extractErrorMessage(error));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["warehouses"] });
+    },
+  });
+}
+
 /** Fetch all active warehouses. */
 export function useWarehouses() {
   return useQuery({

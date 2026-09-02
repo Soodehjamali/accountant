@@ -2,6 +2,26 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
 import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
+/** Delete a representative by ID. */
+export function useDeleteRepresentative() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (representativeId: string) => {
+      const { error } = await apiClient.DELETE(
+        "/api/v1/representatives/{representative_id}",
+        {
+          params: { path: { representative_id: representativeId } },
+          headers: authHeader(),
+        },
+      );
+      if (error) throw new Error(extractErrorMessage(error));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["representatives"] });
+    },
+  });
+}
+
 interface ListRepresentativesParams {
   skip?: number;
   limit?: number;

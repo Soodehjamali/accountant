@@ -2,6 +2,23 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
 import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
+/** Delete a customer by ID. */
+export function useDeleteCustomer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (customerId: string) => {
+      const { error } = await apiClient.DELETE("/api/v1/customers/{customer_id}", {
+        params: { path: { customer_id: customerId } },
+        headers: authHeader(),
+      });
+      if (error) throw new Error(extractErrorMessage(error));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+    },
+  });
+}
+
 interface ListCustomersParams {
   skip?: number;
   limit?: number;

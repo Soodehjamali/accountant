@@ -41,7 +41,10 @@
     "viewCustomers": "مشاهده مشتریان",
     "noDataYet": "هنوز داده‌ای موجود نیست.",
     "back": "بازگشت",
-    "loading": "در حال بارگذاری…"
+    "loading": "در حال بارگذاری…",
+    "delete": "حذف",
+    "confirmDelete": "آیا از حذف این مورد اطمینان دارید؟",
+    "actions": "عملیات"
   },
   "orderStates": {
     "DRAFT": "پیش‌نویس",
@@ -92,6 +95,7 @@
     "noPermission": "شما اجازه ایجاد محصول را ندارید.",
     "failedToLoad": "خطا در بارگذاری محصولات.",
     "failedToCreate": "خطا در ایجاد محصول",
+    "failedToDelete": "خطا در حذف محصول",
     "fields": {
       "sku": "کد محصول *",
       "skuHelp": "شناسه یکتای این محصول (مثلاً SKU-001)",
@@ -113,6 +117,28 @@
     "lotTracked": {
       "yes": "بله",
       "no": "خیر"
+    },
+    "categories": {
+      "title": "دسته‌بندی محصولات",
+      "emptyState": "دسته‌بندی‌ای یافت نشد.",
+      "failedToLoad": "خطا در بارگذاری دسته‌بندی‌ها.",
+      "failedToDelete": "خطا در حذف دسته‌بندی",
+      "columns": {
+        "code": "کد",
+        "name": "نام",
+        "level": "سطح"
+      }
+    },
+    "uom": {
+      "title": "واحدهای اندازه‌گیری",
+      "emptyState": "واحد اندازه‌گیری‌ای یافت نشد.",
+      "failedToLoad": "خطا در بارگذاری واحدهای اندازه‌گیری.",
+      "failedToDelete": "خطا در حذف واحد اندازه‌گیری",
+      "columns": {
+        "code": "کد",
+        "name": "نام",
+        "class": "نوع"
+      }
     }
   },
   "warehouses": {
@@ -125,6 +151,7 @@
     "noPermission": "شما اجازه ایجاد انبار را ندارید.",
     "failedToLoad": "خطا در بارگذاری انبارها.",
     "failedToCreate": "خطا در ایجاد انبار",
+    "failedToDelete": "خطا در حذف انبار",
     "fields": {
       "code": "کد *",
       "codeHelp": "شناسه یکتای این انبار (مثلاً WH-001)",
@@ -164,6 +191,7 @@
     "noPermission": "شما اجازه ایجاد نماینده را ندارید.",
     "failedToLoad": "خطا در بارگذاری نمایندگان.",
     "failedToCreate": "خطا در ایجاد نماینده",
+    "failedToDelete": "خطا در حذف نماینده",
     "fields": {
       "code": "کد *",
       "codeHelp": "شناسه یکتای این نماینده (مثلاً REP-001)",
@@ -195,6 +223,7 @@
     "noPermission": "شما اجازه ایجاد مشتری را ندارید.",
     "failedToLoad": "خطا در بارگذاری مشتریان.",
     "failedToCreate": "خطا در ایجاد مشتری",
+    "failedToDelete": "خطا در حذف مشتری",
     "fields": {
       "code": "کد *",
       "name": "نام *",

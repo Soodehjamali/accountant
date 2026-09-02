@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
-import { useCustomers } from "@/api/hooks/useCustomers";
+import { useCustomers, useDeleteCustomer } from "@/api/hooks/useCustomers";
 import { usePermission } from "@/hooks/usePermission";
 import { PERMISSIONS } from "@/lib/constants";
 
@@ -12,7 +12,9 @@ export function CustomerListPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const canManage = usePermission(PERMISSIONS.CUSTOMER_MANAGE);
+  const deleteCustomer = useDeleteCustomer();
 
   const { data: customers, isLoading, error } = useCustomers({
     skip: page * PAGE_SIZE,
@@ -64,6 +66,12 @@ export function CustomerListPage() {
       {isLoading && <p className="text-gray-500">{t("status.loading")}</p>}
       {error && <p className="text-red-600">{t("customers.failedToLoad")}</p>}
 
+      {deleteError && (
+        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+          {deleteError}
+        </div>
+      )}
+
       {!isLoading && !error && (
         <>
           <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
@@ -85,6 +93,11 @@ export function CustomerListPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                     {t("customers.columns.creditLimit")}
                   </th>
+                  {canManage && (
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      {t("common.actions")}
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -128,6 +141,23 @@ export function CustomerListPage() {
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
                         {Number(customer.credit_limit_amount).toLocaleString()}
                       </td>
+                      {canManage && (
+                        <td className="whitespace-nowrap px-4 py-3 text-sm">
+                          <button
+                            onClick={() => {
+                              if (!window.confirm(t("common.confirmDelete"))) return;
+                              setDeleteError(null);
+                              deleteCustomer.mutate(customer.id, {
+                                onError: (err) => setDeleteError(err.message),
+                              });
+                            }}
+                            disabled={deleteCustomer.isPending}
+                            className="text-red-600 hover:text-red-800 hover:underline disabled:opacity-50"
+                          >
+                            {t("common.delete")}
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}

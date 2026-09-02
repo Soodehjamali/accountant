@@ -2,6 +2,23 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
 import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
+/** Delete a product by ID. */
+export function useDeleteProduct() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (productId: string) => {
+      const { error } = await apiClient.DELETE("/api/v1/products/{product_id}", {
+        params: { path: { product_id: productId } },
+        headers: authHeader(),
+      });
+      if (error) throw new Error(extractErrorMessage(error));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+  });
+}
+
 /** Fetch all products (optionally excluding discontinued). */
 export function useProducts(includeDiscontinued = true) {
   return useQuery({

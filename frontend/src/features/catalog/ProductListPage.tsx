@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
-import { useProducts } from "@/api/hooks/useProducts";
+import { useProducts, useDeleteProduct } from "@/api/hooks/useProducts";
 import { usePermission } from "@/hooks/usePermission";
 import { PERMISSIONS } from "@/lib/constants";
 
 export function ProductListPage() {
   const { t } = useTranslation("common");
   const [search, setSearch] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const { data: products, isLoading, error } = useProducts();
   const canManage = usePermission(PERMISSIONS.PRODUCT_MANAGE);
+  const deleteProduct = useDeleteProduct();
 
   // Client-side filter (backend list endpoint has no search param — products
   // are master data and the list is small enough to filter in the browser).
@@ -48,6 +50,12 @@ export function ProductListPage() {
       {isLoading && <p className="text-gray-500">{t("status.loading")}</p>}
       {error && <p className="text-red-600">{t("catalog.failedToLoad")}</p>}
 
+      {deleteError && (
+        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+          {deleteError}
+        </div>
+      )}
+
       {!isLoading && !error && (
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
           <table className="min-w-full divide-y divide-gray-200">
@@ -65,6 +73,11 @@ export function ProductListPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                   {t("catalog.columns.lotTracked")}
                 </th>
+                {canManage && (
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                    {t("common.actions")}
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -105,6 +118,23 @@ export function ProductListPage() {
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
                       {product.is_lot_tracked ? t("catalog.lotTracked.yes") : t("catalog.lotTracked.no")}
                     </td>
+                    {canManage && (
+                      <td className="whitespace-nowrap px-4 py-3 text-sm">
+                        <button
+                          onClick={() => {
+                            if (!window.confirm(t("common.confirmDelete"))) return;
+                            setDeleteError(null);
+                            deleteProduct.mutate(product.id, {
+                              onError: (err) => setDeleteError(err.message),
+                            });
+                          }}
+                          disabled={deleteProduct.isPending}
+                          className="text-red-600 hover:text-red-800 hover:underline disabled:opacity-50"
+                        >
+                          {t("common.delete")}
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
