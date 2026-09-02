@@ -119,11 +119,11 @@ function AppRoutes() {
         <Route path="catalog" element={<ProductListPage />} />
         <Route path="catalog/new" element={<ProductCreatePage />} />
         <Route path="catalog/edit/:id" element={<ProductEditPage />} />
-        <Route path="catalog/:sku" element={<ProductDetailPage />} />
         <Route path="catalog/categories" element={<ProductCategoryListPage />} />
         <Route path="catalog/categories/edit/:id" element={<ProductCategoryEditPage />} />
         <Route path="catalog/uom" element={<UnitOfMeasureListPage />} />
         <Route path="catalog/uom/edit/:id" element={<UnitOfMeasureEditPage />} />
+        <Route path="catalog/:sku" element={<ProductDetailPage />} />
         {/* Warehouses */}
         <Route path="warehouses" element={<WarehouseListPage />} />
         <Route path="warehouses/new" element={<WarehouseCreatePage />} />
