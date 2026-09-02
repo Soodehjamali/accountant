@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
+import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
 /** Fetch the default (base) currency — returns the IRR currency with its real UUID. */
 export function useDefaultCurrency() {
@@ -12,7 +13,7 @@ export function useDefaultCurrency() {
           headers: authHeader(),
         } as any,
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data as { id: string; code: string; symbol: string; decimals: number; is_base: boolean };
     },
     staleTime: 5 * 60_000, // Currency rarely changes — cache 5 min

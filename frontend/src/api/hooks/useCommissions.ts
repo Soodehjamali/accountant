@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
+import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
 // ---------------------------------------------------------------------------
 // Read — Configs
@@ -14,7 +15,7 @@ export function useCommissionConfigs() {
         "/api/v1/commission-configs",
         { headers: authHeader() },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data.items;
     },
   });
@@ -46,7 +47,7 @@ export function useCommissionTransactions(params: {
         },
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data.items;
     },
   });
@@ -68,7 +69,7 @@ export function useCommissionBalance(representativeId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data as { representative_id: string; balance: string };
     },
     enabled: !!representativeId,
@@ -94,7 +95,7 @@ export function useCreateCommissionConfig() {
         body: body as any,
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {
@@ -125,7 +126,7 @@ export function useApproveCommission() {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {
@@ -157,7 +158,7 @@ export function usePayCommission() {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {
@@ -189,7 +190,7 @@ export function useClawbackCommission() {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {

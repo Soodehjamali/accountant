@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
+import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
 // ---------------------------------------------------------------------------
 // List / Read
@@ -40,7 +41,7 @@ export function useTransfers(params: ListTransfersParams = {}) {
         },
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data.items;
     },
   });
@@ -58,7 +59,7 @@ export function useTransfer(id: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     enabled: !!id,
@@ -77,7 +78,7 @@ export function useTransferHistory(transferId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data.items;
     },
     enabled: !!transferId,
@@ -107,7 +108,7 @@ export function useCreateTransfer() {
         body: body as any,
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {
@@ -132,7 +133,7 @@ function useTransferTransition(pathSuffix: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: (_data, variables) => {

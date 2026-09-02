@@ -1970,6 +1970,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/units-of-measure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List units of measure
+         * @description Return all units of measure, optionally filtered by class.
+         *
+         *     Any authenticated user can read this — it's reference data shared
+         *     across multiple domains (products, transfers, inventory, etc.).
+         */
+        get: operations["list_units_of_measure_api_v1_units_of_measure_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/product-categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List product categories
+         * @description Return all product categories ordered by hierarchy.
+         *
+         *     Any authenticated user can read this — it's reference data shared
+         *     across multiple domains (products, discounts, commissions, etc.).
+         */
+        get: operations["list_product_categories_api_v1_product_categories_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2912,6 +2958,25 @@ export interface components {
             /** Sign */
             sign: number;
         };
+        /** UnitOfMeasureResponse */
+        UnitOfMeasureResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Class */
+            class_: string;
+        };
+        /** UnitOfMeasureListResponse */
+        UnitOfMeasureListResponse: {
+            /** Items */
+            items: components["schemas"]["UnitOfMeasureResponse"][];
+        };
         /**
          * MyPermissionsResponse
          * @description Response body for ``GET /rbac/me/permissions``.
@@ -3714,6 +3779,30 @@ export interface components {
          *     future ``total``/``next_cursor``) can be added later without an
          *     incompatible, breaking response-shape change for existing clients.
          */
+        /** ProductCategoryResponse */
+        ProductCategoryResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /**
+             * Parent Category Id
+             * Format: uuid
+             */
+            parent_category_id: string | null;
+            /** Level */
+            level: number;
+        };
+        /** ProductCategoryListResponse */
+        ProductCategoryListResponse: {
+            /** Items */
+            items: components["schemas"]["ProductCategoryResponse"][];
+        };
         ProductListResponse: {
             /** Items */
             items: components["schemas"]["ProductResponse"][];
@@ -3965,6 +4054,8 @@ export interface components {
             tax_id?: string | null;
             /** Home City Ref Id */
             home_city_ref_id?: string | null;
+            /** Phone Number */
+            phone_number?: string | null;
         };
         /** RepresentativeListResponse */
         RepresentativeListResponse: {
@@ -8564,6 +8655,49 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MovementTypeListResponse"];
+                };
+            };
+        };
+    };
+    list_units_of_measure_api_v1_units_of_measure_get: {
+        parameters: {
+            query?: {
+                /** Filter by class (BASE, DERIVED) */
+                class_?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnitOfMeasureListResponse"];
+                };
+            };
+        };
+    };
+    list_product_categories_api_v1_product_categories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductCategoryListResponse"];
                 };
             };
         };

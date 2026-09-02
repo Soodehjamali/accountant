@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
+import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
 // ---------------------------------------------------------------------------
 // List / Read
@@ -31,7 +32,7 @@ export function useOrders(params: ListOrdersParams = {}) {
         },
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data.items;
     },
   });
@@ -49,7 +50,7 @@ export function useOrder(id: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     enabled: !!id,
@@ -68,7 +69,7 @@ export function useOrderHistory(orderId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data.items;
     },
     enabled: !!orderId,
@@ -108,7 +109,7 @@ export function useCreateOrder() {
         body: body as any,
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {
@@ -143,7 +144,7 @@ export function useAddOrderLine(orderId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {
@@ -164,7 +165,7 @@ export function useRemoveOrderLine(orderId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orders", orderId] });
@@ -191,7 +192,7 @@ export function useUpdateOrderLineQty(orderId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {
@@ -219,7 +220,7 @@ export function useUpdateOrderLinePrice(orderId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {
@@ -253,7 +254,7 @@ function useOrderTransition(
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: (_data, variables) => {
@@ -319,7 +320,7 @@ export function useShipOrder(orderId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {
@@ -350,7 +351,7 @@ export function useMarkPaid(orderId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {

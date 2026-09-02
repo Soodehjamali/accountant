@@ -9,6 +9,7 @@ import {
 } from "react";
 import { apiClient, authHeader, getToken, setToken, clearToken } from "@/api/client";
 import type { components } from "@/api/types";
+import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
 /** Current user profile from GET /auth/me. */
 type CurrentUser = components["schemas"]["CurrentUserResponse"];
@@ -67,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await apiClient.POST("/api/v1/auth/login", {
       body: { username_or_email: username, password },
     });
-    if (error) throw new Error(String(error));
+    if (error) throw new Error(extractErrorMessage(error));
     setToken(data.access_token);
     setTokenState(data.access_token);
 

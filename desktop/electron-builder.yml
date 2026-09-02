@@ -6,7 +6,11 @@ directories:
   output: dist
 
 files:
-  - dist/**/*
+  - dist/main.mjs
+  - dist/main.mjs.map
+  - dist/preload.cjs
+  - dist/preload.cjs.map
+  - dist/frontend/**/*
   - src/settings.html
 
 win:

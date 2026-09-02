@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
+import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
 /** Fetch all products (optionally excluding discontinued). */
 export function useProducts(includeDiscontinued = true) {
@@ -10,7 +11,7 @@ export function useProducts(includeDiscontinued = true) {
         params: { query: { include_discontinued: includeDiscontinued } },
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data.items;
     },
   });
@@ -25,7 +26,7 @@ export function useProduct(sku: string) {
         params: { path: { sku } },
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     enabled: !!sku,
@@ -47,7 +48,7 @@ export function useCreateProduct() {
         body: body as any,
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {

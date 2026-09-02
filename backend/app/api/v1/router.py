@@ -24,6 +24,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     audit_log,
     auth,
+    bot,
     commissions,
     credit_notes,
     currencies,
@@ -38,18 +39,21 @@ from app.api.v1.endpoints import (
     orders,
     payments,
     price_lists,
+    product_categories,
     products,
     reason_codes,
     representatives,
     rbac,
     reports,
     transfers,
+    units_of_measure,
     warehouses,
 )
 
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
+api_router.include_router(bot.router)
 api_router.include_router(products.router)
 api_router.include_router(inventory.router)
 api_router.include_router(rbac.router)
@@ -68,6 +72,8 @@ api_router.include_router(warehouses.router)
 api_router.include_router(price_lists.router)
 api_router.include_router(kpi_snapshot.router)
 api_router.include_router(reports.router)
+api_router.include_router(units_of_measure.router)
+api_router.include_router(product_categories.router)
 api_router.include_router(reason_codes.router)
 api_router.include_router(movement_types.router)
 api_router.include_router(currencies.router)

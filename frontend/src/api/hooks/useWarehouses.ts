@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
+import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
 /** Fetch all active warehouses. */
 export function useWarehouses() {
@@ -10,7 +11,7 @@ export function useWarehouses() {
         params: { query: { limit: 100 } },
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data.items;
     },
   });
@@ -35,7 +36,7 @@ export function useCreateWarehouse() {
         body: body as any,
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {

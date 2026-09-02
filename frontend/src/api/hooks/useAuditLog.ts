@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
+import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
 /** Fetch audit log entries with optional filters. */
 export function useAuditLog(params: {
@@ -23,7 +24,7 @@ export function useAuditLog(params: {
         } as any,
         headers: authHeader(),
       } as any);
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return (data as any).items;
     },
   });

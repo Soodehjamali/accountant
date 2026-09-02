@@ -2,6 +2,8 @@ import { type FormEvent, useState } from "react";
 import { useNavigate, Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useCreateProduct } from "@/api/hooks/useProducts";
+import { useUnitsOfMeasure } from "@/api/hooks/useUnitsOfMeasure";
+import { useProductCategories } from "@/api/hooks/useProductCategories";
 import { usePermission } from "@/hooks/usePermission";
 import { PERMISSIONS } from "@/lib/constants";
 
@@ -17,6 +19,9 @@ export function ProductCreatePage() {
   const [baseUomId, setBaseUomId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  const { data: uomList, isLoading: uomLoading } = useUnitsOfMeasure();
+  const { data: categoryList, isLoading: catLoading } = useProductCategories();
 
   if (!canManage) {
     return (
@@ -119,29 +124,45 @@ export function ProductCreatePage() {
           <label htmlFor="base_uom_id" className="block text-sm font-medium text-gray-700">
             {t("catalog.fields.baseUomId")}
           </label>
-          <input
+          <select
             id="base_uom_id"
-            type="text"
             value={baseUomId}
             onChange={(e) => setBaseUomId(e.target.value)}
             required
-            placeholder={t("forms.uuidPlaceholder")}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
+            disabled={uomLoading}
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="">
+              {uomLoading ? t("common.loading") : t("forms.selectPlaceholder")}
+            </option>
+            {(uomList ?? []).map((uom) => (
+              <option key={uom.id} value={uom.id}>
+                {uom.name} ({uom.code})
+              </option>
+            ))}
+          </select>
         </div>
 
         <div>
           <label htmlFor="category_id" className="block text-sm font-medium text-gray-700">
             {t("catalog.fields.categoryId")}
           </label>
-          <input
+          <select
             id="category_id"
-            type="text"
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
-            placeholder={t("forms.uuidOptionalPlaceholder")}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
+            disabled={catLoading}
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="">
+              {catLoading ? t("common.loading") : t("forms.selectPlaceholder")}
+            </option>
+            {(categoryList ?? []).map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name} ({cat.code})
+              </option>
+            ))}
+          </select>
         </div>
 
         {error && (

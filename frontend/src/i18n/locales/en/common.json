@@ -40,7 +40,8 @@
     "newOrder": "New Order",
     "viewCustomers": "View Customers",
     "noDataYet": "No data yet.",
-    "back": "Back"
+    "back": "Back",
+    "loading": "Loading…"
   },
   "orderStates": {
     "DRAFT": "Draft",
@@ -76,6 +77,7 @@
     "saving": "Saving…",
     "searchPlaceholder": "Search…",
     "selectOption": "Select…",
+    "selectPlaceholder": "Select…",
     "optional": "(optional)",
     "uuidPlaceholder": "UUID",
     "uuidOptionalPlaceholder": "UUID (optional)"
@@ -166,7 +168,9 @@
       "codeHelp": "Unique identifier for this representative (e.g. REP-001)",
       "fullName": "Full Name *",
       "nationalId": "National ID",
-      "taxId": "Tax ID"
+      "taxId": "Tax ID",
+      "phoneNumber": "Phone Number",
+      "phoneNumberHelp": "Used for bot authentication (e.g. +989123456789)"
     },
     "columns": {
       "code": "Code",

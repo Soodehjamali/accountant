@@ -23,6 +23,11 @@ class RepresentativeCreateRequest(BaseModel):
     national_id: str | None = Field(default=None, max_length=40)
     tax_id: str | None = Field(default=None, max_length=40)
     home_city_ref_id: uuid.UUID | None = None
+    phone_number: str | None = Field(
+        default=None,
+        max_length=20,
+        description="Phone number (stored as representative_contact PHONE kind).",
+    )
 
 
 class RepresentativeUpdateRequest(BaseModel):

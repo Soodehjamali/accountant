@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
+import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
 // ---------------------------------------------------------------------------
 // List / Read
@@ -31,7 +32,7 @@ export function useInvoices(params: ListInvoicesParams = {}) {
         },
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data.items;
     },
   });
@@ -49,7 +50,7 @@ export function useInvoice(id: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     enabled: !!id,
@@ -68,7 +69,7 @@ export function useInvoiceHistory(invoiceId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data.items;
     },
     enabled: !!invoiceId,
@@ -87,7 +88,7 @@ export function useInvoicePayments(invoiceId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data.items;
     },
     enabled: !!invoiceId,
@@ -111,7 +112,7 @@ export function useIssueInvoice(invoiceId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {
@@ -137,7 +138,7 @@ export function useVoidInvoice(invoiceId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {

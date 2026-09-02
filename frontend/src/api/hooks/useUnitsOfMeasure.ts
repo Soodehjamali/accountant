@@ -2,15 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
 import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
-/** Fetch reason codes, optionally filtered by scope. */
-export function useReasonCodes(scope?: string) {
+/** Fetch all units of measure, optionally filtered by class (BASE / DERIVED). */
+export function useUnitsOfMeasure(class_?: string) {
   return useQuery({
-    queryKey: ["reason-codes", { scope }],
+    queryKey: ["units-of-measure", { class_ }],
     queryFn: async () => {
-      const { data, error } = await apiClient.GET("/api/v1/reason-codes", {
+      const { data, error } = await apiClient.GET("/api/v1/units-of-measure", {
         params: {
           query: {
-            ...(scope ? { scope: scope as any } : {}),
+            ...(class_ ? { class_: class_ as any } : {}),
           },
         },
         headers: authHeader(),
@@ -18,5 +18,6 @@ export function useReasonCodes(scope?: string) {
       if (error) throw new Error(extractErrorMessage(error));
       return data.items;
     },
+    staleTime: 5 * 60_000, // Reference data rarely changes — cache 5 min
   });
 }

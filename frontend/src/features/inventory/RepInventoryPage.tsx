@@ -11,6 +11,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
+import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
 interface Warehouse {
   id: string;
@@ -35,7 +36,7 @@ function useMyWarehouses() {
       const { data, error } = await apiClient.GET("/api/v1/warehouses/my", {
         headers: authHeader(),
       });
-      if (error || !data) throw new Error(String(error));
+      if (error || !data) throw new Error(extractErrorMessage(error));
       return data.items as Warehouse[];
     },
   });
@@ -59,7 +60,7 @@ function useInventoryBalance(
         },
         headers: authHeader(),
       });
-      if (error || !data) throw new Error(String(error));
+      if (error || !data) throw new Error(extractErrorMessage(error));
       return data as BalanceData;
     },
     enabled,

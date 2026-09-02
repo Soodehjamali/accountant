@@ -40,7 +40,8 @@
     "newOrder": "سفارش جدید",
     "viewCustomers": "مشاهده مشتریان",
     "noDataYet": "هنوز داده‌ای موجود نیست.",
-    "back": "بازگشت"
+    "back": "بازگشت",
+    "loading": "در حال بارگذاری…"
   },
   "orderStates": {
     "DRAFT": "پیش‌نویس",
@@ -76,6 +77,7 @@
     "saving": "در حال ذخیره…",
     "searchPlaceholder": "جستجو…",
     "selectOption": "انتخاب کنید…",
+    "selectPlaceholder": "انتخاب کنید…",
     "optional": "(اختیاری)",
     "uuidPlaceholder": "شناسه",
     "uuidOptionalPlaceholder": "شناسه (اختیاری)"
@@ -166,7 +168,9 @@
       "codeHelp": "شناسه یکتای این نماینده (مثلاً REP-001)",
       "fullName": "نام کامل *",
       "nationalId": "کد ملی",
-      "taxId": "شماره مالیاتی"
+      "taxId": "شماره مالیاتی",
+      "phoneNumber": "شماره موبایل",
+      "phoneNumberHelp": "برای احراز هویت ربات استفاده می‌شود (مثلاً +989123456789)"
     },
     "columns": {
       "code": "کد",

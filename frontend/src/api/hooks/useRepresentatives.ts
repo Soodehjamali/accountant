@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
+import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
 interface ListRepresentativesParams {
   skip?: number;
@@ -25,7 +26,7 @@ export function useRepresentatives(params: ListRepresentativesParams = {}) {
         },
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data.items;
     },
   });
@@ -41,12 +42,13 @@ export function useCreateRepresentative() {
       national_id?: string;
       tax_id?: string;
       home_city_ref_id?: string;
+      phone_number?: string;
     }) => {
       const { data, error } = await apiClient.POST("/api/v1/representatives", {
         body: body as any,
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {

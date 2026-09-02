@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
+import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
 // ---------------------------------------------------------------------------
 // List / Read
@@ -29,7 +30,7 @@ export function useCreditNotes(params: ListCreditNotesParams = {}) {
         },
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data.items;
     },
   });
@@ -47,7 +48,7 @@ export function useCreditNote(id: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     enabled: !!id,
@@ -79,7 +80,7 @@ export function useCreateCreditNote() {
         body: body as any,
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {
@@ -105,7 +106,7 @@ export function useIssueCreditNote(creditNoteId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {
@@ -130,7 +131,7 @@ export function useApplyCreditNote(creditNoteId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {
@@ -157,7 +158,7 @@ export function useVoidCreditNote(creditNoteId: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {

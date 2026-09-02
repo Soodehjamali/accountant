@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
+import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
 // ---------------------------------------------------------------------------
 // Read — List
@@ -25,7 +26,7 @@ export function usePaymentsList(params: {
         } as any,
         headers: authHeader(),
       } as any);
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return (data as any).items;
     },
   });
@@ -47,7 +48,7 @@ export function usePayment(id: string) {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     enabled: !!id,
@@ -78,7 +79,7 @@ export function useRecordPayment() {
         body: body as any,
         headers: authHeader(),
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {

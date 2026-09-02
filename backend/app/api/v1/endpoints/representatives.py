@@ -53,6 +53,21 @@ def create_representative(
         )
     except representative_service.DuplicateRepresentativeCodeError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    # If a phone number was provided, create a PHONE contact record.
+    if body.phone_number:
+        from database.models.representative_contact import RepresentativeContact
+
+        phone_contact = RepresentativeContact(
+            representative_id=rep.id,
+            kind="PHONE",
+            value=body.phone_number,
+            is_primary=True,
+            created_by=current_user.id,
+            updated_by=current_user.id,
+        )
+        db.add(phone_contact)
+
     db.commit()
     db.refresh(rep)
     return rep

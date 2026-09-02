@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
+import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
 // ---------------------------------------------------------------------------
 // List report types (read-only, no permission gate)
@@ -14,7 +15,7 @@ export function useReportTypes() {
         "/api/v1/report-types" as any,
         { headers: authHeader() } as any,
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return (data as any).items as Array<{ id: string; code: string }>;
     },
   });
@@ -42,7 +43,7 @@ export function useReportDefinitions(params: ListDefinitionsParams = {}) {
           headers: authHeader(),
         } as any,
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return (data as any).items as Array<{
         id: string;
         report_type_id: string;
@@ -80,7 +81,7 @@ export function useCreateReportDefinition() {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data;
     },
     onSuccess: () => {
@@ -105,7 +106,7 @@ export function useRunReport() {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data as {
         run: {
           id: string;
@@ -145,7 +146,7 @@ export function useReportRun(runId: string | null) {
           headers: authHeader(),
         } as any,
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data as {
         run: {
           id: string;

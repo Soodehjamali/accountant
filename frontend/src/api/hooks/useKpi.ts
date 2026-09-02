@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, authHeader } from "@/api/client";
+import { extractErrorMessage } from "@/utils/extractErrorMessage";
 
 export type KpiKey = "TOTAL_STOCK_VALUE" | "AR_BALANCE" | "COMMISSION_PAYABLE";
 export type PeriodGranularity = "DAILY" | "WEEKLY" | "MONTHLY";
@@ -33,7 +34,7 @@ export function useKpiLatest(kpiKey: KpiKey, scopeType = "GLOBAL") {
           headers: authHeader(),
         } as any,
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return (data ?? null) as KpiSnapshot | null;
     },
   });
@@ -81,7 +82,7 @@ export function useKpiHistory(params: KpiHistoryParams) {
           headers: authHeader(),
         } as any,
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return (data as any).items as KpiSnapshot[];
     },
   });
@@ -103,7 +104,7 @@ export function useCaptureKpi() {
           headers: authHeader(),
         },
       );
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(extractErrorMessage(error));
       return data as {
         items: KpiSnapshot[];
         captured_at: string;

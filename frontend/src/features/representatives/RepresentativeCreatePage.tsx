@@ -15,6 +15,7 @@ export function RepresentativeCreatePage() {
   const [personName, setPersonName] = useState("");
   const [nationalId, setNationalId] = useState("");
   const [taxId, setTaxId] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   if (!canManage) {
@@ -43,6 +44,7 @@ export function RepresentativeCreatePage() {
         person_name: personName,
         national_id: nationalId || undefined,
         tax_id: taxId || undefined,
+        phone_number: phoneNumber || undefined,
       });
       navigate("/office/representatives", { replace: true });
     } catch (err) {
@@ -130,6 +132,25 @@ export function RepresentativeCreatePage() {
             maxLength={40}
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
+        </div>
+
+        <div>
+          <label htmlFor="phone_number" className="block text-sm font-medium text-gray-700">
+            {t("representatives.fields.phoneNumber")}
+          </label>
+          <input
+            id="phone_number"
+            dir="ltr"
+            type="tel"
+            value={phoneNumber}
+            onChange={(e) => setPhoneNumber(e.target.value)}
+            placeholder="+989123456789"
+            maxLength={20}
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-left text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            {t("representatives.fields.phoneNumberHelp")}
+          </p>
         </div>
 
         {error && (
