@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 const OFFICE_NAV_ITEMS = [
   { navKey: "nav.dashboard", path: `${ROUTES.OFFICE}/dashboard`, permission: null },
   { navKey: "nav.products", path: `${ROUTES.OFFICE}/catalog`, permission: null },
-  { navKey: "nav.productCategories", path: `${ROUTES.OFFICE}/catalog/categories", permission: PERMISSIONS.PRODUCT_MANAGE },
+  { navKey: "nav.productCategories", path: `${ROUTES.OFFICE}/catalog/categories`, permission: PERMISSIONS.PRODUCT_MANAGE },
   { navKey: "nav.unitsOfMeasure", path: `${ROUTES.OFFICE}/catalog/uom`, permission: PERMISSIONS.PRODUCT_MANAGE },
   { navKey: "nav.warehouses", path: ROUTES.OFFICE + "/warehouses", permission: PERMISSIONS.WAREHOUSE_MANAGE },
   { navKey: "nav.representatives", path: ROUTES.OFFICE + "/representatives", permission: PERMISSIONS.REPRESENTATIVE_MANAGE },
