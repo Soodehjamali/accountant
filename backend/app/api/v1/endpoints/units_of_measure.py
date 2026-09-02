@@ -68,6 +68,43 @@ PRODUCT_MANAGE_PERMISSION_CODE = "PRODUCT_MANAGE"
 _require_product_manage = require_permission(PRODUCT_MANAGE_PERMISSION_CODE)
 
 
+class UnitOfMeasureUpdateRequest(BaseModel):
+    """Request body for ``PATCH /units-of-measure/{id}``."""
+
+    name: str | None = None
+    class_: str | None = None
+
+
+@router.patch(
+    "/units-of-measure/{uom_id}",
+    response_model=UnitOfMeasureResponse,
+    summary="Update a unit of measure",
+)
+def update_unit_of_measure(
+    uom_id: uuid.UUID,
+    body: UnitOfMeasureUpdateRequest,
+    db: Session = Depends(get_db),
+    _current_user: AppUser = Depends(_require_product_manage),
+) -> UnitOfMeasureResponse:
+    """Patch-update a unit of measure. Only non-None fields are applied."""
+    uom = db.execute(
+        select(UnitOfMeasure).where(UnitOfMeasure.id == uom_id)
+    ).scalar_one_or_none()
+    if uom is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail=f"No unit of measure with id '{uom_id}' exists.",
+        )
+
+    if body.name is not None:
+        uom.name = body.name
+    if body.class_ is not None:
+        uom.class_ = body.class_
+    db.commit()
+    db.refresh(uom)
+    return uom
+
+
 class UnitOfMeasureInUseError(ValueError):
     """Raised when attempting to delete a UoM that is still referenced."""
 

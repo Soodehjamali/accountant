@@ -40,6 +40,20 @@ class ProductCreateRequest(BaseModel):
     category_id: uuid.UUID | None = None
 
 
+class ProductUpdateRequest(BaseModel):
+    """Request body for ``PATCH /products/{product_id}``.
+
+    Only non-None fields are applied (partial update).
+    ``sku`` is immutable after creation.
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=255)
+    base_uom_id: uuid.UUID | None = None
+    category_id: uuid.UUID | None = None
+    status: str | None = None
+
+
 class ProductResponse(BaseModel):
     """Response body for a single product -- used by both create and list/get.
 
@@ -75,4 +89,4 @@ class ProductListResponse(BaseModel):
     items: list[ProductResponse]
 
 
-__all__ = ["ProductCreateRequest", "ProductListResponse", "ProductResponse"]
+__all__ = ["ProductCreateRequest", "ProductListResponse", "ProductResponse", "ProductUpdateRequest"]

@@ -19,6 +19,35 @@ export function useDeleteUnitOfMeasure() {
   });
 }
 
+/** Update a unit of measure by ID. */
+export function useUpdateUnitOfMeasure() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      uomId,
+      ...body
+    }: {
+      uomId: string;
+      name?: string;
+      class_?: string;
+    }) => {
+      const { data, error } = await apiClient.PATCH(
+        "/api/v1/units-of-measure/{uom_id}",
+        {
+          params: { path: { uom_id: uomId } },
+          body: body as any,
+          headers: authHeader(),
+        },
+      );
+      if (error) throw new Error(extractErrorMessage(error));
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["units-of-measure"] });
+    },
+  });
+}
+
 /** Fetch all units of measure, optionally filtered by class (BASE / DERIVED). */
 export function useUnitsOfMeasure(class_?: string) {
   return useQuery({

@@ -6,6 +6,8 @@
   "nav": {
     "dashboard": "Dashboard",
     "products": "Products",
+    "productCategories": "Product Categories",
+    "unitsOfMeasure": "Units of Measure",
     "customers": "Customers",
     "orders": "Orders",
     "invoices": "Invoices",
@@ -88,6 +90,7 @@
   "catalog": {
     "title": "Products",
     "createTitle": "Create Product",
+    "editTitle": "Edit Product",
     "newProduct": "New Product",
     "backToProducts": "← Products",
     "searchPlaceholder": "Search by SKU or name…",
@@ -112,7 +115,8 @@
     },
     "buttons": {
       "create": "Create Product",
-      "creating": "Creating…"
+      "creating": "Creating…",
+      "update": "Save Changes"
     },
     "lotTracked": {
       "yes": "Yes",
@@ -123,6 +127,8 @@
       "emptyState": "No categories found.",
       "failedToLoad": "Failed to load categories.",
       "failedToDelete": "Failed to delete category",
+      "editTitle": "Edit Category",
+      "parentCategory": "Parent Category",
       "columns": {
         "code": "Code",
         "name": "Name",
@@ -134,6 +140,7 @@
       "emptyState": "No units of measure found.",
       "failedToLoad": "Failed to load units of measure.",
       "failedToDelete": "Failed to delete unit of measure",
+      "editTitle": "Edit Unit of Measure",
       "columns": {
         "code": "Code",
         "name": "Name",
@@ -144,6 +151,7 @@
   "warehouses": {
     "title": "Warehouses",
     "createTitle": "Create Warehouse",
+    "editTitle": "Edit Warehouse",
     "addWarehouse": "+ Add Warehouse",
     "backToWarehouses": "← Warehouses",
     "searchPlaceholder": "Search by code or name…",
@@ -178,12 +186,14 @@
     },
     "buttons": {
       "create": "Create Warehouse",
-      "creating": "Creating…"
+      "creating": "Creating…",
+      "update": "Save Changes"
     }
   },
   "representatives": {
     "title": "Sales Representatives",
     "createTitle": "Create Representative",
+    "editTitle": "Edit Representative",
     "addRepresentative": "+ Add Representative",
     "backToRepresentatives": "← Representatives",
     "searchPlaceholder": "Search by code or name…",
@@ -210,12 +220,14 @@
     },
     "buttons": {
       "create": "Create Representative",
-      "creating": "Creating…"
+      "creating": "Creating…",
+      "update": "Save Changes"
     }
   },
   "customers": {
     "title": "Customers",
     "createTitle": "Create Customer",
+    "editTitle": "Edit Customer",
     "newCustomer": "New Customer",
     "backToCustomers": "← Customers",
     "searchPlaceholder": "Search by name, code, or tax number…",
@@ -246,7 +258,8 @@
     },
     "buttons": {
       "create": "Create Customer",
-      "creating": "Creating…"
+      "creating": "Creating…",
+      "update": "Save Changes"
     }
   },
   "orders": {

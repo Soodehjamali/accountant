@@ -63,6 +63,43 @@ PRODUCT_MANAGE_PERMISSION_CODE = "PRODUCT_MANAGE"
 _require_product_manage = require_permission(PRODUCT_MANAGE_PERMISSION_CODE)
 
 
+class ProductCategoryUpdateRequest(BaseModel):
+    """Request body for ``PATCH /product-categories/{id}``."""
+
+    name: str | None = None
+    parent_category_id: uuid.UUID | None = None
+
+
+@router.patch(
+    "/product-categories/{category_id}",
+    response_model=ProductCategoryResponse,
+    summary="Update a product category",
+)
+def update_product_category(
+    category_id: uuid.UUID,
+    body: ProductCategoryUpdateRequest,
+    db: Session = Depends(get_db),
+    _current_user: AppUser = Depends(_require_product_manage),
+) -> ProductCategoryResponse:
+    """Patch-update a product category. Only non-None fields are applied."""
+    cat = db.execute(
+        select(ProductCategory).where(ProductCategory.id == category_id)
+    ).scalar_one_or_none()
+    if cat is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail=f"No product category with id '{category_id}' exists.",
+        )
+
+    if body.name is not None:
+        cat.name = body.name
+    if body.parent_category_id is not None:
+        cat.parent_category_id = body.parent_category_id
+    db.commit()
+    db.refresh(cat)
+    return cat
+
+
 class ProductCategoryInUseError(ValueError):
     """Raised when attempting to delete a category that is still referenced."""
 

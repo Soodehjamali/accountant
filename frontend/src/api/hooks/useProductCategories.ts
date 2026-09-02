@@ -22,6 +22,35 @@ export function useDeleteProductCategory() {
   });
 }
 
+/** Update a product category by ID. */
+export function useUpdateProductCategory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      categoryId,
+      ...body
+    }: {
+      categoryId: string;
+      name?: string;
+      parent_category_id?: string;
+    }) => {
+      const { data, error } = await apiClient.PATCH(
+        "/api/v1/product-categories/{category_id}",
+        {
+          params: { path: { category_id: categoryId } },
+          body: body as any,
+          headers: authHeader(),
+        },
+      );
+      if (error) throw new Error(extractErrorMessage(error));
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["product-categories"] });
+    },
+  });
+}
+
 /** Fetch all product categories ordered by hierarchy. */
 export function useProductCategories() {
   return useQuery({

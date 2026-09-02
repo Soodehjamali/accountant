@@ -7,13 +7,21 @@ import { AppShell } from "@/features/layout/AppShell";
 import { ProductListPage } from "@/features/catalog/ProductListPage";
 import { ProductDetailPage } from "@/features/catalog/ProductDetailPage";
 import { ProductCreatePage } from "@/features/catalog/ProductCreatePage";
+import { ProductEditPage } from "@/features/catalog/ProductEditPage";
+import { ProductCategoryListPage } from "@/features/catalog/ProductCategoryListPage";
+import { ProductCategoryEditPage } from "@/features/catalog/ProductCategoryEditPage";
+import { UnitOfMeasureListPage } from "@/features/catalog/UnitOfMeasureListPage";
+import { UnitOfMeasureEditPage } from "@/features/catalog/UnitOfMeasureEditPage";
 import { WarehouseListPage } from "@/features/warehouses/WarehouseListPage";
 import { WarehouseCreatePage } from "@/features/warehouses/WarehouseCreatePage";
+import { WarehouseEditPage } from "@/features/warehouses/WarehouseEditPage";
 import { RepresentativeListPage } from "@/features/representatives/RepresentativeListPage";
 import { RepresentativeCreatePage } from "@/features/representatives/RepresentativeCreatePage";
+import { RepresentativeEditPage } from "@/features/representatives/RepresentativeEditPage";
 import { CustomerListPage } from "@/features/customers/CustomerListPage";
 import { CustomerDetailPage } from "@/features/customers/CustomerDetailPage";
 import { CustomerCreatePage } from "@/features/customers/CustomerCreatePage";
+import { CustomerEditPage } from "@/features/customers/CustomerEditPage";
 import { RepCustomerListPage } from "@/features/customers/RepCustomerListPage";
 import { RepCustomerDetailPage } from "@/features/customers/RepCustomerDetailPage";
 import { OrderListPage } from "@/features/orders/OrderListPage";
@@ -110,16 +118,24 @@ function AppRoutes() {
         {/* Catalog */}
         <Route path="catalog" element={<ProductListPage />} />
         <Route path="catalog/new" element={<ProductCreatePage />} />
+        <Route path="catalog/edit/:id" element={<ProductEditPage />} />
         <Route path="catalog/:sku" element={<ProductDetailPage />} />
+        <Route path="catalog/categories" element={<ProductCategoryListPage />} />
+        <Route path="catalog/categories/edit/:id" element={<ProductCategoryEditPage />} />
+        <Route path="catalog/uom" element={<UnitOfMeasureListPage />} />
+        <Route path="catalog/uom/edit/:id" element={<UnitOfMeasureEditPage />} />
         {/* Warehouses */}
         <Route path="warehouses" element={<WarehouseListPage />} />
         <Route path="warehouses/new" element={<WarehouseCreatePage />} />
+        <Route path="warehouses/edit/:id" element={<WarehouseEditPage />} />
         {/* Representatives */}
         <Route path="representatives" element={<RepresentativeListPage />} />
         <Route path="representatives/new" element={<RepresentativeCreatePage />} />
+        <Route path="representatives/edit/:id" element={<RepresentativeEditPage />} />
         {/* Customers */}
         <Route path="customers" element={<CustomerListPage />} />
         <Route path="customers/new" element={<CustomerCreatePage />} />
+        <Route path="customers/edit/:id" element={<CustomerEditPage />} />
         <Route path="customers/:id" element={<CustomerDetailPage />} />
         {/* Orders */}
         <Route path="orders" element={<OrderListPage />} />

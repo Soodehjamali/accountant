@@ -50,6 +50,35 @@ export function useProduct(sku: string) {
   });
 }
 
+/** Update a product by ID. */
+export function useUpdateProduct() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      productId,
+      ...body
+    }: {
+      productId: string;
+      name?: string;
+      description?: string;
+      base_uom_id?: string;
+      category_id?: string;
+      status?: string;
+    }) => {
+      const { data, error } = await apiClient.PATCH("/api/v1/products/{product_id}", {
+        params: { path: { product_id: productId } },
+        body: body as any,
+        headers: authHeader(),
+      });
+      if (error) throw new Error(extractErrorMessage(error));
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+  });
+}
+
 /** Create a new product. */
 export function useCreateProduct() {
   const queryClient = useQueryClient();

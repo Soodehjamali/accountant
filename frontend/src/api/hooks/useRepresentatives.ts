@@ -52,6 +52,38 @@ export function useRepresentatives(params: ListRepresentativesParams = {}) {
   });
 }
 
+/** Update a representative by ID. */
+export function useUpdateRepresentative() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      representativeId,
+      ...body
+    }: {
+      representativeId: string;
+      person_name?: string;
+      national_id?: string;
+      tax_id?: string;
+      home_city_ref_id?: string;
+      status?: string;
+    }) => {
+      const { data, error } = await apiClient.PATCH(
+        "/api/v1/representatives/{representative_id}",
+        {
+          params: { path: { representative_id: representativeId } },
+          body: body as any,
+          headers: authHeader(),
+        },
+      );
+      if (error) throw new Error(extractErrorMessage(error));
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["representatives"] });
+    },
+  });
+}
+
 /** Create a new representative. */
 export function useCreateRepresentative() {
   const queryClient = useQueryClient();

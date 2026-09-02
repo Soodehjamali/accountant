@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
 from app.dependencies.rbac import require_permission
-from app.schemas.product import ProductCreateRequest, ProductListResponse, ProductResponse
+from app.schemas.product import ProductCreateRequest, ProductListResponse, ProductResponse, ProductUpdateRequest
 from database.models.app_user import AppUser
 from services import product_service
 
@@ -107,6 +107,36 @@ def read_product(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No product found with SKU '{sku}'.",
         )
+    return product
+
+
+@router.patch(
+    "/{product_id}",
+    response_model=ProductResponse,
+    summary="Update a product",
+)
+def update_product(
+    product_id: uuid.UUID,
+    body: ProductUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(_require_product_manage),
+) -> ProductResponse:
+    """Patch-update a product. Only non-None fields are applied."""
+    try:
+        product = product_service.update_product(
+            db,
+            product_id,
+            updated_by=current_user.id,
+            name=body.name,
+            description=body.description,
+            base_uom_id=body.base_uom_id,
+            category_id=body.category_id,
+            status=body.status,
+        )
+    except product_service.ProductNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(product)
     return product
 
 

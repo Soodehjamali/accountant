@@ -6,6 +6,8 @@
   "nav": {
     "dashboard": "داشبورد",
     "products": "محصولات",
+    "productCategories": "دسته‌بندی محصولات",
+    "unitsOfMeasure": "واحدهای اندازه‌گیری",
     "customers": "مشتریان",
     "orders": "سفارشات",
     "invoices": "فاکتورها",
@@ -88,6 +90,7 @@
   "catalog": {
     "title": "محصولات",
     "createTitle": "افزودن محصول",
+    "editTitle": "ویرایش محصول",
     "newProduct": "محصول جدید",
     "backToProducts": "← محصولات",
     "searchPlaceholder": "جستجو بر اساس SKU یا نام…",
@@ -112,7 +115,8 @@
     },
     "buttons": {
       "create": "ایجاد محصول",
-      "creating": "در حال ایجاد…"
+      "creating": "در حال ایجاد…",
+      "update": "ذخیره تغییرات"
     },
     "lotTracked": {
       "yes": "بله",
@@ -123,6 +127,8 @@
       "emptyState": "دسته‌بندی‌ای یافت نشد.",
       "failedToLoad": "خطا در بارگذاری دسته‌بندی‌ها.",
       "failedToDelete": "خطا در حذف دسته‌بندی",
+      "editTitle": "ویرایش دسته‌بندی",
+      "parentCategory": "دسته‌بندی والد",
       "columns": {
         "code": "کد",
         "name": "نام",
@@ -134,6 +140,7 @@
       "emptyState": "واحد اندازه‌گیری‌ای یافت نشد.",
       "failedToLoad": "خطا در بارگذاری واحدهای اندازه‌گیری.",
       "failedToDelete": "خطا در حذف واحد اندازه‌گیری",
+      "editTitle": "ویرایش واحد اندازه‌گیری",
       "columns": {
         "code": "کد",
         "name": "نام",
@@ -144,6 +151,7 @@
   "warehouses": {
     "title": "انبارها",
     "createTitle": "افزودن انبار",
+    "editTitle": "ویرایش انبار",
     "addWarehouse": "+ افزودن انبار",
     "backToWarehouses": "← انبارها",
     "searchPlaceholder": "جستجو بر اساس کد یا نام…",
@@ -178,12 +186,14 @@
     },
     "buttons": {
       "create": "ایجاد انبار",
-      "creating": "در حال ایجاد…"
+      "creating": "در حال ایجاد…",
+      "update": "ذخیره تغییرات"
     }
   },
   "representatives": {
     "title": "نمایندگان فروش",
     "createTitle": "افزودن نماینده",
+    "editTitle": "ویرایش نماینده",
     "addRepresentative": "+ افزودن نماینده",
     "backToRepresentatives": "← نمایندگان",
     "searchPlaceholder": "جستجو بر اساس کد یا نام…",
@@ -210,12 +220,14 @@
     },
     "buttons": {
       "create": "ایجاد نماینده",
-      "creating": "در حال ایجاد…"
+      "creating": "در حال ایجاد…",
+      "update": "ذخیره تغییرات"
     }
   },
   "customers": {
     "title": "مشتریان",
     "createTitle": "افزودن مشتری",
+    "editTitle": "ویرایش مشتری",
     "newCustomer": "مشتری جدید",
     "backToCustomers": "← مشتریان",
     "searchPlaceholder": "جستجو بر اساس نام، کد یا شماره مالیاتی…",
@@ -246,7 +258,8 @@
     },
     "buttons": {
       "create": "ایجاد مشتری",
-      "creating": "در حال ایجاد…"
+      "creating": "در حال ایجاد…",
+      "update": "ذخیره تغییرات"
     }
   },
   "orders": {

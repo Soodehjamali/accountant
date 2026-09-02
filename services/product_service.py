@@ -113,6 +113,39 @@ def get_product_by_sku(session: Session, sku: str) -> Product | None:
     ).scalar_one_or_none()
 
 
+def update_product(
+    session: Session,
+    product_id: uuid.UUID,
+    *,
+    updated_by: uuid.UUID,
+    name: str | None = None,
+    description: str | None = None,
+    base_uom_id: uuid.UUID | None = None,
+    category_id: uuid.UUID | None = None,
+    status: str | None = None,
+) -> Product:
+    """Patch-update a Product. Only non-None arguments are applied.
+
+    Raises:
+        ProductNotFoundError: no matching row.
+    """
+    product = _get_product_or_raise(session, product_id)
+
+    if name is not None:
+        product.name = name
+    if description is not None:
+        product.description = description
+    if base_uom_id is not None:
+        product.base_uom_id = base_uom_id
+    if category_id is not None:
+        product.category_id = category_id
+    if status is not None:
+        product.status = status
+    product.updated_by = updated_by
+    session.flush()
+    return product
+
+
 def _get_product_or_raise(session: Session, product_id: uuid.UUID) -> Product:
     product = session.execute(
         select(Product).where(Product.id == product_id, Product.deleted_at.is_(None))
@@ -195,4 +228,5 @@ __all__ = [
     "delete_product",
     "get_product_by_sku",
     "list_products",
+    "update_product",
 ]

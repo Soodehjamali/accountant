@@ -68,6 +68,36 @@ export function useCustomer(id: string) {
   });
 }
 
+/** Update a customer by ID. */
+export function useUpdateCustomer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      customerId,
+      ...body
+    }: {
+      customerId: string;
+      name?: string;
+      city_ref_id?: string;
+      billing_address?: string;
+      credit_limit_amount?: number | string;
+      tax_number?: string;
+      status?: string;
+    }) => {
+      const { data, error } = await apiClient.PATCH("/api/v1/customers/{customer_id}", {
+        params: { path: { customer_id: customerId } },
+        body: body as any,
+        headers: authHeader(),
+      });
+      if (error) throw new Error(extractErrorMessage(error));
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+    },
+  });
+}
+
 /** Create a new customer. */
 export function useCreateCustomer() {
   const queryClient = useQueryClient();

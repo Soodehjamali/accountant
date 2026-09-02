@@ -34,6 +34,37 @@ export function useWarehouses() {
   });
 }
 
+/** Update a warehouse by ID. */
+export function useUpdateWarehouse() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      warehouseId,
+      ...body
+    }: {
+      warehouseId: string;
+      name?: string;
+      address?: string;
+      city_ref_id?: string;
+      latitude?: number;
+      longitude?: number;
+      responsible_user_id?: string;
+      status?: string;
+    }) => {
+      const { data, error } = await apiClient.PATCH("/api/v1/warehouses/{warehouse_id}", {
+        params: { path: { warehouse_id: warehouseId } },
+        body: body as any,
+        headers: authHeader(),
+      });
+      if (error) throw new Error(extractErrorMessage(error));
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["warehouses"] });
+    },
+  });
+}
+
 /** Create a new warehouse. */
 export function useCreateWarehouse() {
   const queryClient = useQueryClient();
