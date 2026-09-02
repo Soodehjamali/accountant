@@ -54,14 +54,14 @@ export function ProductEditPage() {
     setError(null);
     try {
       await updateProduct.mutateAsync({
-        productId: product.id,
+        productId: product!.id,
         name,
         description: description || undefined,
         base_uom_id: baseUomId,
         category_id: categoryId || undefined,
         status,
       });
-      navigate(`/office/catalog/${product.sku}`, { replace: true });
+      navigate(`/office/catalog/${product!.sku}`, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : t("catalog.failedToCreate"));
     }

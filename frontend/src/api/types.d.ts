@@ -142,6 +142,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bot/verify-phone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify phone number and return bot access token
+         * @description Verify a representative's phone number and issue a bot JWT token.
+         *
+         *     The bot sends this when a representative shares their contact
+         *     information via the Telegram/Bale "Share Phone" button.
+         *
+         *     On success, returns a short-lived JWT (30 minutes) that the bot
+         *     uses for subsequent API calls.  The token contains the
+         *     ``representative_id`` as its ``sub`` claim.
+         */
+        post: operations["verify_phone_api_v1_bot_verify_phone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot/reps/{rep_id}/inventory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get inventory for the representative's assigned warehouse
+         * @description Return inventory balances for the representative's primary warehouse.
+         *
+         *     ``rep_id`` from the URL is validated against the JWT token by
+         *     ``require_bot_rep_scope``.  All data access goes through the
+         *     existing scope service layer (ADR-007).
+         */
+        get: operations["get_rep_inventory_api_v1_bot_reps__rep_id__inventory_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot/reps/{rep_id}/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get sales report for the representative
+         * @description Return a sales/performance report for the representative.
+         *
+         *     Aggregates order count, total revenue, and customer count from the
+         *     existing service layer, scoped to the representative via ADR-007.
+         */
+        get: operations["get_rep_reports_api_v1_bot_reps__rep_id__reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot/reps/{rep_id}/invoices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create an invoice from an order
+         * @description Create an invoice for a shipped order belonging to the representative.
+         *
+         *     ``rep_id`` from the URL is validated against the JWT token.
+         *     The order is looked up by ``order_number`` and must belong to this
+         *     representative (enforced by the existing service layer).
+         *
+         *     Note: This is a Tier 2 write command (no approval required) because
+         *     invoice creation from a shipped order is a low-risk, naturally bounded
+         *     operation within the representative's scope.
+         */
+        post: operations["create_rep_invoice_api_v1_bot_reps__rep_id__invoices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/products": {
         parameters: {
             query?: never;
@@ -192,6 +294,32 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products/{product_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a product
+         * @description Hard-delete a product if it is not referenced by any other records.
+         *
+         *     Returns HTTP 409 if the product is still in use.
+         */
+        delete: operations["delete_product_api_v1_products__product_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a product
+         * @description Patch-update a product. Only non-None fields are applied.
+         */
+        patch: operations["update_product_api_v1_products__product_id__patch"];
         trace?: never;
     };
     "/api/v1/inventory/transactions": {
@@ -410,7 +538,13 @@ export interface paths {
         get: operations["read_customer_api_v1_customers__customer_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete a customer
+         * @description Hard-delete a customer if it is not referenced by any other records.
+         *
+         *     Returns HTTP 409 if the customer is still in use.
+         */
+        delete: operations["delete_customer_api_v1_customers__customer_id__delete"];
         options?: never;
         head?: never;
         /** Update a customer */
@@ -1225,7 +1359,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List all payments
+         * @description Return payments, optionally filtered by customer.
+         */
+        get: operations["list_payments_api_v1_payments_get"];
         put?: never;
         /** Record a payment with allocations to one or more invoices */
         post: operations["create_payment_api_v1_payments_post"];
@@ -1492,6 +1630,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/customer-returns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List customer returns
+         * @description List customer returns with optional filters.
+         */
+        get: operations["list_returns_api_v1_customer_returns_get"];
+        put?: never;
+        /**
+         * Create a customer return
+         * @description Create a new customer return in PENDING_APPROVAL state.
+         */
+        post: operations["create_return_api_v1_customer_returns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/customer-returns/{return_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a customer return
+         * @description Get a single customer return with its lines.
+         */
+        get: operations["get_return_api_v1_customer_returns__return_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/customer-returns/{return_id}/receive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive a customer return
+         * @description Transition: APPROVED → RECEIVED (physical receipt at warehouse).
+         */
+        post: operations["receive_return_api_v1_customer_returns__return_id__receive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/customer-returns/{return_id}/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inspect a customer return
+         * @description Transition: RECEIVED → INSPECTED (warehouse inspection complete).
+         */
+        post: operations["inspect_return_api_v1_customer_returns__return_id__inspect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/customer-returns/{return_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close a customer return
+         * @description Close a return and trigger commission clawback for DIRECT orders.
+         */
+        post: operations["close_return_api_v1_customer_returns__return_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/representatives": {
         parameters: {
             query?: never;
@@ -1521,7 +1763,13 @@ export interface paths {
         get: operations["read_representative_api_v1_representatives__representative_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete a representative
+         * @description Hard-delete a representative if it is not referenced by any other records.
+         *
+         *     Returns HTTP 409 if the representative is still in use.
+         */
+        delete: operations["delete_representative_api_v1_representatives__representative_id__delete"];
         options?: never;
         head?: never;
         /** Update a representative */
@@ -1539,6 +1787,30 @@ export interface paths {
         put?: never;
         /** Deactivate a representative (status -> OFFBOARDED) */
         post: operations["deactivate_representative_api_v1_representatives__representative_id__deactivate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/warehouses/my": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List warehouses assigned to the current representative
+         * @description Return warehouses actively assigned to the current representative.
+         *
+         *     For admin/staff users (no representative link), returns all warehouses
+         *     (same as GET /warehouses).  For representative-linked users, returns
+         *     only warehouses with an active WarehouseAssignment.
+         */
+        get: operations["list_my_warehouses_api_v1_warehouses_my_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1563,23 +1835,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/warehouses/my": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List warehouses assigned to the current representative */
-        get: operations["list_my_warehouses_api_v1_warehouses_my_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/warehouses/{warehouse_id}": {
         parameters: {
             query?: never;
@@ -1591,7 +1846,13 @@ export interface paths {
         get: operations["read_warehouse_api_v1_warehouses__warehouse_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete a warehouse
+         * @description Hard-delete a warehouse if it is not referenced by any other records.
+         *
+         *     Returns HTTP 409 if the warehouse is still in use.
+         */
+        delete: operations["delete_warehouse_api_v1_warehouses__warehouse_id__delete"];
         options?: never;
         head?: never;
         /** Update a warehouse */
@@ -1924,6 +2185,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/units-of-measure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List units of measure
+         * @description Return all units of measure, optionally filtered by class.
+         *
+         *     Any authenticated user can read this — it's reference data shared
+         *     across multiple domains (products, transfers, inventory, etc.).
+         */
+        get: operations["list_units_of_measure_api_v1_units_of_measure_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/units-of-measure/{uom_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a unit of measure
+         * @description Hard-delete a unit of measure if it is not referenced.
+         *
+         *     Checks for: products using this as base UoM, UoM conversions.
+         *     Returns HTTP 409 if still in use.
+         */
+        delete: operations["delete_unit_of_measure_api_v1_units_of_measure__uom_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a unit of measure
+         * @description Patch-update a unit of measure. Only non-None fields are applied.
+         */
+        patch: operations["update_unit_of_measure_api_v1_units_of_measure__uom_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/product-categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List product categories
+         * @description Return all product categories ordered by hierarchy.
+         *
+         *     Any authenticated user can read this — it's reference data shared
+         *     across multiple domains (products, discounts, commissions, etc.).
+         */
+        get: operations["list_product_categories_api_v1_product_categories_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/product-categories/{category_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a product category
+         * @description Hard-delete a product category if it is not referenced.
+         *
+         *     Checks for: child categories (self-ref), products using this category.
+         *     Returns HTTP 409 if still in use.
+         */
+        delete: operations["delete_product_category_api_v1_product_categories__category_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a product category
+         * @description Patch-update a product category. Only non-None fields are applied.
+         */
+        patch: operations["update_product_category_api_v1_product_categories__category_id__patch"];
+        trace?: never;
+    };
     "/api/v1/reason-codes": {
         parameters: {
             query?: never;
@@ -1970,7 +2331,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/units-of-measure": {
+    "/api/v1/currencies/default": {
         parameters: {
             query?: never;
             header?: never;
@@ -1978,36 +2339,13 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List units of measure
-         * @description Return all units of measure, optionally filtered by class.
+         * Get the default (base) currency
+         * @description Return the single base currency (``is_base = true``).
          *
-         *     Any authenticated user can read this — it's reference data shared
-         *     across multiple domains (products, transfers, inventory, etc.).
+         *     The bootstrap seeds IRR as the default base currency.  If no base
+         *     currency exists (should not happen in a running system), returns 404.
          */
-        get: operations["list_units_of_measure_api_v1_units_of_measure_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/product-categories": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List product categories
-         * @description Return all product categories ordered by hierarchy.
-         *
-         *     Any authenticated user can read this — it's reference data shared
-         *     across multiple domains (products, discounts, commissions, etc.).
-         */
-        get: operations["list_product_categories_api_v1_product_categories_get"];
+        get: operations["get_default_currency_api_v1_currencies_default_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2091,6 +2429,172 @@ export interface components {
             lot_id: string | null;
             /** Balance */
             balance: string;
+        };
+        /**
+         * BotErrorResponse
+         * @description Error response body for bot endpoints.
+         */
+        BotErrorResponse: {
+            /** Detail */
+            detail: string;
+        };
+        /**
+         * BotInventoryItem
+         * @description A single inventory balance row for bot display.
+         */
+        BotInventoryItem: {
+            /** Sku */
+            sku: string;
+            /** Name */
+            name: string;
+            /** Balance */
+            balance: number;
+            /** Warehouse Code */
+            warehouse_code: string;
+        };
+        /**
+         * BotInventoryResponse
+         * @description Response body for ``GET /bot/reps/{rep_id}/inventory``.
+         */
+        BotInventoryResponse: {
+            /** Items */
+            items: components["schemas"]["BotInventoryItem"][];
+            /** Warehouse Code */
+            warehouse_code: string;
+        };
+        /**
+         * BotInvoiceCreateRequest
+         * @description Request body for ``POST /bot/reps/{rep_id}/invoices``.
+         * @example {
+         *       "items": [
+         *         {
+         *           "product_sku": "SKU-0001",
+         *           "quantity": 10,
+         *           "unit_price": 50000
+         *         }
+         *       ],
+         *       "order_number": "ORD-2026-0001"
+         *     }
+         */
+        BotInvoiceCreateRequest: {
+            /**
+             * Order Number
+             * @description Order number to invoice.
+             */
+            order_number: string;
+            /**
+             * Items
+             * @description Line items (optional -- if empty, invoicing the entire order).
+             */
+            items?: components["schemas"]["BotInvoiceLineItem"][];
+        };
+        /**
+         * BotInvoiceLineItem
+         * @description A single line item for invoice creation.
+         */
+        BotInvoiceLineItem: {
+            /** Product Sku */
+            product_sku: string;
+            /** Quantity */
+            quantity: number;
+            /** Unit Price */
+            unit_price: number;
+        };
+        /**
+         * BotInvoiceResponse
+         * @description Response body for ``POST /bot/reps/{rep_id}/invoices``.
+         */
+        BotInvoiceResponse: {
+            /** Invoice Number */
+            invoice_number: string;
+            /** Order Number */
+            order_number: string;
+            /** Status */
+            status: string;
+            /** Grand Total */
+            grand_total: number;
+            /** Message */
+            message: string;
+        };
+        /**
+         * BotReportResponse
+         * @description Response body for ``GET /bot/reps/{rep_id}/reports``.
+         */
+        BotReportResponse: {
+            /** Representative Name */
+            representative_name: string;
+            /** Period */
+            period: string;
+            /** Summaries */
+            summaries: components["schemas"]["BotReportSummary"][];
+        };
+        /**
+         * BotReportSummary
+         * @description A summary row for the representative's report.
+         */
+        BotReportSummary: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: string | number;
+        };
+        /**
+         * BotVerifyPhoneRequest
+         * @description Request body for ``POST /bot/verify-phone``.
+         *
+         *     The bot sends this when a representative shares their phone number
+         *     via the Telegram/Bale contact-sharing button.
+         * @example {
+         *       "chat_id": "123456789",
+         *       "phone_number": "+989123456789",
+         *       "platform": "telegram"
+         *     }
+         */
+        BotVerifyPhoneRequest: {
+            /**
+             * Phone Number
+             * @description Phone number in E.164 or local format.
+             */
+            phone_number: string;
+            /**
+             * Platform
+             * @description Platform code: 'telegram' or 'bale'.
+             */
+            platform: string;
+            /**
+             * Chat Id
+             * @description Platform-specific chat identifier.
+             */
+            chat_id: string;
+        };
+        /**
+         * BotVerifyPhoneResponse
+         * @description Response body for a successful ``POST /bot/verify-phone``.
+         * @example {
+         *       "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+         *       "expires_in": 1800,
+         *       "representative_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+         *       "representative_name": "Ali Ahmadi",
+         *       "token_type": "bearer"
+         *     }
+         */
+        BotVerifyPhoneResponse: {
+            /** Access Token */
+            access_token: string;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
+            /** Expires In */
+            expires_in: number;
+            /**
+             * Representative Id
+             * Format: uuid
+             */
+            representative_id: string;
+            /** Representative Name */
+            representative_name: string;
         };
         /**
          * CommissionApproveRequest
@@ -2356,6 +2860,25 @@ export interface components {
         CreditNoteTransitionRequest: {
             /** Note */
             note?: string | null;
+        };
+        /**
+         * CurrencyResponse
+         * @description Read-only representation of a currency row.
+         */
+        CurrencyResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Code */
+            code: string;
+            /** Symbol */
+            symbol: string;
+            /** Decimals */
+            decimals: number;
+            /** Is Base */
+            is_base: boolean;
         };
         /**
          * CurrentUserResponse
@@ -2624,6 +3147,98 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * CustomerReturnCreateRequest
+         * @description Body for POST /customer-returns.
+         */
+        CustomerReturnCreateRequest: {
+            /** Order Id */
+            order_id?: string | null;
+            /** Customer Id */
+            customer_id?: string | null;
+            /** Representative Id */
+            representative_id?: string | null;
+            /**
+             * Warehouse Id
+             * Format: uuid
+             */
+            warehouse_id: string;
+            /**
+             * Reason Code Id
+             * Format: uuid
+             */
+            reason_code_id: string;
+            return_type: components["schemas"]["ReturnType"];
+            /** Note */
+            note?: string | null;
+            /** Lines */
+            lines: components["schemas"]["ReturnLineCreateRequest"][];
+        };
+        /**
+         * CustomerReturnListResponse
+         * @description Response for listing customer returns.
+         */
+        CustomerReturnListResponse: {
+            /** Items */
+            items: components["schemas"]["CustomerReturnResponse"][];
+        };
+        /**
+         * CustomerReturnResponse
+         * @description Response for a single customer return.
+         */
+        CustomerReturnResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Return Number */
+            return_number: string;
+            /** Order Id */
+            order_id: string | null;
+            /** Customer Id */
+            customer_id: string | null;
+            /** Representative Id */
+            representative_id: string | null;
+            /**
+             * Warehouse Id
+             * Format: uuid
+             */
+            warehouse_id: string;
+            /**
+             * Initiated By
+             * Format: uuid
+             */
+            initiated_by: string;
+            /**
+             * Reason Code Id
+             * Format: uuid
+             */
+            reason_code_id: string;
+            /** Return Type */
+            return_type: string;
+            /** State */
+            state: string;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /** Received At */
+            received_at: string | null;
+            /** Closed At */
+            closed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Lines
+             * @default []
+             */
+            lines: components["schemas"]["ReturnLineResponse"][];
         };
         /**
          * CustomerStatus
@@ -2957,25 +3572,6 @@ export interface components {
             label: string;
             /** Sign */
             sign: number;
-        };
-        /** UnitOfMeasureResponse */
-        UnitOfMeasureResponse: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Code */
-            code: string;
-            /** Name */
-            name: string;
-            /** Class */
-            class_: string;
-        };
-        /** UnitOfMeasureListResponse */
-        UnitOfMeasureListResponse: {
-            /** Items */
-            items: components["schemas"]["UnitOfMeasureResponse"][];
         };
         /**
          * MyPermissionsResponse
@@ -3741,6 +4337,37 @@ export interface components {
          * @enum {string}
          */
         PriceType: "RETAIL" | "REP" | "WHOLESALE" | "EXPORT" | "PROMO";
+        /** ProductCategoryListResponse */
+        ProductCategoryListResponse: {
+            /** Items */
+            items: components["schemas"]["ProductCategoryResponse"][];
+        };
+        /** ProductCategoryResponse */
+        ProductCategoryResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Parent Category Id */
+            parent_category_id: string | null;
+            /** Level */
+            level: number;
+        };
+        /**
+         * ProductCategoryUpdateRequest
+         * @description Request body for ``PATCH /product-categories/{id}``.
+         */
+        ProductCategoryUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Parent Category Id */
+            parent_category_id?: string | null;
+        };
         /**
          * ProductCreateRequest
          * @description Request body for ``POST /products``.
@@ -3779,30 +4406,6 @@ export interface components {
          *     future ``total``/``next_cursor``) can be added later without an
          *     incompatible, breaking response-shape change for existing clients.
          */
-        /** ProductCategoryResponse */
-        ProductCategoryResponse: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Code */
-            code: string;
-            /** Name */
-            name: string;
-            /**
-             * Parent Category Id
-             * Format: uuid
-             */
-            parent_category_id: string | null;
-            /** Level */
-            level: number;
-        };
-        /** ProductCategoryListResponse */
-        ProductCategoryListResponse: {
-            /** Items */
-            items: components["schemas"]["ProductCategoryResponse"][];
-        };
         ProductListResponse: {
             /** Items */
             items: components["schemas"]["ProductResponse"][];
@@ -3844,6 +4447,25 @@ export interface components {
             is_serial_tracked: boolean;
             /** Is Perishable */
             is_perishable: boolean;
+        };
+        /**
+         * ProductUpdateRequest
+         * @description Request body for ``PATCH /products/{product_id}``.
+         *
+         *     Only non-None fields are applied (partial update).
+         *     ``sku`` is immutable after creation.
+         */
+        ProductUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Base Uom Id */
+            base_uom_id?: string | null;
+            /** Category Id */
+            category_id?: string | null;
+            /** Status */
+            status?: string | null;
         };
         /** ReasonCodeListResponse */
         ReasonCodeListResponse: {
@@ -4054,7 +4676,10 @@ export interface components {
             tax_id?: string | null;
             /** Home City Ref Id */
             home_city_ref_id?: string | null;
-            /** Phone Number */
+            /**
+             * Phone Number
+             * @description Phone number (stored as representative_contact PHONE kind).
+             */
             phone_number?: string | null;
         };
         /** RepresentativeListResponse */
@@ -4111,6 +4736,72 @@ export interface components {
             home_city_ref_id?: string | null;
             status?: components["schemas"]["RepresentativeStatus"] | null;
         };
+        /**
+         * ReturnLineCreateRequest
+         * @description One line item in a return creation request.
+         */
+        ReturnLineCreateRequest: {
+            /**
+             * Product Id
+             * Format: uuid
+             */
+            product_id: string;
+            /** Order Line Id */
+            order_line_id?: string | null;
+            /** Qty Returned */
+            qty_returned: number | string;
+            /**
+             * Unit Refund Amount
+             * @default 0
+             */
+            unit_refund_amount: number | string;
+        };
+        /**
+         * ReturnLineResponse
+         * @description Response for a single return line.
+         */
+        ReturnLineResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Customer Return Id
+             * Format: uuid
+             */
+            customer_return_id: string;
+            /** Order Line Id */
+            order_line_id: string | null;
+            /**
+             * Product Id
+             * Format: uuid
+             */
+            product_id: string;
+            /** Lot Id */
+            lot_id: string | null;
+            /** Qty Returned */
+            qty_returned: string;
+            /** Condition */
+            condition: string | null;
+            /** Disposition */
+            disposition: string | null;
+            /** Unit Refund Amount */
+            unit_refund_amount: string;
+        };
+        /**
+         * ReturnTransitionRequest
+         * @description Body for POST /customer-returns/{id}/approve|receive|inspect|close.
+         */
+        ReturnTransitionRequest: {
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * ReturnType
+         * @enum {string}
+         */
+        ReturnType: "CUSTOMER_RETURN" | "REP_RETURN_TO_FACTORY" | "DAMAGED_RETURN";
         /**
          * ReverseTransactionRequest
          * @description Request body for ``POST /inventory/transactions/{id}/reverse``.
@@ -4437,6 +5128,35 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** UnitOfMeasureListResponse */
+        UnitOfMeasureListResponse: {
+            /** Items */
+            items: components["schemas"]["UnitOfMeasureResponse"][];
+        };
+        /** UnitOfMeasureResponse */
+        UnitOfMeasureResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Class */
+            class_: string;
+        };
+        /**
+         * UnitOfMeasureUpdateRequest
+         * @description Request body for ``PATCH /units-of-measure/{id}``.
+         */
+        UnitOfMeasureUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Class */
+            class_?: string | null;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -4731,6 +5451,181 @@ export interface operations {
             };
         };
     };
+    verify_phone_api_v1_bot_verify_phone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BotVerifyPhoneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotVerifyPhoneResponse"];
+                };
+            };
+            /** @description Representative inactive */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotErrorResponse"];
+                };
+            };
+            /** @description Phone not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rep_inventory_api_v1_bot_reps__rep_id__inventory_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rep_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotInventoryResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rep_reports_api_v1_bot_reps__rep_id__reports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rep_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotReportResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_rep_invoice_api_v1_bot_reps__rep_id__invoices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rep_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BotInvoiceCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotInvoiceResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_products_api_v1_products_get: {
         parameters: {
             query?: {
@@ -4805,6 +5700,70 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_product_api_v1_products__product_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_product_api_v1_products__product_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductUpdateRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -5268,6 +6227,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CustomerResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_customer_api_v1_customers__customer_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                customer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -6957,6 +7945,39 @@ export interface operations {
             };
         };
     };
+    list_payments_api_v1_payments_get: {
+        parameters: {
+            query?: {
+                customer_id?: string | null;
+                skip?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_payment_api_v1_payments_post: {
         parameters: {
             query?: never;
@@ -7546,6 +8567,209 @@ export interface operations {
             };
         };
     };
+    list_returns_api_v1_customer_returns_get: {
+        parameters: {
+            query?: {
+                customer_id?: string | null;
+                state?: string | null;
+                skip?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerReturnListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_return_api_v1_customer_returns_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomerReturnCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerReturnResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_return_api_v1_customer_returns__return_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                return_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerReturnResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    receive_return_api_v1_customer_returns__return_id__receive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                return_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReturnTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerReturnResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inspect_return_api_v1_customer_returns__return_id__inspect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                return_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReturnTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerReturnResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_return_api_v1_customer_returns__return_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                return_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReturnTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerReturnResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_representatives_api_v1_representatives_get: {
         parameters: {
             query?: {
@@ -7632,6 +8856,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RepresentativeResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_representative_api_v1_representatives__representative_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                representative_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -7817,6 +9070,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WarehouseResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_warehouse_api_v1_warehouses__warehouse_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                warehouse_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -8607,6 +9889,186 @@ export interface operations {
             };
         };
     };
+    list_units_of_measure_api_v1_units_of_measure_get: {
+        parameters: {
+            query?: {
+                /** @description Filter by class (BASE, DERIVED) */
+                class_?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnitOfMeasureListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_unit_of_measure_api_v1_units_of_measure__uom_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uom_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_unit_of_measure_api_v1_units_of_measure__uom_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uom_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnitOfMeasureUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnitOfMeasureResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_product_categories_api_v1_product_categories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductCategoryListResponse"];
+                };
+            };
+        };
+    };
+    delete_product_category_api_v1_product_categories__category_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                category_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_product_category_api_v1_product_categories__category_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                category_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductCategoryUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductCategoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_reason_codes_api_v1_reason_codes_get: {
         parameters: {
             query?: {
@@ -8659,30 +10121,7 @@ export interface operations {
             };
         };
     };
-    list_units_of_measure_api_v1_units_of_measure_get: {
-        parameters: {
-            query?: {
-                /** Filter by class (BASE, DERIVED) */
-                class_?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UnitOfMeasureListResponse"];
-                };
-            };
-        };
-    };
-    list_product_categories_api_v1_product_categories_get: {
+    get_default_currency_api_v1_currencies_default_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -8697,7 +10136,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProductCategoryListResponse"];
+                    "application/json": components["schemas"]["CurrencyResponse"];
                 };
             };
         };

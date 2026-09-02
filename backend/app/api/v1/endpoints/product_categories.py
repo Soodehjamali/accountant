@@ -110,6 +110,7 @@ class ProductCategoryInUseError(ValueError):
 
 @router.delete(
     "/product-categories/{category_id}",
+    response_model=None,
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a product category",
 )

@@ -150,6 +150,7 @@ def deactivate_representative(
 
 @router.delete(
     "/{representative_id}",
+    response_model=None,
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a representative",
 )
