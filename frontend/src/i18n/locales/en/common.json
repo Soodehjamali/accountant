@@ -94,6 +94,7 @@
     "failedToCreate": "Failed to create product",
     "fields": {
       "sku": "SKU *",
+      "skuHelp": "Unique identifier for this product (e.g. SKU-001)",
       "name": "Name *",
       "description": "Description",
       "baseUomId": "Base UoM ID *",

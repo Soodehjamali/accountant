@@ -94,6 +94,7 @@
     "failedToCreate": "خطا در ایجاد محصول",
     "fields": {
       "sku": "کد محصول *",
+      "skuHelp": "شناسه یکتای این محصول (مثلاً SKU-001)",
       "name": "نام *",
       "description": "توضیحات",
       "baseUomId": "واحد پایه *",
