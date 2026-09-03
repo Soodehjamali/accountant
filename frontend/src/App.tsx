@@ -8,10 +8,6 @@ import { ProductListPage } from "@/features/catalog/ProductListPage";
 import { ProductDetailPage } from "@/features/catalog/ProductDetailPage";
 import { ProductCreatePage } from "@/features/catalog/ProductCreatePage";
 import { ProductEditPage } from "@/features/catalog/ProductEditPage";
-import { ProductCategoryListPage } from "@/features/catalog/ProductCategoryListPage";
-import { ProductCategoryEditPage } from "@/features/catalog/ProductCategoryEditPage";
-import { UnitOfMeasureListPage } from "@/features/catalog/UnitOfMeasureListPage";
-import { UnitOfMeasureEditPage } from "@/features/catalog/UnitOfMeasureEditPage";
 import { WarehouseListPage } from "@/features/warehouses/WarehouseListPage";
 import { WarehouseCreatePage } from "@/features/warehouses/WarehouseCreatePage";
 import { WarehouseEditPage } from "@/features/warehouses/WarehouseEditPage";
@@ -119,10 +115,6 @@ function AppRoutes() {
         <Route path="catalog" element={<ProductListPage />} />
         <Route path="catalog/new" element={<ProductCreatePage />} />
         <Route path="catalog/edit/:id" element={<ProductEditPage />} />
-        <Route path="catalog/categories" element={<ProductCategoryListPage />} />
-        <Route path="catalog/categories/edit/:id" element={<ProductCategoryEditPage />} />
-        <Route path="catalog/uom" element={<UnitOfMeasureListPage />} />
-        <Route path="catalog/uom/edit/:id" element={<UnitOfMeasureEditPage />} />
         <Route path="catalog/:sku" element={<ProductDetailPage />} />
         {/* Warehouses */}
         <Route path="warehouses" element={<WarehouseListPage />} />

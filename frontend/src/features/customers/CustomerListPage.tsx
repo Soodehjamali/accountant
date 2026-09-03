@@ -143,19 +143,27 @@ export function CustomerListPage() {
                       </td>
                       {canManage && (
                         <td className="whitespace-nowrap px-4 py-3 text-sm">
-                          <button
-                            onClick={() => {
-                              if (!window.confirm(t("common.confirmDelete"))) return;
-                              setDeleteError(null);
-                              deleteCustomer.mutate(customer.id, {
-                                onError: (err) => setDeleteError(err.message),
-                              });
-                            }}
-                            disabled={deleteCustomer.isPending}
-                            className="text-red-600 hover:text-red-800 hover:underline disabled:opacity-50"
-                          >
-                            {t("common.delete")}
-                          </button>
+                          <div className="flex items-center gap-3">
+                            <Link
+                              to={`/office/customers/edit/${customer.id}`}
+                              className="text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              {t("common.edit")}
+                            </Link>
+                            <button
+                              onClick={() => {
+                                if (!window.confirm(t("common.confirmDelete"))) return;
+                                setDeleteError(null);
+                                deleteCustomer.mutate(customer.id, {
+                                  onError: (err) => setDeleteError(err.message),
+                                });
+                              }}
+                              disabled={deleteCustomer.isPending}
+                              className="text-red-600 hover:text-red-800 hover:underline disabled:opacity-50"
+                            >
+                              {t("common.delete")}
+                            </button>
+                          </div>
                         </td>
                       )}
                     </tr>

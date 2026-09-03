@@ -128,19 +128,27 @@ export function RepresentativeListPage() {
                       </td>
                       {canManage && (
                         <td className="whitespace-nowrap px-4 py-3 text-sm">
-                          <button
-                            onClick={() => {
-                              if (!window.confirm(t("common.confirmDelete"))) return;
-                              setDeleteError(null);
-                              deleteRepresentative.mutate(rep.id, {
-                                onError: (err) => setDeleteError(err.message),
-                              });
-                            }}
-                            disabled={deleteRepresentative.isPending}
-                            className="text-red-600 hover:text-red-800 hover:underline disabled:opacity-50"
-                          >
-                            {t("common.delete")}
-                          </button>
+                          <div className="flex items-center gap-3">
+                            <Link
+                              to={`/office/representatives/edit/${rep.id}`}
+                              className="text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              {t("common.edit")}
+                            </Link>
+                            <button
+                              onClick={() => {
+                                if (!window.confirm(t("common.confirmDelete"))) return;
+                                setDeleteError(null);
+                                deleteRepresentative.mutate(rep.id, {
+                                  onError: (err) => setDeleteError(err.message),
+                                });
+                              }}
+                              disabled={deleteRepresentative.isPending}
+                              className="text-red-600 hover:text-red-800 hover:underline disabled:opacity-50"
+                            >
+                              {t("common.delete")}
+                            </button>
+                          </div>
                         </td>
                       )}
                     </tr>
