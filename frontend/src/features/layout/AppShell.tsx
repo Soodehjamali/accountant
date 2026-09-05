@@ -16,6 +16,7 @@ const OFFICE_NAV_ITEMS = [
   { navKey: "nav.warehouses", path: ROUTES.OFFICE + "/warehouses", permission: PERMISSIONS.WAREHOUSE_MANAGE },
   { navKey: "nav.representatives", path: ROUTES.OFFICE + "/representatives", permission: PERMISSIONS.REPRESENTATIVE_MANAGE },
   { navKey: "nav.customers", path: `${ROUTES.OFFICE}/customers`, permission: null },
+  { navKey: "nav.priceLists", path: `${ROUTES.OFFICE}/price-lists`, permission: PERMISSIONS.PRICE_LIST_MANAGE },
   { navKey: "nav.orders", path: `${ROUTES.OFFICE}/orders`, permission: null },
   { navKey: "nav.invoices", path: `${ROUTES.OFFICE}/invoices`, permission: null },
   { navKey: "nav.inventory", path: `${ROUTES.OFFICE}/inventory`, permission: PERMISSIONS.INVENTORY_MANAGE },
@@ -26,6 +27,7 @@ const OFFICE_NAV_ITEMS = [
   { navKey: "nav.kpiDashboard", path: `${ROUTES.OFFICE}/kpi`, permission: PERMISSIONS.KPI_SNAPSHOT_VIEW },
   { navKey: "nav.reports", path: `${ROUTES.OFFICE}/reports`, permission: PERMISSIONS.REPORT_MANAGE },
   { navKey: "nav.auditLog", path: `${ROUTES.OFFICE}/audit-log`, permission: PERMISSIONS.AUDIT_LOG_VIEW },
+  { navKey: "nav.botSettings", path: `${ROUTES.OFFICE}/bot-settings`, permission: PERMISSIONS.BOT_MANAGE },
 ];
 
 /**

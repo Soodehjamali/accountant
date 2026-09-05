@@ -158,11 +158,38 @@ export interface paths {
          *     The bot sends this when a representative shares their contact
          *     information via the Telegram/Bale "Share Phone" button.
          *
-         *     On success, returns a short-lived JWT (30 minutes) that the bot
-         *     uses for subsequent API calls.  The token contains the
-         *     ``representative_id`` as its ``sub`` claim.
+         *     On success:
+         *     - the persistent ``bot_session`` is created/updated, binding
+         *       ``(platform, chat_id)`` to the verified representative,
+         *     - a short-lived JWT (30 minutes) is returned containing the
+         *       ``representative_id`` (``sub``) and the ``session_id`` claim so the
+         *       auth dependency can reject revoked/expired sessions immediately.
          */
         post: operations["verify_phone_api_v1_bot_verify_phone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke the current bot session (logout)
+         * @description Revoke the persistent bot session bound to the presented JWT.
+         *
+         *     After this call the token's ``session_id`` is ``REVOKED`` and every
+         *     subsequent request with that token is rejected -- the representative
+         *     must re-verify their phone to get a new session.
+         */
+        post: operations["bot_logout_api_v1_bot_logout_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -181,8 +208,8 @@ export interface paths {
          * @description Return inventory balances for the representative's primary warehouse.
          *
          *     ``rep_id`` from the URL is validated against the JWT token by
-         *     ``require_bot_rep_scope``.  All data access goes through the
-         *     existing scope service layer (ADR-007).
+         *     ``require_bot_rep_scope``; the caller must hold ``BOT_QUERY``.  All data
+         *     access goes through the existing scope service layer (ADR-007).
          */
         get: operations["get_rep_inventory_api_v1_bot_reps__rep_id__inventory_get"];
         put?: never;
@@ -204,8 +231,10 @@ export interface paths {
          * Get sales report for the representative
          * @description Return a sales/performance report for the representative.
          *
-         *     Aggregates order count, total revenue, and customer count from the
-         *     existing service layer, scoped to the representative via ADR-007.
+         *     Aggregates order count and revenue directly in the database (scoped by
+         *     ``Order.representative_id``) plus the representative's assigned
+         *     customer count (ADR-007 scope service).  Periods: ``today``,
+         *     ``this_week``, ``this_month`` (default).
          */
         get: operations["get_rep_reports_api_v1_bot_reps__rep_id__reports_get"];
         put?: never;
@@ -229,15 +258,103 @@ export interface paths {
          * Create an invoice from an order
          * @description Create an invoice for a shipped order belonging to the representative.
          *
-         *     ``rep_id`` from the URL is validated against the JWT token.
-         *     The order is looked up by ``order_number`` and must belong to this
-         *     representative (enforced by the existing service layer).
+         *     ``rep_id`` from the URL is validated against the JWT token; the caller
+         *     must hold ``BOT_WRITE``.  The order is looked up by ``order_number`` and
+         *     must belong to this representative (enforced by the existing service
+         *     layer).  Duplicate invoices for the same order are rejected by the
+         *     invoice service (``InvoiceAlreadyExistsError``).
          *
-         *     Note: This is a Tier 2 write command (no approval required) because
-         *     invoice creation from a shipped order is a low-risk, naturally bounded
-         *     operation within the representative's scope.
+         *     Current scope (documented in docs/BOT_SETUP.md): the bot supports the
+         *     ERP workflow ``SHIPPED order -> DRAFT invoice``.  It does NOT create
+         *     orders end-to-end; invoice issuance is performed through the ERP UI
+         *     (``/issue-invoice`` command path in the legacy command architecture).
          */
         post: operations["create_rep_invoice_api_v1_bot_reps__rep_id__invoices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List bot platform configs and live status */
+        get: operations["list_bot_configs_api_v1_bot_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-config/{platform}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save bot config for a platform (enabled and/or token) */
+        put: operations["update_bot_config_api_v1_bot_config__platform__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-config/{platform}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test the stored bot token against the platform API */
+        post: operations["test_bot_connection_api_v1_bot_config__platform__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-config/{platform}/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Report bot process runtime status (heartbeat) */
+        post: operations["update_runtime_status_api_v1_bot_config__platform__runtime_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-config/{platform}/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fetch the plaintext bot token for a bot process (startup) */
+        get: operations["get_runtime_token_api_v1_bot_config__platform__token_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2431,6 +2548,62 @@ export interface components {
             balance: string;
         };
         /**
+         * BotConfigItem
+         * @description One platform's config + live status for the admin UI.
+         */
+        BotConfigItem: {
+            /** Platform */
+            platform: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Token Configured */
+            token_configured: boolean;
+            /** Token Hint */
+            token_hint?: string | null;
+            /** Status */
+            status: string;
+            /** Last Heartbeat */
+            last_heartbeat?: string | null;
+            /** Bot Username */
+            bot_username?: string | null;
+            /** Bot Name */
+            bot_name?: string | null;
+        };
+        /** BotConfigListResponse */
+        BotConfigListResponse: {
+            /** Items */
+            items: components["schemas"]["BotConfigItem"][];
+        };
+        /**
+         * BotConfigUpdateRequest
+         * @description Save request for one platform.
+         *
+         *     ``token`` is optional and only replaces the stored secret when
+         *     provided; an empty string clears the token.
+         */
+        BotConfigUpdateRequest: {
+            /** Enabled */
+            enabled: boolean;
+            /** Token */
+            token?: string | null;
+        };
+        /** BotConfigUpdateResponse */
+        BotConfigUpdateResponse: {
+            /**
+             * Ok
+             * @default true
+             */
+            ok: boolean;
+            /** Platform */
+            platform: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Token Configured */
+            token_configured: boolean;
+            /** Token Hint */
+            token_hint?: string | null;
+        };
+        /**
          * BotErrorResponse
          * @description Error response body for bot endpoints.
          */
@@ -2537,6 +2710,41 @@ export interface components {
             label: string;
             /** Value */
             value: string | number;
+        };
+        /**
+         * BotRuntimeTokenResponse
+         * @description Plaintext token for the bot process (internal, runtime-secret gated).
+         */
+        BotRuntimeTokenResponse: {
+            /** Token */
+            token: string | null;
+        };
+        /**
+         * BotRuntimeUpdateRequest
+         * @description Heartbeat body sent by the bot process itself (internal).
+         */
+        BotRuntimeUpdateRequest: {
+            /** Status */
+            status: string;
+        };
+        /** BotRuntimeUpdateResponse */
+        BotRuntimeUpdateResponse: {
+            /**
+             * Ok
+             * @default true
+             */
+            ok: boolean;
+        };
+        /** BotTestConnectionResponse */
+        BotTestConnectionResponse: {
+            /** Ok */
+            ok: boolean;
+            /** Detail */
+            detail: string;
+            /** Bot Username */
+            bot_username?: string | null;
+            /** Bot Name */
+            bot_name?: string | null;
         };
         /**
          * BotVerifyPhoneRequest
@@ -5502,6 +5710,33 @@ export interface operations {
             };
         };
     };
+    bot_logout_api_v1_bot_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotErrorResponse"];
+                };
+            };
+        };
+    };
     get_rep_inventory_api_v1_bot_reps__rep_id__inventory_get: {
         parameters: {
             query?: never;
@@ -5544,7 +5779,10 @@ export interface operations {
     };
     get_rep_reports_api_v1_bot_reps__rep_id__reports_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Report window: today, this_week, or this_month (default). */
+                period?: string;
+            };
             header?: never;
             path: {
                 rep_id: string;
@@ -5613,6 +5851,171 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BotErrorResponse"];
+                };
+            };
+            /** @description Duplicate invoice / conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_bot_configs_api_v1_bot_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotConfigListResponse"];
+                };
+            };
+        };
+    };
+    update_bot_config_api_v1_bot_config__platform__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                platform: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BotConfigUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotConfigUpdateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_bot_connection_api_v1_bot_config__platform__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                platform: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotTestConnectionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_runtime_status_api_v1_bot_config__platform__runtime_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-bot-runtime-secret"?: string | null;
+            };
+            path: {
+                platform: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BotRuntimeUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotRuntimeUpdateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_runtime_token_api_v1_bot_config__platform__token_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-bot-runtime-secret"?: string | null;
+            };
+            path: {
+                platform: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotRuntimeTokenResponse"];
                 };
             };
             /** @description Validation Error */

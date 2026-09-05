@@ -1,10 +1,17 @@
 """Phone-based bot authentication service.
 
-Handles the phone verification flow for bot users:
+Handles the phone verification flow for bot users (ADR-013 REST/JWT
+architecture):
 1. Look up phone number in ``representative_contact`` (kind=PHONE)
 2. Verify the representative is ACTIVE
-3. Create/update a ``BotSession`` linking the platform identity
-4. Return a short-lived JWT (30 minutes) containing the ``representative_id``
+3. Create/update a persistent ``BotSession`` binding the platform identity
+   (``bot_session_service.bind_phone_verified_session``) -- the session
+   survives bot-process restarts because it lives in PostgreSQL, never in
+   an in-memory dict
+4. Return a short-lived JWT (30 minutes) carrying both the
+   ``representative_id`` (sub) and the ``bot_session`` id (``session_id``
+   claim) so the bot-auth dependency can reject revoked/expired sessions
+   immediately instead of waiting for JWT expiry
 
 This service does NOT check permissions -- that is the caller's
 responsibility (the API endpoint or the bot dependency).
@@ -16,12 +23,13 @@ import datetime
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from database.models.representative import Representative
 from database.models.representative_contact import RepresentativeContact
 from security import create_access_token
+from services import bot_session_service
 
 
 # ---------------------------------------------------------------------------
@@ -30,6 +38,12 @@ from security import create_access_token
 
 #: JWT lifetime for bot tokens -- 30 minutes.
 _BOT_TOKEN_EXPIRE_SECONDS = 30 * 60
+
+#: Default lifetime of a phone-verified bot session binding.  Long enough
+#: that the representative is not forced through phone re-verification too
+#: often, short enough that an abandoned binding expires.  Refresh happens
+#: naturally: every ``/start`` + phone share re-binds and re-arms the clock.
+_SESSION_TTL = datetime.timedelta(days=90)
 
 #: Known platform codes (matches ``BotPlatformRef.code`` values).
 _VALID_PLATFORMS = frozenset({"TELEGRAM", "BALE"})
@@ -93,6 +107,7 @@ def verify_phone(
     *,
     phone_number: str,
     platform: str,
+    chat_id: str,
     secret_key: str,
 ) -> PhoneVerificationResult:
     """Verify a phone number and return a bot access token.
@@ -100,12 +115,16 @@ def verify_phone(
     1. Normalizes the phone number (strips spaces, dashes, ensures +98 prefix).
     2. Looks up the phone in ``representative_contact`` (kind=PHONE).
     3. Verifies the representative is ACTIVE.
-    4. Returns a short-lived JWT containing ``rep_id``.
+    4. Creates/updates the persistent ``BotSession`` binding the platform
+       identity (``platform`` + ``chat_id``) to the verified representative.
+    5. Returns a short-lived JWT containing ``rep_id`` and ``session_id``.
 
     Args:
         db: Open database session.
         phone_number: Phone number in any reasonable format.
         platform: Platform code ("TELEGRAM" or "BALE").
+        chat_id: Platform-specific chat/user identifier -- the platform
+          identity being bound (must be provided; it is never optional).
         secret_key: HMAC signing key for the JWT.
 
     Returns:
@@ -152,13 +171,37 @@ def verify_phone(
     if rep.status != "ACTIVE":
         raise RepresentativeInactiveError(rep.id, rep.status)
 
-    # 3. Generate a short-lived JWT with the representative_id as subject.
+    # 3. Bind (or re-bind) the persistent bot session.  The actor for a
+    #    self-service phone verification is the system user (there is no
+    #    logged-in admin at this point in the flow).
+    from services import bootstrap_service
+
+    system_user = bootstrap_service.ensure_system_user(db)
+    # A fresh database has no bot_platform_ref rows; seed them so the
+    # platform lookup below cannot fail (idempotent).
+    bootstrap_service.ensure_bot_platforms(db, system_user.id)
+    bot_session = bot_session_service.bind_phone_verified_session(
+        db,
+        representative_id=rep.id,
+        platform_code=platform,
+        platform_user_id=chat_id,
+        created_by=system_user.id,
+        session_ttl=_SESSION_TTL,
+    )
+
+    # 4. Generate a short-lived JWT with the representative_id as subject
+    #    and the bot_session id as a claim so auth can check revocation
+    #    and expiry on every request.
     expires_in_seconds = _BOT_TOKEN_EXPIRE_SECONDS
     token = create_access_token(
         subject=str(rep.id),
         secret_key=secret_key,
         expires_in_seconds=expires_in_seconds,
-        extra_claims={"type": "bot", "platform": platform},
+        extra_claims={
+            "type": "bot",
+            "platform": platform,
+            "session_id": str(bot_session.id),
+        },
     )
 
     return PhoneVerificationResult(

@@ -7,6 +7,7 @@ verification flow; the response schemas cover the bot data endpoints.
 
 from __future__ import annotations
 
+import decimal
 import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -147,6 +148,116 @@ class BotInvoiceResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Bot order-creation flow (customers / products / price preview / orders)
+# ---------------------------------------------------------------------------
+
+
+class BotCustomer(BaseModel):
+    """A customer the representative is authorized to access (ADR-007 scope)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    code: str
+    name: str
+    currency_id: uuid.UUID
+
+
+class BotCustomerListResponse(BaseModel):
+    """Response body for ``GET /bot/reps/{rep_id}/customers``."""
+
+    items: list[BotCustomer]
+
+
+class BotProduct(BaseModel):
+    """A product available in the representative's primary warehouse."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    product_id: uuid.UUID
+    sku: str
+    name: str
+    balance: int
+
+
+class BotProductListResponse(BaseModel):
+    """Response body for ``GET /bot/reps/{rep_id}/products``."""
+
+    items: list[BotProduct]
+    warehouse_code: str
+
+
+class BotPricePreviewResponse(BaseModel):
+    """Response body for ``GET /bot/reps/{rep_id}/price-preview``.
+
+    The price is resolved by the ERP (BR-P1 precedence chain); the caller
+    can never supply or override a price.
+    """
+
+    product_id: uuid.UUID
+    product_sku: str
+    product_name: str
+    unit_price: float
+    currency_id: uuid.UUID
+    price_list_id: uuid.UUID
+    price_type: str
+
+
+class BotOrderLineCreate(BaseModel):
+    """One line of ``POST /bot/reps/{rep_id}/orders``.
+
+    ``qty_ordered`` is validated client-visible; the ERP resolves the
+    unit price from the customer's price list (BR-P1) -- no price is
+    accepted from the caller.
+    """
+
+    product_id: uuid.UUID
+    qty_ordered: decimal.Decimal = Field(gt=0)
+
+
+class BotOrderCreateRequest(BaseModel):
+    """Request body for ``POST /bot/reps/{rep_id}/orders``.
+
+    ``representative_id`` is intentionally NOT accepted: it always comes
+    from the authenticated bot JWT, so a caller can never impersonate
+    another representative.
+    """
+
+    customer_id: uuid.UUID
+    order_type: str = Field(default="LOCAL", pattern="^(LOCAL|DIRECT)$")
+    fulfillment_mode: str = Field(default="REP_LOCAL", pattern="^(REP_LOCAL|FACTORY_DIRECT)$")
+    lines: list[BotOrderLineCreate] = Field(min_length=1)
+
+
+class BotOrderLineResponse(BaseModel):
+    """A resolved line of a created order (ERP-computed price)."""
+
+    product_id: uuid.UUID
+    product_sku: str
+    product_name: str
+    qty_ordered: float
+    unit_price: float
+    line_total: float
+
+
+class BotOrderCreateResponse(BaseModel):
+    """Response body for ``POST /bot/reps/{rep_id}/orders``.
+
+    Reflects the ERP lifecycle: a DRAFT order is created (approval /
+    shipment / invoicing happen later through the ERP), and the totals
+    are the ERP's own calculation -- never the bot's.
+    """
+
+    order_id: uuid.UUID
+    order_number: str
+    state: str
+    subtotal: float
+    grand_total: float
+    currency_id: uuid.UUID
+    lines: list[BotOrderLineResponse]
+
+
+# ---------------------------------------------------------------------------
 # Generic error
 # ---------------------------------------------------------------------------
 
@@ -158,12 +269,21 @@ class BotErrorResponse(BaseModel):
 
 
 __all__ = [
+    "BotCustomer",
+    "BotCustomerListResponse",
     "BotErrorResponse",
     "BotInvoiceCreateRequest",
     "BotInvoiceLineItem",
     "BotInvoiceResponse",
     "BotInventoryItem",
     "BotInventoryResponse",
+    "BotOrderCreateRequest",
+    "BotOrderCreateResponse",
+    "BotOrderLineCreate",
+    "BotOrderLineResponse",
+    "BotPricePreviewResponse",
+    "BotProduct",
+    "BotProductListResponse",
     "BotReportResponse",
     "BotReportSummary",
     "BotVerifyPhoneRequest",

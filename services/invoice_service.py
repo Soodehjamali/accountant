@@ -110,6 +110,23 @@ class OrderNotShippedError(ValueError):
         self.state = state
 
 
+class InvoiceAlreadyExistsError(ValueError):
+    """Raised when an order already has a non-VOID invoice linked to it.
+
+    Guards against duplicate invoice creation for the same order.  A VOID
+    invoice is explicitly not a blocker -- the order can be re-invoiced
+    after its DRAFT invoice was voided.
+    """
+
+    def __init__(self, order_id: uuid.UUID, invoice_number: str) -> None:
+        super().__init__(
+            f"Order '{order_id}' already has an invoice ({invoice_number}); "
+            f"duplicate invoices for the same order are not allowed."
+        )
+        self.order_id = order_id
+        self.invoice_number = invoice_number
+
+
 class InvalidInvoiceStateTransitionError(ValueError):
     """Raised when a transition isn't a valid edge in ``ALLOWED_TRANSITIONS``."""
 
@@ -282,6 +299,22 @@ def create_invoice_from_order(
         raise OrderNotFoundError(order_id)
     if order.state != "SHIPPED":
         raise OrderNotShippedError(order_id, order.state)
+
+    # Duplicate-invoice protection: an order may only be invoiced once.
+    # A previously VOIDed invoice does not block re-invoicing.  This is a
+    # single authorization-aware query through the J1 junction (the same
+    # link ``invoice_order`` provides for list/scope lookups).
+    existing_invoice_number = session.execute(
+        select(Invoice.invoice_number)
+        .join(InvoiceOrder, InvoiceOrder.invoice_id == Invoice.id)
+        .where(
+            InvoiceOrder.order_id == order_id,
+            Invoice.deleted_at.is_(None),
+            Invoice.state != "VOID",
+        )
+    ).scalar_one_or_none()
+    if existing_invoice_number is not None:
+        raise InvoiceAlreadyExistsError(order_id, existing_invoice_number)
 
     # Fetch order lines to copy into invoice lines.
     order_lines = session.execute(
@@ -609,6 +642,7 @@ def void_invoice(
 __all__ = [
     "ALLOWED_TRANSITIONS",
     "INVOICE_MANAGE_PERMISSION_CODE",
+    "InvoiceAlreadyExistsError",
     "InvoiceImmutableError",
     "InvoiceNotFoundError",
     "InvalidInvoiceStateTransitionError",

@@ -154,6 +154,31 @@ def ensure_default_currency(session: Session, actor_id: uuid.UUID) -> Currency:
     return currency
 
 
+def ensure_bot_platforms(session: Session, actor_id: uuid.UUID) -> list[BotPlatformRef]:
+    """Seed the ``bot_platform_ref`` catalog (TELEGRAM, BALE), creating any
+    missing rows.  Idempotent -- safe to call every run.
+
+    Both the phone-verification flow and the bot-config admin flow depend
+    on these platform rows existing; without them ``verify_phone`` would
+    fail on a fresh database.
+    """
+    from database.models.bot_platform_ref import BotPlatformRef
+
+    result: list[BotPlatformRef] = []
+    for code in ("TELEGRAM", "BALE"):
+        existing = session.execute(
+            select(BotPlatformRef).where(BotPlatformRef.code == code)
+        ).scalar_one_or_none()
+        if existing is not None:
+            result.append(existing)
+            continue
+        platform = BotPlatformRef(code=code, created_by=actor_id, updated_by=actor_id)
+        session.add(platform)
+        session.flush()
+        result.append(platform)
+    return result
+
+
 def ensure_default_warehouse(session: Session, actor_id: uuid.UUID) -> Warehouse:
     """Return the seeded default ``Warehouse`` (MAIN), creating it if absent."""
 
@@ -465,6 +490,7 @@ __all__ = [
     "ensure_default_reason_code",
     "ensure_default_uom",
     "ensure_default_warehouse",
+    "ensure_bot_platforms",
     "ensure_movement_types",
     "ensure_reason_codes",
     "APPROVE_PERMISSION_CODE",

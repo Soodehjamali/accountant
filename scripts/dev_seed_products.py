@@ -3,11 +3,17 @@
 Usage (from the project root, with DATABASE_URL configured and migrations
 already applied via ``alembic upgrade head``)::
 
-    python -m scripts.dev_seed_products
+    ERP_ALLOW_DEV_SEED=1 python -m scripts.dev_seed_products
 
 IMPORTANT: This script is for DEVELOPMENT/TESTING only. It should NOT be
 run in production or as part of a fresh installation. A fresh installation
 starts with an empty business database.
+
+Guard: the script refuses to run unless ``ERP_ALLOW_DEV_SEED=1`` is set in
+the environment, so it can never be invoked by accident against an
+unexpected environment. Any rows it creates are TEST/DEMO data that must be
+cleaned up afterwards (``python -m scripts.cleanup_test_data``) per the
+project's Testing/Development Data Hygiene rule (see CLAUDE.md).
 
 Safe to run more than once: every step here is get-or-create / checks for
 an existing SKU first, so re-running just reprints the same products
@@ -46,7 +52,21 @@ SAMPLE_PRODUCTS = [
 ]
 
 
+def _guard() -> None:
+    """Refuse to run outside an explicitly-allowed dev/test seed session."""
+    import os
+
+    if os.getenv("ERP_ALLOW_DEV_SEED") != "1":
+        print(
+            "Refusing to run: this script creates TEST/DEMO data. "
+            "Re-run with ERP_ALLOW_DEV_SEED=1 (development/test only) and "
+            "clean up afterwards via `python -m scripts.cleanup_test_data`."
+        )
+        raise SystemExit(1)
+
+
 def main() -> None:
+    _guard()
     with get_session() as session:
         system_user = bootstrap_service.ensure_system_user(session)
         default_uom = bootstrap_service.ensure_default_uom(session, actor_id=system_user.id)

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams, Link } from "react-router";
 import { useCustomer } from "@/api/hooks/useCustomers";
 import { useCustomerBalance, useCustomerLedgerEntries } from "@/api/hooks/useCustomerLedger";
+import { CustomerPriceListSection } from "@/features/price-lists/CustomerPriceListSection";
 
 const ENTRY_TYPE_BADGE: Record<string, string> = {
   INVOICE_ISSUED: "bg-blue-100 text-blue-800",
@@ -129,6 +130,9 @@ export function CustomerDetailPage() {
           </div>
         </dl>
       </div>
+
+      {/* Price-list assignment (customer-specific pricing, BR-P1) */}
+      <CustomerPriceListSection customerId={customer.id} />
 
       {/* Balance card */}
       <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6">

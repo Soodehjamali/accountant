@@ -253,6 +253,26 @@ class BotSession(Base, UniversalAuditColumns):
         nullable=False,
     )
 
+    # ------------------------------------------------------------------- last_seen
+    # When the platform identity last used this session (any authenticated
+    # API call). Updated by the bot-auth dependency on every request.
+    # Nullable: a freshly bound session may have no traffic yet.
+    last_seen: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    # ------------------------------------------------------------------- expires_at
+    # Optional absolute expiry for the binding. When set and in the past,
+    # the session is treated as EXPIRED by the auth layer (the status column
+    # keeps the LINKED/REVOKED/EXPIRED vocabulary -- this column simply
+    # lets time-based expiry be enforced without rewriting status).
+    # Nullable: a session with no expiry stays LINKED until revoked.
+    expires_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     __table_args__ = (
         # UNIQUE -- ordinary composite case, literal ERD column pair. Also
         # already implies "one platform user <-> one representative" -- see

@@ -121,6 +121,7 @@ from database.models.customer import Customer  # noqa: E402,F401
 from database.models.customer_contact import CustomerContact  # noqa: E402,F401
 from database.models.customer_rep_assignment import CustomerRepAssignment  # noqa: E402,F401
 from database.models.bot_binding_token import BotBindingToken  # noqa: E402,F401
+from database.models.bot_config import BotConfig  # noqa: E402,F401
 from database.models.bot_session import BotSession  # noqa: E402,F401
 from database.models.bot_message_log import BotMessageLog  # noqa: E402,F401
 from database.models.customer_ledger import CustomerLedger  # noqa: E402,F401

@@ -16,6 +16,7 @@ from database.models.customer import Customer
 from database.models.customer_contact import CustomerContact
 from database.models.customer_rep_assignment import CustomerRepAssignment
 from database.models.bot_binding_token import BotBindingToken
+from database.models.bot_config import BotConfig
 from database.models.bot_session import BotSession
 from database.models.bot_message_log import BotMessageLog
 from database.models.customer_ledger import CustomerLedger

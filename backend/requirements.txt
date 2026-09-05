@@ -25,6 +25,11 @@ psycopg2-binary==2.9.*
 # file during development -- see migrations/env.py's own use of this.
 python-dotenv==1.0.*
 
+# --- Telegram bot proxy support --------------------------------------------
+# aiogram's AiohttpSession uses this connector for SOCKS proxy URLs.
+# HTTP proxy URLs also work through aiohttp's native proxy support.
+aiohttp-socks==0.11.*
+
 # --- Backend Foundation milestone ---------------------------------------
 # FastAPI app (backend/app/) + ASGI server + Pydantic v2 settings support.
 # database/session.py is synchronous (plain sqlalchemy.orm.Session), so

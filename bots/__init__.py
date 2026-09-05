@@ -14,6 +14,7 @@ Usage::
 Environment variables:
     TELEGRAM_BOT_TOKEN — Telegram bot token from @BotFather
     BALE_BOT_TOKEN — Bale bot token
+    TELEGRAM_PROXY — Optional HTTP(S)/SOCKS proxy URL for Telegram API traffic
     BOT_API_BASE_URL — Backend API base URL (default: http://localhost:8000)
 """
 

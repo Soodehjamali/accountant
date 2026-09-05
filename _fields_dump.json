@@ -1,0 +1,20 @@
+{
+ "fields": {
+  "name": "نام لیست *",
+  "priceType": "نوع قیمت *",
+  "ownerScope": "حوزه کاربرد",
+  "ownerScopePlaceholder": "مثلاً: نمایندگان استان تهران",
+  "currency": "ارز",
+  "product": "محصول *",
+  "sellingPrice": "قیمت فروش *",
+  "effectiveFrom": "تاریخ اعتبار",
+  "effectiveToOptional": "تا تاریخ (اختیاری)",
+  "priority": "اولویت",
+  "reason": "دلیل تغییر"
+ },
+ "has_priority": true,
+ "assign": {
+  "activeBadge": "جاری",
+  "expiredBadge": "منقضی"
+ }
+}

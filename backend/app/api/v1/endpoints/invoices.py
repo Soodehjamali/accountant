@@ -38,6 +38,7 @@ _require_invoice_manage = require_permission(invoice_service.INVOICE_MANAGE_PERM
 #: Map service-layer exceptions to the HTTP status they should surface.
 _ERROR_STATUS_MAP: tuple[tuple[type[Exception], int], ...] = (
     (invoice_service.InvoiceNotFoundError, status.HTTP_404_NOT_FOUND),
+    (invoice_service.InvoiceAlreadyExistsError, status.HTTP_409_CONFLICT),
     (invoice_service.InvalidInvoiceStateTransitionError, status.HTTP_409_CONFLICT),
     (invoice_service.InvoiceImmutableError, status.HTTP_409_CONFLICT),
     (invoice_service.OrderNotFoundError, status.HTTP_404_NOT_FOUND),

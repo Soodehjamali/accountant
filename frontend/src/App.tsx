@@ -18,6 +18,9 @@ import { CustomerListPage } from "@/features/customers/CustomerListPage";
 import { CustomerDetailPage } from "@/features/customers/CustomerDetailPage";
 import { CustomerCreatePage } from "@/features/customers/CustomerCreatePage";
 import { CustomerEditPage } from "@/features/customers/CustomerEditPage";
+import { PriceListListPage } from "@/features/price-lists/PriceListListPage";
+import { PriceListCreatePage } from "@/features/price-lists/PriceListCreatePage";
+import { PriceListDetailPage } from "@/features/price-lists/PriceListDetailPage";
 import { RepCustomerListPage } from "@/features/customers/RepCustomerListPage";
 import { RepCustomerDetailPage } from "@/features/customers/RepCustomerDetailPage";
 import { OrderListPage } from "@/features/orders/OrderListPage";
@@ -45,6 +48,7 @@ import { ReturnListPage } from "@/features/returns/ReturnListPage";
 import { ReturnDetailPage } from "@/features/returns/ReturnDetailPage";
 import { ReturnCreatePage } from "@/features/returns/ReturnCreatePage";
 import { AuditLogPage } from "@/features/audit-log/AuditLogPage";
+import { BotSettingsPage } from "@/features/bot-settings/BotSettingsPage";
 import { CommissionAdminPage } from "@/features/commissions/CommissionAdminPage";
 import { RepCommissionPage } from "@/features/commissions/RepCommissionPage";
 import { ROUTES } from "@/lib/constants";
@@ -129,6 +133,10 @@ function AppRoutes() {
         <Route path="customers/new" element={<CustomerCreatePage />} />
         <Route path="customers/edit/:id" element={<CustomerEditPage />} />
         <Route path="customers/:id" element={<CustomerDetailPage />} />
+        {/* Price lists */}
+        <Route path="price-lists" element={<PriceListListPage />} />
+        <Route path="price-lists/new" element={<PriceListCreatePage />} />
+        <Route path="price-lists/:id" element={<PriceListDetailPage />} />
         {/* Orders */}
         <Route path="orders" element={<OrderListPage />} />
         <Route path="orders/new" element={<OrderCreatePage />} />
@@ -156,6 +164,7 @@ function AppRoutes() {
         <Route path="returns/new" element={<ReturnCreatePage />} />
         <Route path="returns/:id" element={<ReturnDetailPage />} />
         <Route path="audit-log" element={<AuditLogPage />} />
+        <Route path="bot-settings" element={<BotSettingsPage />} />
       </Route>
 
       {/* Representative portal shell */}

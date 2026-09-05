@@ -25,6 +25,7 @@ from app.api.v1.endpoints import (
     audit_log,
     auth,
     bot,
+    bot_config,
     commissions,
     credit_notes,
     currencies,
@@ -54,6 +55,7 @@ api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
 api_router.include_router(bot.router)
+api_router.include_router(bot_config.router)
 api_router.include_router(products.router)
 api_router.include_router(inventory.router)
 api_router.include_router(rbac.router)

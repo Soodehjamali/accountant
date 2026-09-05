@@ -19,7 +19,18 @@ alembic==1.13.*
 # (v3) driver, before a production deployment).
 psycopg2-binary==2.9.*
 
+# --- Secret storage ----------------------------------------------------
+# Fernet (AES-based) encryption for bot tokens at rest -- used by
+# services/bot_config_service.py.  The key is derived from SECRET_KEY; no
+# additional secret needs to be provisioned.
+cryptography==46.*
+
 # --- Environment / config ---------------------------------------------
 # Loads DATABASE_URL (and any other secrets) from a local, gitignored .env
 # file during development -- see migrations/env.py's own use of this.
 python-dotenv==1.0.*
+
+# --- Telegram bot proxy support --------------------------------------------
+# aiogram's AiohttpSession uses this connector for SOCKS proxy URLs.
+# HTTP proxy URLs also work through aiohttp's native proxy support.
+aiohttp-socks==0.11.*

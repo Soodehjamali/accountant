@@ -54,7 +54,7 @@ import hmac
 import json
 import secrets
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # --------------------------------------------------------------------------
 # Password hashing (PBKDF2-HMAC-SHA256)
@@ -177,6 +177,11 @@ class TokenPayload:
     subject: str
     issued_at: int
     expires_at: int
+    #: Any additional signed claims (e.g. ``{"type": "bot", "session_id": ...}``
+    #: for bot tokens).  Defaults to ``{}`` -- legacy tokens / app tokens have
+    #: none.  Callers must treat this as untrusted-free only after signature
+    #: verification (which ``decode_access_token`` performs before returning).
+    extra_claims: dict = field(default_factory=dict)
 
 
 def decode_access_token(token: str, *, secret_key: str) -> TokenPayload:
@@ -223,7 +228,20 @@ def decode_access_token(token: str, *, secret_key: str) -> TokenPayload:
     if time.time() >= expires_at:
         raise InvalidTokenError("Token has expired.")
 
-    return TokenPayload(subject=subject, issued_at=issued_at, expires_at=expires_at)
+    # Everything else that was signed into the payload travels along as
+    # extra claims.  ``dict(payload)`` is safe: the three required claims are
+    # already popped into typed fields, and the payload was verified.
+    extra = dict(payload)
+    extra.pop("sub", None)
+    extra.pop("iat", None)
+    extra.pop("exp", None)
+
+    return TokenPayload(
+        subject=subject,
+        issued_at=issued_at,
+        expires_at=expires_at,
+        extra_claims=extra,
+    )
 
 
 __all__ = [

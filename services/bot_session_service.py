@@ -344,6 +344,85 @@ def create_binding(
     return bot_session
 
 
+def bind_phone_verified_session(
+    session: Session,
+    *,
+    representative_id: uuid.UUID,
+    platform_code: str,
+    platform_user_id: str,
+    created_by: uuid.UUID,
+    session_ttl: timedelta | None = None,
+) -> BotSession:
+    """Bind (or re-bind) a platform identity to a representative after
+    successful phone verification.
+
+    Idempotent: repeated verification for the same
+    ``(platform_code, platform_user_id)`` updates the existing row instead of
+    creating a second one (the ``(bot_platform_id, platform_user_id)`` unique
+    constraint permits at most one row per platform identity).
+
+    On every call the row is (re)set to:
+    - ``status = LINKED`` (re-activates a previously REVOKED/EXPIRED row)
+    - a fresh ``session_token`` is generated
+    - ``linked_at`` / ``last_seen`` / ``expires_at`` are refreshed
+      (``expires_at`` only when ``session_ttl`` is provided)
+
+    This is the write path used by ``bot_phone_service.verify_phone`` -- the
+    phone flow is a self-service identity-binding flow, so the actor is the
+    system user rather than an admin (``bot_session_service.create_binding``
+    remains the admin-initiated binding-token flow).
+
+    Raises:
+        PlatformNotFoundError: platform code doesn't exist.
+        RepresentativeNotFoundError: representative doesn't exist.
+    """
+    rep = session.get(Representative, representative_id)
+    if rep is None:
+        raise RepresentativeNotFoundError(representative_id)
+
+    platform = _get_platform(session, platform_code)
+
+    session_token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    expires_at = now + session_ttl if session_ttl is not None else None
+
+    existing = session.execute(
+        select(BotSession).where(
+            BotSession.bot_platform_id == platform.id,
+            BotSession.platform_user_id == platform_user_id,
+        )
+    ).scalar_one_or_none()
+
+    if existing is not None:
+        # Re-link / re-activate the existing row (one platform user <->
+        # one representative -- re-binding updates, never inserts).
+        existing.representative_id = representative_id
+        existing.status = "LINKED"
+        existing.session_token = session_token
+        existing.linked_at = now
+        existing.last_seen = now
+        existing.expires_at = expires_at
+        existing.updated_by = created_by
+        session.flush()
+        return existing
+
+    bot_session = BotSession(
+        representative_id=representative_id,
+        bot_platform_id=platform.id,
+        platform_user_id=platform_user_id,
+        status="LINKED",
+        session_token=session_token,
+        linked_at=now,
+        last_seen=now,
+        expires_at=expires_at,
+        created_by=created_by,
+        updated_by=created_by,
+    )
+    session.add(bot_session)
+    session.flush()
+    return bot_session
+
+
 def revoke_session(
     session: Session,
     *,
@@ -370,6 +449,33 @@ def revoke_session(
 def get_session_by_id(session: Session, session_id: uuid.UUID) -> BotSession | None:
     """Return a ``BotSession`` by its primary key, or ``None``."""
     return session.get(BotSession, session_id)
+
+
+def revoke_session_by_id(
+    session: Session,
+    session_id: uuid.UUID,
+    *,
+    revoked_by: uuid.UUID,
+) -> BotSession:
+    """Revoke a bot session by its primary key (``status = REVOKED``).
+
+    Used by the bot logout flow, where the platform identity is derived
+    from the JWT's ``session_id`` claim rather than re-supplied as
+    (platform_code, platform_user_id).
+
+    Idempotent: revoking an already-revoked session is a silent no-op.
+
+    Raises:
+        SessionNotLinkedError: no session row with this id exists, or it is
+          already REVOKED/EXPIRED (nothing left to revoke).
+    """
+    bot_session = session.get(BotSession, session_id)
+    if bot_session is None or bot_session.status != "LINKED":
+        raise SessionNotLinkedError(str(session_id), "(from session_id claim)")
+    bot_session.status = "REVOKED"
+    bot_session.updated_by = revoked_by
+    session.flush()
+    return bot_session
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +536,7 @@ __all__ = [
     "RepresentativeNotFoundError",
     "SessionAlreadyLinkedError",
     "SessionNotLinkedError",
+    "bind_phone_verified_session",
     "create_binding",
     "generate_binding_token",
     "get_or_create_session",
@@ -438,4 +545,5 @@ __all__ = [
     "log_outbound",
     "resolve_session",
     "revoke_session",
+    "revoke_session_by_id",
 ]

@@ -39,7 +39,21 @@ from database.models.audit_log import AuditLog
 #: database/models/audit_log.py: ck_audit_log_action). Kept in sync with
 #: that constraint deliberately -- if the constraint's vocabulary is ever
 #: extended at migration time, this set must be extended alongside it.
-VALID_ACTIONS = frozenset({"CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "OVERRIDE"})
+#:
+#: ``AUTHENTICATE`` / ``QUERY`` / ``ATTEMPT`` were added (migration
+#: a9b8c7d6e5f4) for bot-flow audit: phone-verification results, bot data
+#: queries (inventory/reports), and bot write attempts.
+VALID_ACTIONS = frozenset({
+    "CREATE",
+    "UPDATE",
+    "DELETE",
+    "APPROVE",
+    "REJECT",
+    "OVERRIDE",
+    "AUTHENTICATE",
+    "QUERY",
+    "ATTEMPT",
+})
 
 
 class InvalidAuditActionError(ValueError):
