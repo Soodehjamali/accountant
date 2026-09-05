@@ -423,6 +423,7 @@ def _handle_builtin(
             "/orders — List your recent orders",
             "/order <id> — Show order details",
             "/inventory — Check stock levels",
+            "/products — List available products",
             "/customers — List your customers",
             "/transfers — List your transfers",
             "/transfer <transfer_number> — Show transfer details",
@@ -734,6 +735,45 @@ def handle_inventory(session: Session, user: AppUser, rep: Representative, args:
         return f"No stock in {wh.code}."
 
     lines = [f"Stock in {wh.code}:"]
+    for b in balances:
+        lines.append(f"  {b['sku']} | {b['name']} | {b['balance']}")
+    if len(balances) == 10:
+        lines.append(f"\n(Showing top 10 products by quantity)")
+    return "\n".join(lines)
+
+
+@_register_command("products")
+def handle_products(session: Session, user: AppUser, rep: Representative, args: str) -> str:
+    """List available products in the representative's primary warehouse.
+
+    Uses ``representative_scope_service.resolve_representative_warehouses()``
+    to resolve the representative's assigned warehouses (ADR-007 §2),
+    then ``inventory_service.list_warehouse_balances()`` for the primary one.
+
+    Per ADR-007 §5, all scope logic lives in the service layer -- the full
+    product table is never shown unscoped (ADR-007).  Only products stocked
+    in the representative's primary warehouse are listed.
+
+    Returns a concise, Telegram-safe product list.
+    """
+    from services import inventory_service, representative_scope_service
+
+    warehouses = representative_scope_service.resolve_representative_warehouses(
+        session, rep.id, primary_only=True,
+    )
+
+    if not warehouses:
+        return "No warehouse assigned to you."
+
+    wh = warehouses[0]
+    balances = inventory_service.list_warehouse_balances(
+        session, warehouse_id=wh.id, limit=10,
+    )
+
+    if not balances:
+        return f"No products in {wh.code}."
+
+    lines = [f"Products in {wh.code}:"]
     for b in balances:
         lines.append(f"  {b['sku']} | {b['name']} | {b['balance']}")
     if len(balances) == 10:

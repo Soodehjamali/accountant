@@ -1280,3 +1280,201 @@ class TestInventoryCommand:
             assert "100.0000" in response.text
         finally:
             session.close()
+
+
+# ===========================================================================
+# /products command
+# ===========================================================================
+
+
+@requires_database
+class TestProductsCommand:
+    """Tests for the /products bot command."""
+
+    def test_products_returns_list_for_warehouse(self):
+        """With a primary warehouse and stock, /products returns the product list."""
+        session = get_session_factory()()
+        try:
+            bootstrap_service.ensure_rbac_bootstrap(session)
+            system_user = bootstrap_service.ensure_system_user(session)
+            puid = f"prd-{uuid.uuid4().hex[:6]}"
+            rep, user, _ = _make_bound_session(session, system_user, platform_user_id=puid)
+
+            # Create a dedicated warehouse so accumulated test stock doesn't interfere
+            suffix_wh = uuid.uuid4().hex[:6]
+            from database.models.warehouse import Warehouse
+            warehouse = Warehouse(
+                code=f"WH-PRD-{suffix_wh}",
+                name="Products Test WH",
+                type="REPRESENTATIVE",
+                ownership_mode="OWNED",
+                status="ACTIVE",
+                created_by=system_user.id,
+                updated_by=system_user.id,
+            )
+            session.add(warehouse)
+            session.flush()
+            _assign_warehouse(session, rep.id, warehouse.id, is_primary=True, actor_id=system_user.id)
+
+            # Create product and post inventory
+            from database.models.product import Product
+            from services import inventory_service
+            currency = bootstrap_service.ensure_default_currency(session, actor_id=system_user.id)
+            uom = bootstrap_service.ensure_default_uom(session, actor_id=system_user.id)
+            bootstrap_service.ensure_movement_types(session, actor_id=system_user.id)
+
+            suffix = uuid.uuid4().hex[:8]
+            product = Product(
+                sku=f"SKU-PRD-{suffix}",
+                name="Products Test Product",
+                base_uom_id=uom.id,
+                status="ACTIVE",
+                created_by=system_user.id,
+                updated_by=system_user.id,
+            )
+            session.add(product)
+            session.flush()
+
+            inventory_service.post_transaction(
+                session,
+                product_id=product.id,
+                warehouse_id=warehouse.id,
+                movement_type_code="INITIAL_OPENING_BALANCE",
+                signed_quantity=decimal.Decimal("42.0000"),
+                unit_cost=decimal.Decimal("10.0000"),
+                currency_id=currency.id,
+                actor_user_id=system_user.id,
+            )
+            session.commit()
+
+            msg = BotMessage(platform_user_id=puid, platform_code="TELEGRAM", text="/products")
+            response = process_message(session, message=msg)
+
+            assert isinstance(response, BotResponse)
+            assert f"Products in {warehouse.code}" in response.text
+            assert product.sku in response.text
+            assert product.name in response.text
+            assert "42.0000" in response.text
+            # Each row is formatted as: SKU | name | balance
+            assert f"{product.sku} | {product.name} | 42.0000" in response.text
+        finally:
+            session.close()
+
+    def test_products_empty_when_no_stock(self):
+        """A primary warehouse with no stock yields a "no products" message."""
+        session = get_session_factory()()
+        try:
+            bootstrap_service.ensure_rbac_bootstrap(session)
+            system_user = bootstrap_service.ensure_system_user(session)
+            puid = f"prd-{uuid.uuid4().hex[:6]}"
+            rep, user, _ = _make_bound_session(session, system_user, platform_user_id=puid)
+
+            # Create a dedicated warehouse with no stock
+            suffix = uuid.uuid4().hex[:6]
+            from database.models.warehouse import Warehouse
+            wh_empty = Warehouse(
+                code=f"WH-PRDEMPTY-{suffix}",
+                name="Empty Products Warehouse",
+                type="REPRESENTATIVE",
+                ownership_mode="OWNED",
+                status="ACTIVE",
+                created_by=system_user.id,
+                updated_by=system_user.id,
+            )
+            session.add(wh_empty)
+            session.flush()
+            _assign_warehouse(session, rep.id, wh_empty.id, is_primary=True, actor_id=system_user.id)
+            session.commit()
+
+            msg = BotMessage(platform_user_id=puid, platform_code="TELEGRAM", text="/products")
+            response = process_message(session, message=msg)
+
+            assert f"No products in {wh_empty.code}" in response.text
+        finally:
+            session.close()
+
+    def test_products_no_warehouse_assigned(self):
+        """Without a warehouse assignment, /products reports no warehouse."""
+        session = get_session_factory()()
+        try:
+            bootstrap_service.ensure_rbac_bootstrap(session)
+            system_user = bootstrap_service.ensure_system_user(session)
+            puid = f"prd-{uuid.uuid4().hex[:6]}"
+            _make_bound_session(session, system_user, platform_user_id=puid)
+
+            msg = BotMessage(platform_user_id=puid, platform_code="TELEGRAM", text="/products")
+            response = process_message(session, message=msg)
+
+            assert "No warehouse assigned" in response.text
+        finally:
+            session.close()
+
+    def test_products_cross_rep_isolation(self):
+        """Rep A's warehouse products must not appear in Rep B's response."""
+        session = get_session_factory()()
+        try:
+            bootstrap_service.ensure_rbac_bootstrap(session)
+            system_user = bootstrap_service.ensure_system_user(session)
+
+            # Rep A with warehouse and stock
+            puid_a = f"pa-{uuid.uuid4().hex[:6]}"
+            rep_a, _, _ = _make_bound_session(session, system_user, platform_user_id=puid_a)
+            warehouse = bootstrap_service.ensure_default_warehouse(session, actor_id=system_user.id)
+            _assign_warehouse(session, rep_a.id, warehouse.id, is_primary=True, actor_id=system_user.id)
+
+            from database.models.product import Product
+            from services import inventory_service
+            currency = bootstrap_service.ensure_default_currency(session, actor_id=system_user.id)
+            uom = bootstrap_service.ensure_default_uom(session, actor_id=system_user.id)
+            bootstrap_service.ensure_movement_types(session, actor_id=system_user.id)
+
+            suffix = uuid.uuid4().hex[:8]
+            product = Product(
+                sku=f"SKU-PRD-{suffix}",
+                name="Products Isolation Test",
+                base_uom_id=uom.id,
+                status="ACTIVE",
+                created_by=system_user.id,
+                updated_by=system_user.id,
+            )
+            session.add(product)
+            session.flush()
+            inventory_service.post_transaction(
+                session,
+                product_id=product.id,
+                warehouse_id=warehouse.id,
+                movement_type_code="INITIAL_OPENING_BALANCE",
+                signed_quantity=decimal.Decimal("50.0000"),
+                unit_cost=decimal.Decimal("10.0000"),
+                currency_id=currency.id,
+                actor_user_id=system_user.id,
+            )
+            session.flush()
+
+            # Rep B with no warehouse
+            puid_b = f"pb-{uuid.uuid4().hex[:6]}"
+            rep_b, _, _ = _make_bound_session(session, system_user, platform_user_id=puid_b)
+
+            msg_b = BotMessage(platform_user_id=puid_b, platform_code="TELEGRAM", text="/products")
+            response_b = process_message(session, message=msg_b)
+
+            assert product.sku not in response_b.text
+            assert "No warehouse assigned" in response_b.text
+        finally:
+            session.close()
+
+    def test_products_requires_bot_query_permission(self):
+        """Without BOT_QUERY permission, /products raises PermissionDeniedError."""
+        session = get_session_factory()()
+        try:
+            bootstrap_service.ensure_rbac_bootstrap(session)
+            system_user = bootstrap_service.ensure_system_user(session)
+            puid = f"prdnoperm-{uuid.uuid4().hex[:6]}"
+            _make_bound_session_no_perm(session, system_user, platform_user_id=puid)
+
+            from services.bot_command_service import PermissionDeniedError
+            msg = BotMessage(platform_user_id=puid, platform_code="TELEGRAM", text="/products")
+            with pytest.raises(PermissionDeniedError):
+                process_message(session, message=msg)
+        finally:
+            session.close()

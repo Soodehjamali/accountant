@@ -10,10 +10,10 @@
 
 ## 1. Context
 
-The read-only bot command milestone (Phase A) is complete. Six commands
-are live: `/me`, `/balance`, `/orders`, `/order`, `/inventory`, `/customers`.
-All require `BOT_QUERY` permission and are scoped to the session's
-representative via ADR-007.
+The read-only bot command milestone (Phase A) is complete. Seven commands
+are live: `/me`, `/balance`, `/orders`, `/order`, `/inventory`, `/products`,
+`/customers`. All require `BOT_QUERY` permission and are scoped to the
+session's representative via ADR-007.
 
 Before any write command (creating an order, confirming a transfer, etc.)
 can be implemented through the bot, the authorization model must be
@@ -61,6 +61,7 @@ Commands that read data scoped to the representative. Current v1 commands:
 | `/orders` | `BOT_QUERY` | No |
 | `/order <id>` | `BOT_QUERY` | No |
 | `/inventory` | `BOT_QUERY` | No |
+| `/products` | `BOT_QUERY` | No |
 | `/customers` | `BOT_QUERY` | No |
 
 ### Tier 2: BOT_WRITE (write commands, no approval)
