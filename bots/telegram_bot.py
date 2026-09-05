@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from typing import Any
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.session.aiohttp import AiohttpSession
@@ -121,6 +122,7 @@ def _main_menu_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [
                 KeyboardButton(text="📦 موجودی انبار من"),
+                KeyboardButton(text="📦 لیست محصولات"),
                 KeyboardButton(text="📊 گزارش فروش من"),
             ],
             [KeyboardButton(text="🧾 صدور فاکتور جدید")],
@@ -249,6 +251,40 @@ async def _flow_backend_error(message: Message, state: FSMContext, action: str) 
 
 
 # ---------------------------------------------------------------------------
+# Formatting helpers
+# ---------------------------------------------------------------------------
+
+
+def _format_products_text(data: dict[str, Any]) -> str:
+    """Format the products response (BotProductListResponse) as Persian text.
+
+    Mirrors ``format_inventory_text`` (bots/shared.py) for the products
+    endpoint: one readable row per product (name — SKU — balance) under the
+    warehouse header.
+
+    - ``warehouse_code == "N/A"`` means no warehouse is assigned to the
+      representative.
+    - An empty ``items`` list means the assigned warehouse carries no
+      products.
+    """
+    warehouse = data.get("warehouse_code", "N/A")
+    items = data.get("items", [])
+
+    if warehouse == "N/A":
+        return "هیچ انباری به شما اختصاص داده نشده است."
+
+    if not items:
+        return "محصولی در انبار شما موجود نیست."
+
+    lines = [f"📦 لیست محصولات انبار {warehouse}:"]
+    lines.append("─" * 30)
+    for item in items:
+        lines.append(f"  {item['name']} — {item['sku']} — موجودی: {item['balance']}")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Handlers
 # ---------------------------------------------------------------------------
 
@@ -337,6 +373,31 @@ async def handle_inventory(message: Message, state: FSMContext) -> None:
         logger.exception("Inventory fetch failed")
         await message.answer(
             f"❌ خطا در دریافت موجودی: {exc}",
+            reply_markup=_main_menu_keyboard(),
+        )
+
+
+@router.message(F.text == "📦 لیست محصولات")
+async def handle_products(message: Message, state: FSMContext) -> None:
+    """Handle 'Product List' button tap (also aborts any in-progress order)."""
+    chat_id = str(message.chat.id)
+    if not _auth_required(message):
+        return
+    await state.clear()
+
+    token = get_token(chat_id)
+    await message.answer("⏳ در حال دریافت لیست محصولات...")
+
+    try:
+        result = await api_get_products(token, _rep_id_for(chat_id))
+        text = _format_products_text(result)
+        await message.answer(text, reply_markup=_main_menu_keyboard())
+    except BotApiError as exc:
+        await _handle_auth_error(message, exc, "دریافت لیست محصولات")
+    except Exception as exc:
+        logger.exception("Products fetch failed")
+        await message.answer(
+            f"❌ خطا در دریافت لیست محصولات: {exc}",
             reply_markup=_main_menu_keyboard(),
         )
 

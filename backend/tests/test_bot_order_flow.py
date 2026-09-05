@@ -422,12 +422,70 @@ class TestBotProducts:
         assert order_flow_ctx["product_b"].sku in skus
 
     def test_rep_without_warehouse_gets_empty_list(self, client: TestClient, order_flow_ctx) -> None:
+        """No assigned warehouse -> empty items and warehouse_code == "N/A"."""
         token = _verify_phone(client, order_flow_ctx["phone_b"], "tg-prod-2")
         resp = client.get(
             f"/api/v1/bot/reps/{order_flow_ctx['rep_b'].id}/products", headers=_auth(token)
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json()["items"] == []
+        body = resp.json()
+        assert body["items"] == []
+        assert body["warehouse_code"] == "N/A"
+
+    def test_warehouse_without_stock_returns_empty_items(
+        self, client: TestClient, order_flow_ctx
+    ) -> None:
+        """An assigned warehouse carrying no stock -> empty items but the
+        real warehouse code (NOT "N/A"), so the bot shows the
+        "محصولی در انبار شما موجود نیست." message."""
+        session = order_flow_ctx["session"]
+        system_user = order_flow_ctx["system_user"]
+        empty_warehouse = Warehouse(
+            code=f"WH-FLOW-EMPTY-{uuid.uuid4().hex[:6].upper()}",
+            name="Empty Flow Warehouse",
+            type="REPRESENTATIVE",
+            ownership_mode="OWNED",
+            status="ACTIVE",
+            created_by=system_user.id,
+            updated_by=system_user.id,
+        )
+        session.add(empty_warehouse)
+        session.flush()
+        phone = _unique_phone()
+        rep = _create_rep(session, system_user, phone=phone)
+        _create_user_with_perms(
+            session, system_user, rep=rep, permissions=[BOT_QUERY, BOT_WRITE]
+        )
+        _assign_warehouse(
+            session, rep.id, empty_warehouse.id, is_primary=True, actor_id=system_user.id
+        )
+        session.commit()
+
+        token = _verify_phone(client, phone, "tg-prod-empty-1")
+        resp = client.get(f"/api/v1/bot/reps/{rep.id}/products", headers=_auth(token))
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["items"] == []
+        assert body["warehouse_code"] == empty_warehouse.code
+
+    def test_requires_bot_query_permission(self, client: TestClient, order_flow_ctx) -> None:
+        """A rep whose linked user has no BOT_QUERY is denied with 403."""
+        session = order_flow_ctx["session"]
+        system_user = order_flow_ctx["system_user"]
+        phone = _unique_phone()
+        rep_no_perm = _create_rep(session, system_user, phone=phone)
+        session.commit()
+
+        token = _verify_phone(client, phone, "tg-prod-3")
+        resp = client.get(
+            f"/api/v1/bot/reps/{rep_no_perm.id}/products", headers=_auth(token)
+        )
+        assert resp.status_code == 403
+
+    def test_requires_auth(self, client: TestClient, order_flow_ctx) -> None:
+        """No bearer token -> 401 (expired/missing session handling)."""
+        resp = client.get(f"/api/v1/bot/reps/{order_flow_ctx['rep'].id}/products")
+        assert resp.status_code == 401
 
 
 # ---------------------------------------------------------------------------

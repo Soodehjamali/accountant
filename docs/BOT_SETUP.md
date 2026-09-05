@@ -127,6 +127,10 @@ Main menu (Persian):
 - **📦 نمایش موجودی** → `GET /api/v1/bot/reps/{id}/inventory` — balances for
   the representative's primary permitted warehouse (ADR-007 scope service).
   Requires `BOT_QUERY`.
+- **📦 لیست محصولات** → `GET /api/v1/bot/reps/{id}/products` — products
+  available in the representative's primary permitted warehouse (same
+  ADR-007 scope as inventory; live balances from the immutable ledger).
+  Requires `BOT_QUERY`.
 - **📊 گزارش عملکرد** → `GET /api/v1/bot/reps/{id}/reports?period=this_month`
   — order count, revenue, customer count for `today` / `this_week` /
   `this_month`. Requires `BOT_QUERY`.
