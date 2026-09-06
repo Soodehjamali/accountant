@@ -57,11 +57,17 @@ _api_client: httpx.AsyncClient | None = None
 
 
 async def get_api_client() -> httpx.AsyncClient:
-    """Return the shared async HTTP client for backend API calls."""
+    """Return the shared async HTTP client for backend API calls.
+
+    All backend routes are mounted under ``settings.api_v1_prefix``
+    (``/api/v1``), so the client's base URL must include that prefix;
+    the relative paths used by the ``api_*`` helpers (e.g.
+    ``/bot/verify-phone``) then resolve to the real routes.
+    """
     global _api_client
     if _api_client is None or _api_client.is_closed:
         _api_client = httpx.AsyncClient(
-            base_url=get_bot_api_base_url(),
+            base_url=get_bot_api_base_url().rstrip("/") + "/api/v1",
             timeout=30.0,
         )
     return _api_client

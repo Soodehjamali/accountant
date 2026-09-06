@@ -1,0 +1,8 @@
+REPRESENTATIVE ROLE EXISTS: True
+REPRESENTATIVE ROLE ID: 4072a928-6de1-4778-80bc-47eb0a0131cb
+REPRESENTATIVE ROLE NAME: Traceback (most recent call last):
+  File "<stdin>", line 20, in <module>
+  File "C:\Users\Jamali\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 0-6: character maps to <undefined>

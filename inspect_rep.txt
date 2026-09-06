@@ -1,0 +1,23 @@
+REPRESENTATIVE BY ID: True
+PERSON_NAME_LEN: 10
+PERSON_NAME_UTF8_HEX: d8b3d988d8afd98720d8acd985d8a7d984db8c
+CODE: REP-001
+STATUS: ACTIVE
+DELETED_AT: None
+
+LINKED APPUSER EXISTS: True
+ID: 5f828c2d-adb6-4514-aa51-8c7cdcd47c59
+USERNAME: rep_rep_001
+EMAIL: rep_REP_001@bot.local
+STATUS: ACTIVE
+DELETED_AT: None
+
+USER ROLE CODES: ['REPRESENTATIVE']
+USER PERMISSION CODES (via roles): ['BOT_QUERY']
+HAS BOT_QUERY (via roles): True
+HAS BOT_WRITE (via roles): False
+
+POPULATION COUNTS:
+reps (not deleted): 634
+app_users (not deleted): 791
+app_users linked to a rep (not deleted): 536

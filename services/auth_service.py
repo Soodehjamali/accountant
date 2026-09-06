@@ -61,6 +61,12 @@ def create_user(
     object or the database; the plaintext itself is never persisted or
     logged.
 
+    When ``representative_id`` is provided the ``REPRESENTATIVE`` role
+    (which carries ``BOT_QUERY``) is automatically assigned to the new
+    user so that the representative can immediately use bot read
+    endpoints.  Non-representative users (admins, accountants, etc.)
+    are unaffected.
+
     Raises:
         DuplicateUsernameError: if ``username`` is already taken.
         DuplicateEmailError: if ``email`` is already taken.
@@ -88,6 +94,20 @@ def create_user(
     )
     session.add(user)
     session.flush()  # populate user.id / server defaults before return
+
+    # Auto-assign the REPRESENTATIVE role (BOT_QUERY) when the user is
+    # linked to a Representative.  ``rbac_service.assign_role`` is
+    # idempotent -- safe if the role was already granted.
+    if representative_id is not None:
+        from services import rbac_service
+
+        rbac_service.assign_role(
+            session,
+            user_id=user.id,
+            role_code="REPRESENTATIVE",
+            assigned_by=created_by,
+        )
+
     return user
 
 

@@ -19,8 +19,10 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from database.models.app_user import AppUser
 from database.models.representative import Representative
 from database.session import get_session_factory
 from services import auth_service, bootstrap_service
@@ -193,3 +195,129 @@ def test_me_portal_representative_for_linked_user(
 def test_me_with_garbage_token_returns_401(client: TestClient) -> None:
     response = client.get("/api/v1/auth/me", headers={"Authorization": "Bearer not-a-real-token"})
     assert response.status_code == 401
+
+
+@requires_database
+def test_create_user_with_representative_id_grants_representative_role() -> None:
+    """create_user with representative_id auto-assigns REPRESENTATIVE role.
+
+    The new user should immediately hold BOT_QUERY via the REPRESENTATIVE
+    role, verified through ``rbac_service.user_has_permission``.
+    """
+    from services import rbac_service
+
+    session = get_session_factory()()
+    try:
+        system_user = bootstrap_service.ensure_system_user(session)
+
+        # Create a representative to link to.
+        suffix = uuid.uuid4().hex[:8]
+        rep = Representative(
+            code=f"REP-AUTH-{suffix.upper()}",
+            person_name=f"Auth Test Rep {suffix}",
+            status="ACTIVE",
+            created_by=system_user.id,
+            updated_by=system_user.id,
+        )
+        session.add(rep)
+        session.flush()
+
+        # Create a user linked to that representative.
+        rep_suffix = uuid.uuid4().hex[:8]
+        rep_username = f"test_auth_rep_{rep_suffix}"
+        user = auth_service.create_user(
+            session,
+            username=rep_username,
+            email=f"{rep_username}@example.invalid",
+            password="correct-horse-battery-staple",
+            created_by=system_user.id,
+            representative_id=rep.id,
+        )
+        session.flush()
+
+        # The user should immediately have BOT_QUERY via REPRESENTATIVE role.
+        assert rbac_service.user_has_permission(session, user.id, "BOT_QUERY")
+        assert rbac_service.user_has_permission(
+            session, user.id, "BOT_QUERY"
+        )
+        # Non-BOT_QUERY permission should NOT be auto-granted.
+        assert not rbac_service.user_has_permission(
+            session, user.id, "BOT_WRITE"
+        )
+        assert not rbac_service.user_has_permission(
+            session, user.id, "CUSTOMER_MANAGE"
+        )
+    finally:
+        session.close()
+
+
+@requires_database
+def test_create_user_without_representative_id_does_not_grant_role() -> None:
+    """create_user without representative_id does NOT assign any role."""
+    from services import rbac_service
+
+    session = get_session_factory()()
+    try:
+        system_user = bootstrap_service.ensure_system_user(session)
+        suffix = uuid.uuid4().hex[:8]
+        username = f"test_auth_norep_{suffix}"
+        user = auth_service.create_user(
+            session,
+            username=username,
+            email=f"{username}@example.invalid",
+            password="correct-horse-battery-staple",
+            created_by=system_user.id,
+            # No representative_id
+        )
+        session.flush()
+
+        # No role should be assigned.
+        assert not rbac_service.user_has_permission(
+            session, user.id, "BOT_QUERY"
+        )
+    finally:
+        session.close()
+
+
+@requires_database
+def test_create_user_with_representative_id_is_idempotent() -> None:
+    """Calling create_user twice with same representative_id is safe."""
+    from services import rbac_service
+
+    session = get_session_factory()()
+    try:
+        system_user = bootstrap_service.ensure_system_user(session)
+
+        suffix = uuid.uuid4().hex[:8]
+        rep = Representative(
+            code=f"REP-AUTH-{suffix.upper()}",
+            person_name=f"Auth Test Rep {suffix}",
+            status="ACTIVE",
+            created_by=system_user.id,
+            updated_by=system_user.id,
+        )
+        session.add(rep)
+        session.flush()
+
+        # Create two users linked to the same representative.
+        for i in range(2):
+            s = uuid.uuid4().hex[:8]
+            auth_service.create_user(
+                session,
+                username=f"test_auth_idem_{s}",
+                email=f"test_auth_idem_{s}@example.invalid",
+                password="correct-horse-battery-staple",
+                created_by=system_user.id,
+                representative_id=rep.id,
+            )
+        session.flush()
+
+        # Both users should have BOT_QUERY.
+        users = session.execute(
+            select(AppUser).where(AppUser.representative_id == rep.id)
+        ).scalars().all()
+        assert len(users) == 2
+        for u in users:
+            assert rbac_service.user_has_permission(session, u.id, "BOT_QUERY")
+    finally:
+        session.close()

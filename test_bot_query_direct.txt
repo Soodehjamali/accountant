@@ -1,0 +1,3 @@
+LINKED APPUSER ID: 5f828c2d-adb6-4514-aa51-8c7cdcd47c59
+RBAC user_has_permission BOT_QUERY: True
+RBAC user_has_permission BOT_WRITE: False

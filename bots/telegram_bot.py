@@ -73,6 +73,11 @@ from bots.shared import (
     store_token,
 )
 
+# Force UTF-8 on stdout so Persian text in log records (aiogram banners,
+# unhandled-message content) never crashes the cp1252 Windows console
+# encoder -- a crashed emit would silently swallow the diagnostic itself.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
@@ -857,6 +862,19 @@ async def handle_logout(message: Message, state: FSMContext) -> None:
     )
 
 
+# NOTE: catch-all -- keep this registration LAST (lowest priority).  Any
+# message that matched none of the handlers above lands here so we can
+# see it in the logs instead of silently disappearing.
+@router.message()
+async def msg_unhandled(message: Message) -> None:
+    """Catch-all for updates matched by no other handler (diagnostics)."""
+    logger.warning(
+        "Unhandled message: %r from %s",
+        message.text,
+        message.chat.id,
+    )
+
+
 async def _handle_auth_error(message: Message, exc: BotApiError, action: str) -> None:
     """Handle a bot API error, prompting re-auth when the session is gone."""
     chat_id = str(message.chat.id)
@@ -894,8 +912,62 @@ async def main() -> None:
 
     logger.info("Telegram bot starting...")
 
+    # -----------------------------------------------------------------
+    # Diagnostic 1: verify Telegram API connectivity BEFORE polling.
+    # If this call throws or hangs, the problem is the network / token /
+    # proxy -- not the handler logic.
+    # -----------------------------------------------------------------
+    try:
+        me = await bot.get_me()
+        logger.info("Telegram API reachable: @%s (id=%s)", me.username, me.id)
+    except Exception:
+        logger.exception("get_me() failed -- Telegram API unreachable (check token / TELEGRAM_PROXY / network)")
+        await close_api_client()
+        await bot.session.close()
+        return
+
+    # -----------------------------------------------------------------
+    # Diagnostic 2: inspect and then clear any stale webhook.
+    # A leftover webhook silently diverts every update away from
+    # polling -- the #1 cause of a bot that "hears nothing".
+    # -----------------------------------------------------------------
+    try:
+        webhook = await bot.get_webhook_info()
+        logger.info(
+            "Telegram webhook info: url=%r pending_update_count=%s",
+            webhook.url,
+            webhook.pending_update_count,
+        )
+        if webhook.url:
+            logger.warning(
+                "Active webhook found (%r) -- it intercepts updates and can "
+                "silence polling; deleting it now.",
+                webhook.url,
+            )
+        else:
+            logger.info("No webhook set (polling should receive all updates).")
+        # Always delete, so both the webhook and any queued updates are
+        # guaranteed cleared before start_polling.
+        await bot.delete_webhook(drop_pending_updates=True)
+        logger.info(
+            "Webhook cleared (drop_pending_updates=True); polling is now the only update source."
+        )
+    except Exception:
+        logger.exception(
+            "Webhook inspection/cleanup failed -- Telegram API unreachable at this step"
+        )
+        await close_api_client()
+        await bot.session.close()
+        return
+
+    # -----------------------------------------------------------------
+    # Diagnostic 3: never let polling errors vanish silently.
+    # -----------------------------------------------------------------
     try:
         await dp.start_polling(bot)
+    except Exception:
+        logger.exception("Polling failed")
+        raise
     finally:
         await close_api_client()
         await bot.session.close()
